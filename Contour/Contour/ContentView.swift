@@ -1,80 +1,82 @@
-//
-//  ContentView.swift
-//  Contour
-//
-//  Created by Neel Maddu on 9/10/26.
-//
-
 import SwiftUI
-import SwiftData
 
 struct ContentView: View {
-    @Environment(\.modelContext) private var modelContext
-    @Query private var items: [Item]
-
+    
+    @State private var selectedTab = "Tracking"
+    
     var body: some View {
-        NavigationViewWrapper {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))")
+        ZStack {
+            // Background
+            Color(red: 45/255, green: 45/255, blue: 45/255)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 25) {
+                
+                // Top title
+                Text("C O N T O U R")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.top, 20)
+                
+                // Tabs
+                HStack(spacing: 0) {
+                    
+                    Button {
+                        selectedTab = "Tracking"
                     } label: {
-                        Text(item.timestamp, format: Date.FormatStyle(date: .numeric, time: .standard))
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Color.green)
+                                .frame(width: 16, height: 16)
+                            
+                            Text("Tracking")
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 9)
+                        .background(
+                            selectedTab == "Tracking"
+                            ? Color.white.opacity(0.15)
+                            : Color.clear
+                        )
+                        .clipShape(Capsule())
+                    }
+                    
+                    Button {
+                        selectedTab = "Chart"
+                    } label: {
+                        HStack(spacing: 8) {
+                            Circle()
+                                .fill(Color.cyan)
+                                .frame(width: 16, height: 16)
+                            
+                            Text("Chart")
+                                .foregroundColor(.white)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 9)
+                        .background(
+                            selectedTab == "Chart"
+                            ? Color.white.opacity(0.15)
+                            : Color.clear
+                        )
+                        .clipShape(Capsule())
                     }
                 }
-                .onDelete(perform: deleteItems)
-            }
-#if os(macOS)
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200)
-#endif
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
+                .padding(3)
+                .background(Color.black.opacity(0.15))
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule()
+                        .stroke(Color.white.opacity(0.1))
                 }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
+                
+                Spacer()
             }
         }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(timestamp: Date())
-            modelContext.insert(newItem)
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            for index in offsets {
-                modelContext.delete(items[index])
-            }
-        }
-    }
-}
-
-fileprivate struct NavigationViewWrapper<Content: View>: View {
-    let content: () -> Content
-
-    var body: some View {
-#if os(macOS)
-        NavigationSplitView {
-            content()
-        } detail: {
-            Text("Select an item")
-        }
-#else
-        content()
-#endif
     }
 }
 
 #Preview {
     ContentView()
-        .modelContainer(for: Item.self, inMemory: true)
 }
