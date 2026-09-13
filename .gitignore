@@ -1,9 +1,10 @@
 # macOS
 .DS_Store
 
-# Xcode — per-user state
+# Xcode — per-user state. Shared schemes live in xcshareddata and ARE committed.
 xcuserdata/
 *.xcuserstate
+*.xcuserdatad/
 *.xccheckout
 *.xcscmblueprint
 *.moved-aside
@@ -15,21 +16,28 @@ build/
 *.ipa
 *.dSYM
 *.dSYM.zip
+*.xcarchive
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/*/.build/
+
+# Package.resolved is intentionally NOT ignored for the app and workspace:
+# everything we depend on is a local path package, so the file stays tiny and
+# pinning it keeps four teams on identical inputs.
 
 # Playgrounds
 timeline.xctimeline
 playground.xcworkspace
 
-# Swift Package Manager
-.build/
-.swiftpm/xcode/package.xcworkspace/xcuserdata/
-.swiftpm/configuration/registries.json
-.swiftpm/configuration/collections.json
-
-# Secrets
+# Secrets — never commit a signing identity or an API key
 .env
 *.xcconfig.local
+*.p12
+*.mobileprovision
 
 # Editors
 .vscode/
 .idea/
+*.swp
