@@ -47,7 +47,7 @@ that the type belongs in `ContourCore`, or that the wiring belongs in
 
 ---
 
-## ⚠️ ContourCore freezes at the end of Week 2
+## ⚠️ ContourCore freezes at the end of Week 2 (Fri Oct 2)
 
 `Packages/ContourCore` is the contract every team builds against. Right now it
 is marked **DRAFT** and it is open: argue with it, file issues, bring changes to
@@ -74,21 +74,31 @@ time you will ever have to change it.
 
 ## The four teams
 
+Each package has its own README with that track's Weeks 2–3 deliverables, its
+contract, and the specific traps that will bite it. Start there, not here.
+
 | Team | Package | Owns | Produces |
 |------|---------|------|----------|
-| **Team 1** | `Packages/SurfaceUnderstanding` | Reading a panel from a photo — detection, OCR, layout | `SurfaceMap` |
-| **Team 2** | `Packages/Tracking` | Finding the finger and the panel in live frames, frame to frame | `AsyncStream<TrackingFrame>` |
-| **Team 3** | `Packages/ContourFeedback` | Haptics, audio, speech, the four outcome signals | consumes `GuidanceState` |
-| **Team 4** | `Packages/ContourUI` | Camera experience, target selection, accessibility | `PanelPhoto`, target choice |
+| **Team 1** | [`Packages/SurfaceUnderstanding`](Packages/SurfaceUnderstanding/README.md) | Reading a panel from a photo — detection, OCR, layout | `SurfaceMap` |
+| **Team 2** | [`Packages/Tracking`](Packages/Tracking/README.md) | Finding the finger and the panel in live frames, frame to frame | `AsyncStream<TrackingFrame>` |
+| **Team 3** | [`Packages/ContourFeedback`](Packages/ContourFeedback/README.md) | Haptics, audio, speech, the four outcome signals | consumes `GuidanceState` |
+| **Team 4** | [`Packages/ContourUI`](Packages/ContourUI/README.md) | Camera experience, target selection, accessibility | `PanelPhoto`, target choice |
 
 Shared, owned by the leads:
 
 | | |
 |---|---|
-| `Packages/ContourCore` | The contract. Types + three protocols. **Frozen end of Week 2.** |
-| `Packages/ContourMocks` | Fake implementations of all three protocols. What everyone builds against until Week 4. |
+| [`Packages/ContourCore`](Packages/ContourCore/README.md) | The contract. Types + three protocols. **Frozen end of Week 2.** |
+| [`Packages/ContourMocks`](Packages/ContourMocks/README.md) | Fake implementations of all three protocols. What everyone builds against until Week 4. |
 | `ContourApp/` | The iOS app. Wires the packages together and owns no features. |
 | `Harness/` | macOS rig for Team 3. Synthetic tracking frames, no phone required. |
+
+There is a fifth track in the timeline — **Design** (state-by-state feel spec,
+camera acquisition and target selection flows). It has no Swift package because
+its Weeks 2–3 deliverables are specs and flows, not code. It owes Team 3 the feel
+spec and Team 4 the flows.
+
+Dates, gates, and every track's deliverables: **[`docs/TIMELINE.md`](docs/TIMELINE.md)**.
 
 ### Nobody is blocked
 
@@ -257,14 +267,15 @@ expected and supported. That's why each protocol is mocked separately.
 contour/
 ├── Contour.xcworkspace          ← open this
 ├── ContourApp/                  iOS app. The wiring. Owns no features.
-├── Packages/
+├── docs/TIMELINE.md             11 weeks, four gates, deliverables per track
+├── Packages/                    every package has its own README — read yours
 │   ├── ContourCore/             the contract — FROZEN END OF WEEK 2
 │   │   └── COORDINATES.md       the coordinate convention. read it.
-│   ├── SurfaceUnderstanding/    Team 1
-│   ├── Tracking/                Team 2
-│   ├── ContourFeedback/         Team 3
-│   ├── ContourUI/               Team 4
-│   └── ContourMocks/            deterministic fakes for all three protocols
+│   ├── SurfaceUnderstanding/    Team 1 — Surface Understanding
+│   ├── Tracking/                Team 2 — Tracking / Spatial
+│   ├── ContourFeedback/         Team 3 — Feedback / Guidance
+│   ├── ContourUI/               Team 4 — Product / UI
+│   └── ContourMocks/            deterministic fakes (Team 4 ships these)
 ├── Harness/                     macOS rig — Team 3's blindfold tester
 ├── Scripts/
 │   └── check-dependencies.sh    enforces the one rule

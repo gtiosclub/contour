@@ -2,12 +2,15 @@
 //  TrackingTests.swift
 //  Tracking — Team 2
 //
-//  One structural test so CI is green on day one. Team 2: delete this and write
-//  real tests — a recorded-frame fixture replayed through the projection maths
-//  is the obvious first one.
+//  Structural tests so CI is green on day one.
+//
+//  Team 2: your real tests replay a recorded frame fixture through the
+//  projection maths and assert on panel-space output. Record the fixture early —
+//  a tracking bug you cannot replay is a tracking bug you cannot fix.
 //
 
 import ContourCore
+import Foundation
 import Testing
 @testable import Tracking
 
@@ -15,4 +18,18 @@ import Testing
 func conformsToContract() {
     let subject: any TrackingSource = LiveTrackingSource()
     #expect(subject is LiveTrackingSource)
+}
+
+@Test("the trackers are constructible")
+func trackersExist() {
+    _ = FingertipTracker()
+    _ = PanelTracker()
+}
+
+@Test("a lost frame reports no fingertip rather than the origin")
+func lostFrameIsNotTheOrigin() {
+    let frame = TrackingFrame.lost(at: Date(timeIntervalSince1970: 0))
+
+    #expect(frame.fingertip == nil, "nil means not seen — never (0, 0)")
+    #expect(frame.trackingQuality == .lost)
 }

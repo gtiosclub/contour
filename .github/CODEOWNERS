@@ -22,8 +22,10 @@
 /Packages/ContourUI/                @gtiosclub/contour-team-ui
 
 # ── SHARED ───────────────────────────────────────────────────────────────────
-# Everyone builds against the mocks, so a change here affects everyone.
-/Packages/ContourMocks/             @gtiosclub/contour-leads
+# The timeline puts the mocks on Product/UI ("Mocks for all three interfaces,
+# shipped by Monday Sep 21"). Everyone builds against them, so the leads review
+# alongside Team 4 — a careless change here breaks all four teams' tests.
+/Packages/ContourMocks/             @gtiosclub/contour-team-ui @gtiosclub/contour-leads
 
 # The wiring. Whoever is switching their package on edits this.
 /ContourApp/                        @gtiosclub/contour-leads
