@@ -1,0 +1,37 @@
+# Contour — code ownership
+#
+# One package, one team. The point of the layout is that a PR to one team's
+# package never needs another team's review — except for ContourCore, which
+# needs all four.
+#
+# TODO(leads): replace these placeholder handles with the real GitHub teams
+# under the gtiosclub org, or with individual @usernames if teams are not set
+# up yet. Nothing here works until the handles exist.
+
+# Fallback: anything not matched below goes to the leads.
+*                                   @gtiosclub/contour-leads
+
+# ── THE CONTRACT ─────────────────────────────────────────────────────────────
+# Frozen end of Week 2. Every lead reviews. Do not narrow this list.
+/Packages/ContourCore/              @gtiosclub/contour-lead-surface @gtiosclub/contour-lead-tracking @gtiosclub/contour-lead-feedback @gtiosclub/contour-lead-ui
+
+# ── TEAM PACKAGES ────────────────────────────────────────────────────────────
+/Packages/SurfaceUnderstanding/     @gtiosclub/contour-team-surface
+/Packages/Tracking/                 @gtiosclub/contour-team-tracking
+/Packages/ContourFeedback/          @gtiosclub/contour-team-feedback
+/Packages/ContourUI/                @gtiosclub/contour-team-ui
+
+# ── SHARED ───────────────────────────────────────────────────────────────────
+# Everyone builds against the mocks, so a change here affects everyone.
+/Packages/ContourMocks/             @gtiosclub/contour-leads
+
+# The wiring. Whoever is switching their package on edits this.
+/ContourApp/                        @gtiosclub/contour-leads
+
+# Team 3's rig — they own it, but anyone may add a control they need.
+/Harness/                           @gtiosclub/contour-team-feedback
+
+# ── PLUMBING ─────────────────────────────────────────────────────────────────
+/.github/                           @gtiosclub/contour-leads
+/Scripts/                           @gtiosclub/contour-leads
+/Contour.xcworkspace/               @gtiosclub/contour-leads

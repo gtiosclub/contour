@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Bump this when the club moves to a new Xcode. Everything in the repo
+  # assumes Xcode 26 / Swift 6 / iOS 26.
+  XCODE_VERSION: "26"
+
+jobs:
+  # Fast, and the one that catches the mistake that actually hurts: a team
+  # reaching into another team's package.
+  isolation:
+    name: Package isolation
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - run: ./Scripts/check-dependencies.sh
+
+  # Every package tested natively on macOS — no simulator, no signing, seconds
+  # not minutes. This is where team tests belong.
+  packages:
+    name: test ${{ matrix.package }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - ContourCore
+          - SurfaceUnderstanding
+          - Tracking
+          - ContourFeedback
+          - ContourUI
+          - ContourMocks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          # Pick the newest installed Xcode matching XCODE_VERSION.
+          app=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$app" ]; then sudo xcode-select -s "$app"; fi
+          xcodebuild -version
+          swift --version
+
+      - name: swift build
+        working-directory: Packages/${{ matrix.package }}
+        run: swift build
+
+      - name: swift test
+        working-directory: Packages/${{ matrix.package }}
+        run: swift test
+
+  # The two app targets have to keep compiling as the packages move under them.
+  apps:
+    name: build ${{ matrix.scheme }}
+    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scheme: ContourApp
+            destination: generic/platform=iOS Simulator
+          - scheme: Harness
+            destination: platform=macOS
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          app=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$app" ]; then sudo xcode-select -s "$app"; fi
+          xcodebuild -version
+
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -workspace Contour.xcworkspace \
+            -scheme "${{ matrix.scheme }}" \
+            -destination "${{ matrix.destination }}" \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO

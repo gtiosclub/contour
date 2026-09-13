@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workspace
+   version = "1.0">
+   <FileRef
+      location = "group:ContourApp/ContourApp.xcodeproj">
+   </FileRef>
+   <FileRef
+      location = "group:Harness/Harness.xcodeproj">
+   </FileRef>
+   <Group
+      location = "container:Packages"
+      name = "Packages">
+      <FileRef
+         location = "group:ContourCore">
+      </FileRef>
+      <FileRef
+         location = "group:SurfaceUnderstanding">
+      </FileRef>
+      <FileRef
+         location = "group:Tracking">
+      </FileRef>
+      <FileRef
+         location = "group:ContourFeedback">
+      </FileRef>
+      <FileRef
+         location = "group:ContourUI">
+      </FileRef>
+      <FileRef
+         location = "group:ContourMocks">
+      </FileRef>
+   </Group>
+</Workspace>
