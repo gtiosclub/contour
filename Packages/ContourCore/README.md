@@ -1,6 +1,6 @@
 # ContourCore — the contract
 
-> ⚠️ **DRAFT until the end of Week 2 (Fri Oct 2 — see below). Then frozen.**
+> ⚠️ **DRAFT until the end of Week 2 (Fri Sep 25). Then frozen.**
 >
 > Gate, from the project timeline: *"End of Week 2: interfaces (`SurfaceMap`,
 > `TrackingFrame`, `GuidanceState`) and coordinate convention frozen."*
