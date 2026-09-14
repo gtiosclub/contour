@@ -16,6 +16,19 @@ confirm Demo Day and shift the last two weeks if needed.
 | 10 | Nov 16–20 | Testing + stabilization | Demo build works repeatedly on real appliances |
 | 11 | Nov 23–27 | Freeze + Demo Day | Feature freeze, polish, rehearsal, backup plan |
 
+## Week boundaries
+
+Week 1 starts Monday Sep 14, so each week runs Monday to Friday:
+
+| Week | Mon | Fri |
+|---|---|---|
+| 1 | Sep 14 | Sep 18 |
+| 2 | Sep 21 | **Sep 25 ← interfaces freeze, guidance model chosen** |
+| 3 | Sep 28 | Oct 2 |
+
+"Weeks 2–3" in the table above spans Sep 21 – Oct 2, but the **end-of-Week-2
+gate is Friday Sep 25**, not Oct 2. Easy to misread; it costs a week.
+
 ## The four gates that don't slip
 
 1. **End of Week 1** — everyone builds and runs the project on a device. If not,

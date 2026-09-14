@@ -47,7 +47,7 @@ that the type belongs in `ContourCore`, or that the wiring belongs in
 
 ---
 
-## ⚠️ ContourCore freezes at the end of Week 2 (Fri Oct 2)
+## ⚠️ ContourCore freezes at the end of Week 2 (Fri Sep 25)
 
 `Packages/ContourCore` is the contract every team builds against. Right now it
 is marked **DRAFT** and it is open: argue with it, file issues, bring changes to
