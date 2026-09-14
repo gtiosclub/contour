@@ -30,7 +30,7 @@ this once". `ContourApp` and `Harness` are the only places the packages meet.
             │          │          │          │          │
    ┌────────┴───┐ ┌────┴────┐ ┌───┴──────┐ ┌─┴──────┐ ┌─┴──────────┐
    │  Surface   │ │Tracking │ │ Contour  │ │Contour │ │  Contour   │
-   │Understanding│ │         │ │ Feedback │ │  UI    │ │   Mocks    │
+   │ Understand │ │         │ │ Feedback │ │  UI    │ │   Mocks    │
    │   Team 1   │ │ Team 2  │ │  Team 3  │ │ Team 4 │ │  shared    │
    └────────┬───┘ └────┬────┘ └───┬──────┘ └─┬──────┘ └─┬──────────┘
             └──────────┴──────┬───┴──────────┴──────────┘
