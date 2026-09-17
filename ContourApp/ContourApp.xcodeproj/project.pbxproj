@@ -25,19 +25,11 @@
 			remoteGlobalIDString = 14A1805530536BAC00FEEF08;
 			remoteInfo = ContourApp;
 		};
-		14A1807030536BAD00FEEF08 /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 14A1804E30536BAC00FEEF08 /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 14A1805530536BAC00FEEF08;
-			remoteInfo = ContourApp;
-		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		14A1805630536BAC00FEEF08 /* ContourApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ContourApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		14A1806530536BAD00FEEF08 /* ContourTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContourTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		14A1806F30536BAD00FEEF08 /* ContourUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContourUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -49,11 +41,6 @@
 		14A1806830536BAD00FEEF08 /* ContourTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ContourTests;
-			sourceTree = "<group>";
-		};
-		14A1807230536BAD00FEEF08 /* ContourUITests */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			path = ContourUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -81,13 +68,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		14A1806C30536BAD00FEEF08 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -96,7 +76,6 @@
 			children = (
 				14A1805830536BAC00FEEF08 /* ContourApp */,
 				14A1806830536BAD00FEEF08 /* ContourTests */,
-				14A1807230536BAD00FEEF08 /* ContourUITests */,
 				14A1805730536BAC00FEEF08 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -106,7 +85,6 @@
 			children = (
 				14A1805630536BAC00FEEF08 /* ContourApp.app */,
 				14A1806530536BAD00FEEF08 /* ContourTests.xctest */,
-				14A1806F30536BAD00FEEF08 /* ContourUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -167,29 +145,6 @@
 			productReference = 14A1806530536BAD00FEEF08 /* ContourTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		14A1806E30536BAD00FEEF08 /* ContourUITests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 14A1807F30536BAD00FEEF08 /* Build configuration list for PBXNativeTarget "ContourUITests" */;
-			buildPhases = (
-				14A1806B30536BAD00FEEF08 /* Sources */,
-				14A1806C30536BAD00FEEF08 /* Frameworks */,
-				14A1806D30536BAD00FEEF08 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				14A1807130536BAD00FEEF08 /* PBXTargetDependency */,
-			);
-			fileSystemSynchronizedGroups = (
-				14A1807230536BAD00FEEF08 /* ContourUITests */,
-			);
-			name = ContourUITests;
-			packageProductDependencies = (
-			);
-			productName = ContourUITests;
-			productReference = 14A1806F30536BAD00FEEF08 /* ContourUITests.xctest */;
-			productType = "com.apple.product-type.bundle.ui-testing";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -198,16 +153,12 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2660;
-				LastUpgradeCheck = 2660;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					14A1805530536BAC00FEEF08 = {
 						CreatedOnToolsVersion = 26.6;
 					};
 					14A1806430536BAD00FEEF08 = {
-						CreatedOnToolsVersion = 26.6;
-						TestTargetID = 14A1805530536BAC00FEEF08;
-					};
-					14A1806E30536BAD00FEEF08 = {
 						CreatedOnToolsVersion = 26.6;
 						TestTargetID = 14A1805530536BAC00FEEF08;
 					};
@@ -237,7 +188,6 @@
 			targets = (
 				14A1805530536BAC00FEEF08 /* ContourApp */,
 				14A1806430536BAD00FEEF08 /* ContourTests */,
-				14A1806E30536BAD00FEEF08 /* ContourUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -251,13 +201,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		14A1806330536BAD00FEEF08 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		14A1806D30536BAD00FEEF08 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -281,13 +224,6 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		14A1806B30536BAD00FEEF08 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -295,11 +231,6 @@
 			isa = PBXTargetDependency;
 			target = 14A1805530536BAC00FEEF08 /* ContourApp */;
 			targetProxy = 14A1806630536BAD00FEEF08 /* PBXContainerItemProxy */;
-		};
-		14A1807130536BAD00FEEF08 /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 14A1805530536BAC00FEEF08 /* ContourApp */;
-			targetProxy = 14A1807030536BAD00FEEF08 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -338,6 +269,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -361,6 +293,7 @@
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -400,6 +333,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
@@ -416,6 +350,7 @@
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
@@ -427,12 +362,16 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Contour uses the camera to read the appliance panel in front of you and to follow your finger as you reach for a button.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Contour uses the microphone so you can say which control you want.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Contour turns what you say into the name of a button on the panel. Speech is recognised on device.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -446,7 +385,6 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -471,12 +409,16 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "Contour uses the camera to read the appliance panel in front of you and to follow your finger as you reach for a button.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Contour uses the microphone so you can say which control you want.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Contour turns what you say into the name of a button on the panel. Speech is recognised on device.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -490,7 +432,6 @@
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -514,10 +455,10 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -540,10 +481,10 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -556,56 +497,6 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ContourApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ContourApp";
-				XROS_DEPLOYMENT_TARGET = 26.5;
-			};
-			name = Release;
-		};
-		14A1808030536BAD00FEEF08 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = ContourApp;
-				XROS_DEPLOYMENT_TARGET = 26.5;
-			};
-			name = Debug;
-		};
-		14A1808130536BAD00FEEF08 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
-				MACOSX_DEPLOYMENT_TARGET = 26.5;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = edu.gatech.gtiosclub.contour.uitests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = auto;
-				STRING_CATALOG_GENERATE_SYMBOLS = NO;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = NO;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = ContourApp;
 				XROS_DEPLOYMENT_TARGET = 26.5;
 			};
 			name = Release;
@@ -640,16 +531,8 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		14A1807F30536BAD00FEEF08 /* Build configuration list for PBXNativeTarget "ContourUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				14A1808030536BAD00FEEF08 /* Debug */,
-				14A1808130536BAD00FEEF08 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
+
 /* Begin XCLocalSwiftPackageReference section */
 		C04700020000000000000000 /* XCLocalSwiftPackageReference "../Packages/ContourCore" */ = {
 			isa = XCLocalSwiftPackageReference;
@@ -711,7 +594,6 @@
 			productName = ContourMocks;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = 14A1804E30536BAC00FEEF08 /* Project object */;
 }
