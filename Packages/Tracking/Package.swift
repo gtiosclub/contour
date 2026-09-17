@@ -1,5 +1,5 @@
 // swift-tools-version: 6.2
-// Contour — Team 2
+// Contour — Tracking / Spatial
 //
 // DEPENDENCY RULE: this package may depend on ContourCore and nothing else.
 // Not on SurfaceUnderstanding, not on ContourFeedback, not on ContourUI,

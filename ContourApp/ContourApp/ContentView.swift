@@ -1,8 +1,8 @@
 //
 //  ContentView.swift
-//  ContourApp
+//  ContourApp — Experience / Accessibility & Launch
 //
-//  Scaffolding placeholder. Team 4 replaces this with the real camera
+//  Scaffolding placeholder. Experience replaces this with the real camera
 //  experience — ContourUI.ContourCameraView is where that starts.
 //
 //  It shows which packages are live and which are still mocked, and runs the
@@ -65,13 +65,13 @@ struct ContentView: View {
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
                         .disabled(map == nil)
-                    Text("Guidance output goes to the console. Team 3's rig is the "
-                         + "Harness scheme on macOS.")
+                    Text("Guidance output goes to the console. Experience's rig "
+                         + "is the Harness scheme on macOS.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("Team 4 — ContourUI") {
+                Section("Experience — ContourUI") {
                     ContourCameraView()
                     if let map {
                         TargetSelectionView(map: map)
@@ -87,7 +87,7 @@ struct ContentView: View {
         Task {
             do {
                 // A zero-byte photo: MockSurfaceUnderstanding ignores it entirely.
-                // Team 4 replaces this with a real capture from CaptureFlow.
+                // Experience replaces this with a real capture from CaptureFlow.
                 map = try await pipeline.detectPanel(
                     in: PanelPhoto(
                         data: Data(),

@@ -2,7 +2,7 @@
 #
 # check-dependencies.sh — enforce the isolation rule.
 #
-# Four teams work in parallel. That only holds if no team's package can depend
+# Three teams work in parallel. That only holds if no team's package can depend
 # on another team's package. This script is the mechanical check; CI runs it on
 # every PR.
 #
@@ -19,7 +19,7 @@
 #
 # If this fails on your PR, the fix is almost never "add the dependency". It is
 # usually one of:
-#   - the type you need belongs in ContourCore (that is a four-lead change), or
+#   - the type you need belongs in ContourCore (that is a three-lead change), or
 #   - the wiring belongs in ContourApp, not in your package.
 
 set -euo pipefail
@@ -60,7 +60,7 @@ check() {
         fi
     done
 
-    # Remote dependencies are not banned outright, but they are a four-lead
+    # Remote dependencies are not banned outright, but they are a three-lead
     # decision in ContourCore and a lead's decision anywhere else. Flag them.
     if grep -qE '\.package\(url:' "$manifest"; then
         if [[ "$package" == "ContourCore" ]]; then

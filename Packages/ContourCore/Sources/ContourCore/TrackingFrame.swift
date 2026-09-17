@@ -7,8 +7,8 @@
 //  │  Changes after the freeze require sign-off from all four team leads.     │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
-//  Produced by: Team 2 (Tracking)
-//  Consumed by: Team 3 (ContourFeedback, via GuidanceState), Team 4 (ContourUI)
+//  Produced by: Tracking / Spatial (Tracking)
+//  Consumed by: Experience (ContourFeedback via GuidanceState, and ContourUI)
 //
 //  `fingertip` is in NORMALIZED PANEL SPACE:
 //  origin (0,0) top-left, (1,1) bottom-right, y increasing DOWNWARD.
@@ -41,8 +41,9 @@ public enum TrackingQuality: String, Hashable, Sendable, Codable, CaseIterable {
 ///
 /// This is the **one** type in the contract that is not in panel space — by
 /// definition, since it is what relates panel space to the physical world.
-/// Team 2 owns it. Nobody else should need to read the transform; it is here so
-/// that Team 4 can draw an overlay without inventing a parallel channel.
+/// Tracking / Spatial owns it. Nobody else should need to read the transform;
+/// it is here so that Experience can draw an overlay without inventing a
+/// parallel channel.
 ///
 /// The transform is stored as four `SIMD4<Double>` columns rather than a
 /// `simd_float4x4` so that the contract stays free of any framework import.

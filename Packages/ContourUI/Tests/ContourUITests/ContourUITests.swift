@@ -1,12 +1,12 @@
 //
 //  ContourUITests.swift
-//  ContourUI — Team 4
+//  ContourUI — Experience
 //
 //  Structural tests so CI is green on day one. Note this is a `swift test`
 //  target, not an XCUITest bundle — the app's XCUITests live in
-//  ContourApp/ContourUITests.
+//  ContourApp/ContourTests.
 //
-//  Team 4: the first real test to write is "every GuidanceFlowStage produces a
+//  Experience: the first real test to write is "every GuidanceFlowStage produces a
 //  non-empty announcement". It needs no UI, no camera, and no simulator, and it
 //  catches the failure mode that matters most — a state change a blind user is
 //  never told about.

@@ -1,12 +1,12 @@
 //
 //  OutcomeAnnouncer.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience / Outcome Signals & Harness
 //
 //  Weeks 2–3 deliverable: "Define success and lost-tracking feedback with Design."
 //
 //  The four terminal signals. This is a JOINT deliverable — the timeline puts
-//  the state-by-state feel spec on Design, agreed with you and Product. Go and
-//  get it in Week 2 rather than waiting for it, then encode the agreement here.
+//  the state-by-state feel spec on Design (Kaylee), agreed with you. Go and get
+//  it in Week 2 rather than waiting for it, then encode the agreement here.
 //
 //  ⚠️ notFound AND lowConfidence MUST NOT FEEL THE SAME.
 //  "There is no defrost button on this microwave" and "I think I see one but I
@@ -24,6 +24,9 @@ import Foundation
 public struct OutcomePresentation: Hashable, Sendable {
 
     /// What is spoken, if anything. `nil` means non-speech only.
+    ///
+    /// This is *what* to say. Actually saying it — queueing, interrupting,
+    /// ducking — belongs to `SpeechQueue` in the Audio & Speech lane.
     public var utterance: String?
 
     /// The haptic signature for this outcome.
@@ -63,11 +66,11 @@ public struct OutcomeAnnouncer: Sendable {
     /// `.lowConfidence` produce different haptic signatures is worth writing on
     /// day one.
     public func presentation(for outcome: OutcomeSignal) -> OutcomePresentation {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Outcome Signals & Harness")
     }
 
     /// Announce `outcome`. Starts the effects and returns.
     public func announce(_ outcome: OutcomeSignal) async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Outcome Signals & Harness")
     }
 }

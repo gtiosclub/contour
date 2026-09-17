@@ -1,6 +1,6 @@
 //
 //  GuidanceModel.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience / Haptics
 //
 //  Weeks 2–3 deliverable: "Run the guidance model bake-off (Week 2) and pick one."
 //

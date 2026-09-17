@@ -1,6 +1,6 @@
 //
 //  MockGuidance.swift
-//  ContourMocks
+//  ContourMocks — Experience / Mocks & Integration
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
 //  │  PLACEHOLDER WIRING — NOT ANYBODY'S FEATURE                              │

@@ -7,9 +7,9 @@
 //  │  Changes after the freeze require sign-off from all four team leads.     │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
-//  Produced by: Team 1 (SurfaceUnderstanding)
-//  Consumed by: Team 4 (ContourUI, target selection), Team 2 (Tracking, to know
-//               what it is tracking against).
+//  Produced by: Surface Understanding (SurfaceUnderstanding)
+//  Consumed by: Experience (ContourUI, target selection), Tracking / Spatial
+//               (to know what it is tracking against).
 //
 //  All geometry here is in NORMALIZED PANEL SPACE:
 //  origin (0,0) top-left, (1,1) bottom-right, y increasing DOWNWARD.
@@ -44,7 +44,7 @@ public struct SurfaceMap: Hashable, Sendable, Codable {
         /// The text on the button, if it could be read.
         ///
         /// `nil` means "there is a control here but we could not read it" — which
-        /// is a useful, shippable result, not a failure. Team 3 announces
+        /// is a useful, shippable result, not a failure. Experience announces
         /// unlabelled buttons positionally ("top-left button").
         public var label: String?
 
@@ -104,8 +104,8 @@ public struct SurfaceMap: Hashable, Sendable, Codable {
     /// The button whose label matches `label`, case- and diacritic-insensitively.
     ///
     /// This is a convenience for demos and tests. Real voice-driven lookup —
-    /// "the popcorn one", "third from the left" — is Team 4's problem, not the
-    /// contract's.
+    /// "the popcorn one", "third from the left" — is Experience's problem (and
+    /// Surface Understanding's `TargetMatcher`), not the contract's.
     public func button(labelled label: String) -> Button? {
         buttons.first {
             guard let candidate = $0.label else { return false }

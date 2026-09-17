@@ -43,26 +43,37 @@ gate is Friday Sep 25**, not Oct 2. Easy to misread; it costs a week.
 
 ## Weeks 2–3 deliverables by track
 
-Each team's own README expands on these.
+Three teams plus Design. Each team's own README expands on these, lane by lane.
 
-**[Surface Understanding](../Packages/SurfaceUnderstanding/README.md)** — detect
-an appliance interface in a photo · identify basic buttons and labels · produce a
-basic `SurfaceMap` · hand-label the test set
+**[Surface Understanding](../Packages/SurfaceUnderstanding/README.md)**
+(Neel, Aadarsh) — detect an appliance interface in a photo · identify basic
+buttons and labels · produce a basic `SurfaceMap` · match a spoken request to a
+control · hand-label the test set
 
-**[Tracking / Spatial](../Packages/Tracking/README.md)** — track the index
-fingertip · track the panel as the phone moves · report finger position relative
-to a known target
+**[Tracking / Spatial](../Packages/Tracking/README.md)** (Remy, Zaynah) — track
+the index fingertip · track the panel as the phone moves · report finger position
+relative to a known target
 
-**[Feedback / Guidance](../Packages/ContourFeedback/README.md)** — run the
-guidance model bake-off (Week 2) and pick one · prototype proximity haptics ·
-prototype directional audio · define success and lost-tracking feedback with
-Design
+**[Experience](../Packages/ContourFeedback/README.md)**
+(Ashwanth, Nancy, Anushka) — the former Feedback / Guidance and Product / UI
+tracks, merged into one team across
+[`ContourFeedback`](../Packages/ContourFeedback/README.md),
+[`ContourUI`](../Packages/ContourUI/README.md) and
+[`ContourMocks`](../Packages/ContourMocks/README.md):
 
-**[Product / UI](../Packages/ContourUI/README.md)** — live camera experience ·
-basic target selection and guidance flow · mocks for all three interfaces
-(shipped Mon Sep 21) · first integration build Fri Oct 2
+- run the guidance model bake-off (Week 2) and pick one
+- prototype proximity haptics · prototype directional audio
+- define success and lost-tracking feedback with Design
+- live camera experience · basic target selection and guidance flow
+- mocks for all three interfaces (shipped Mon Sep 21)
+- first integration build Fri Oct 2
 
-**Design** — state-by-state feel spec, agreed with Feedback and Product · camera
+The merge does not shrink the work — it is the same six deliverables under one
+set of leads, split across six lanes. Watch the load here: Experience carries
+more Weeks 2–3 items than the other two teams put together, and the bake-off is
+a gate the whole project waits on.
+
+**Design** (Kaylee) — state-by-state feel spec, agreed with Experience · camera
 acquisition and target selection flows. *No Swift package: Design's Weeks 2–3
 deliverables are specs and flows, not code. If Design ends up owning shipped
 assets or a design system, give it a folder then.*
@@ -75,7 +86,7 @@ finger is, where it needs to move, and how that movement is communicated.
 - Clone, build, and run on a **physical device**. Signing problems get solved in
   Slack, not alone.
 - Send **five photos of appliance panels** you have access to. That is the first
-  test set, and Team 1 hand-labels it.
+  test set, and Surface Understanding hand-labels it.
 - Device inventory: anyone without an iPhone 15 Pro or newer gets paired with
   someone who has one.
 

@@ -1,9 +1,10 @@
 //
 //  CaptureFlow.swift
-//  ContourUI — Team 4
+//  ContourUI — Experience / App Flow
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  EMPTY ROOM. This is Team 4's package and nobody else commits here.      │
+//  │  EMPTY ROOM. This is Experience's package, and nobody outside the team   │
+//  │  commits here.                                                           │
 //  │                                                                          │
 //  │  Everything below is a stub. Replace the bodies, keep the signatures —   │
 //  │  the signatures are ContourCore's contract and other teams are building  │
@@ -16,7 +17,8 @@
 //  app gives you and let the user say which button they want.
 //
 //  WHAT YOU DO NOT DO HERE
-//  You never call Team 1's detector yourself — you hand up a `PanelPhoto` and
+//  You never call Surface Understanding's detector yourself — you hand up a
+//  `PanelPhoto` and
 //  the app target hands you back a `SurfaceMap`. Same for tracking and feedback.
 //  ContourUI depends on ContourCore and nothing else, so none of those packages
 //  are even importable from here. If you find yourself wanting one, that is the
@@ -39,7 +41,7 @@ import Foundation
 
 /// Drives capture: viewfinder, shutter, and the still that comes out of it.
 ///
-/// Team 4 builds this out.
+/// Experience builds this out.
 public struct CaptureFlow: Sendable {
 
     public init() {}
@@ -48,14 +50,14 @@ public struct CaptureFlow: Sendable {
     ///
     /// - Returns: the photo, ready to hand to the app target for detection.
     public func capturePanelPhoto() async throws -> PanelPhoto {
-        fatalError("unimplemented — owned by Team 4 (ContourUI)")
+        fatalError("unimplemented — owned by Experience / App Flow")
     }
 }
 
 /// Drives target selection: given what is on the panel, which button does the
 /// user actually want?
 ///
-/// Team 4 builds this out.
+/// Experience builds this out.
 public struct TargetSelection: Sendable {
 
     public init() {}
@@ -66,6 +68,6 @@ public struct TargetSelection: Sendable {
     ///   for something that is not on the panel is `nil` here plus an
     ///   `OutcomeSignal.notFound` raised by the app target — not an error.
     public func selectTarget(in map: SurfaceMap) async -> SurfaceMap.Button? {
-        fatalError("unimplemented — owned by Team 4 (ContourUI)")
+        fatalError("unimplemented — owned by Experience / App Flow")
     }
 }

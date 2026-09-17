@@ -1,6 +1,6 @@
 //
 //  ProximityHaptics.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience / Haptics
 //
 //  Weeks 2–3 deliverable: "Prototype proximity haptics."
 //
@@ -51,18 +51,18 @@ public struct ProximityHaptics: Sendable {
     ///
     /// Pure and synchronous on purpose — this is the part you can unit-test.
     public func pattern(forDistance normalizedDistance: Double) -> [HapticEvent] {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Haptics")
     }
 
     /// Play the pattern for `state`.
     ///
     /// Starts the pattern and returns. Does not await playback.
     public func play(for state: GuidanceState) async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Haptics")
     }
 
     /// Stop anything currently playing. Must be safe to call when idle.
     public func stop() async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Haptics")
     }
 }

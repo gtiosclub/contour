@@ -1,10 +1,10 @@
 //
 //  ContourFeedbackTests.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience
 //
 //  Structural tests so CI is green on day one.
 //
-//  Team 3: feedback is more testable than it sounds. Assert on the PATTERN you
+//  Experience: feedback is more testable than it sounds. Assert on the PATTERN you
 //  would hand to Core Haptics — event times, intensities, sharpness — not on
 //  what it feels like. Two tests worth writing first:
 //

@@ -3,7 +3,7 @@
 //
 // ContourCore is THE CONTRACT. It depends on nothing, by design and forever.
 // If you are about to add a `dependencies:` entry to this file, stop and talk
-// to all four team leads first. See ../../README.md.
+// to all three teams' leads first. See ../../README.md.
 
 import PackageDescription
 

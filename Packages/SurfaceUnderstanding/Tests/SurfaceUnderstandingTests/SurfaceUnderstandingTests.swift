@@ -1,12 +1,12 @@
 //
 //  SurfaceUnderstandingTests.swift
-//  SurfaceUnderstanding — Team 1
+//  SurfaceUnderstanding — Surface Understanding
 //
 //  Structural tests so CI is green on day one. They assert that the package
 //  builds and still satisfies the contract — nothing about detection, because
 //  there is no detection yet.
 //
-//  Team 1: your real tests score `LiveSurfaceUnderstanding` against
+//  Surface Understanding: your real tests score `LiveSurfaceUnderstanding` against
 //  `TestSet.samples`. Write the first one the day you label the first photo.
 //
 

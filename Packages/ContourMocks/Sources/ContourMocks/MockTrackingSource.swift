@@ -2,7 +2,7 @@
 //  MockTrackingSource.swift
 //  ContourMocks
 //
-//  Team 2's stand-in. Walks a fingertip from a start point to a target on a
+//  Tracking's stand-in. Walks a fingertip from a start point to a target on a
 //  timer and finishes. Fully deterministic: the whole sequence is a pure
 //  function of the initialiser arguments, including the timestamps.
 //

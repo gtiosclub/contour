@@ -90,7 +90,7 @@ final class HarnessModel {
     }
 
     /// Replay `MockTrackingSource`'s deterministic walk toward the current
-    /// target, so Team 3 can feel a whole approach rather than scrub one.
+    /// target, so Experience can feel a whole approach rather than scrub one.
     func toggleWalk() {
         if let walk {
             walk.cancel()

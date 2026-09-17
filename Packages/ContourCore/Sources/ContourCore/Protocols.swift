@@ -11,21 +11,21 @@
 //  its own protocol and never imports another team's package. `ContourApp` and
 //  `Harness` are the only places the three meet.
 //
-//      Team 1  SurfaceUnderstanding  ──▶  SurfaceMap
-//      Team 2  TrackingSource        ──▶  AsyncStream<TrackingFrame>
-//      Team 3  FeedbackEngine        ◀──  GuidanceState
-//      Team 4  ContourUI             ──▶  PanelPhoto, target selection
+//      Surface Understanding   SurfaceUnderstanding  ──▶  SurfaceMap
+//      Tracking / Spatial      TrackingSource        ──▶  AsyncStream<TrackingFrame>
+//      Experience              FeedbackEngine        ◀──  GuidanceState
+//      Experience              ContourUI             ──▶  PanelPhoto, target selection
 //
 //  Async/await and Sendable throughout. No completion handlers, no delegates.
 //
 
 import Foundation
 
-// MARK: - Team 1
+// MARK: - Surface Understanding
 
 /// Turns a photo of a control panel into a `SurfaceMap`.
 ///
-/// Owned by **Team 1 — SurfaceUnderstanding**.
+/// Owned by **Surface Understanding — SurfaceUnderstanding**.
 ///
 /// Positions in the returned map are in normalized panel space: `(0, 0)`
 /// top-left, `(1, 1)` bottom-right, `y` down. See `COORDINATES.md`.
@@ -46,11 +46,11 @@ public protocol SurfaceUnderstanding: Sendable {
     func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap
 }
 
-// MARK: - Team 2
+// MARK: - Tracking / Spatial
 
 /// Emits a live stream of spatial state: where the panel is, where the finger is.
 ///
-/// Owned by **Team 2 — Tracking**.
+/// Owned by **Tracking / Spatial — Tracking**.
 ///
 /// Fingertip positions are in normalized panel space: `(0, 0)` top-left, `(1, 1)`
 /// bottom-right, `y` down. See `COORDINATES.md`.
@@ -71,11 +71,11 @@ public protocol TrackingSource: Sendable {
     func frames() -> AsyncStream<TrackingFrame>
 }
 
-// MARK: - Team 3
+// MARK: - Experience
 
 /// Turns guidance into something the user can feel, hear, or be told.
 ///
-/// Owned by **Team 3 — ContourFeedback**.
+/// Owned by **Experience — ContourFeedback**.
 ///
 /// This is the end of the pipeline: it consumes and returns nothing. A
 /// conformance owns haptics, audio, and speech, and decides for itself how to

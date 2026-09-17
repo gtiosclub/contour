@@ -1,6 +1,6 @@
 //
 //  PanelDetector.swift
-//  SurfaceUnderstanding — Team 1
+//  SurfaceUnderstanding — Surface / Panel Reader
 //
 //  Weeks 2–3 deliverable: "Detect an appliance interface in a photo."
 //
@@ -65,7 +65,7 @@ public struct PanelDetector: Sendable {
     public func detectPanel(
         in photo: PanelPhoto
     ) async throws -> (quad: PanelQuad, confidence: Double) {
-        fatalError("unimplemented — owned by Team 1 (SurfaceUnderstanding)")
+        fatalError("unimplemented — owned by Surface / Panel Reader")
     }
 
     /// Map a point inside `quad` onto the panel's unit square.
@@ -74,6 +74,6 @@ public struct PanelDetector: Sendable {
     /// space becomes panel space. Once you have this, nothing else in the
     /// package should think about the source image at all.
     public func rectify(_ point: PanelPoint, within quad: PanelQuad) -> PanelPoint {
-        fatalError("unimplemented — owned by Team 1 (SurfaceUnderstanding)")
+        fatalError("unimplemented — owned by Surface / Panel Reader")
     }
 }

@@ -1,10 +1,10 @@
 //
 //  TrackingTests.swift
-//  Tracking — Team 2
+//  Tracking — Tracking / Spatial
 //
 //  Structural tests so CI is green on day one.
 //
-//  Team 2: your real tests replay a recorded frame fixture through the
+//  Tracking / Spatial: your real tests replay a recorded frame fixture through the
 //  projection maths and assert on panel-space output. Record the fixture early —
 //  a tracking bug you cannot replay is a tracking bug you cannot fix.
 //

@@ -1,13 +1,13 @@
 //
 //  LabelReader.swift
-//  SurfaceUnderstanding — Team 1
+//  SurfaceUnderstanding — Surface / Labels & Target Matching
 //
 //  Weeks 2–3 deliverable: "Identify basic buttons and labels" (the labels half).
 //
 //  Stage 3 of three. Read the text on each control.
 //
 //  `nil` IS A GOOD ANSWER. "There is a button here and we cannot read it" is
-//  shippable — Team 3 announces unlabelled controls positionally ("top-left
+//  shippable — Experience announces unlabelled controls positionally ("top-left
 //  button"). Guessing a label the user then presses is far worse than admitting
 //  you could not read it.
 //
@@ -29,6 +29,6 @@ public struct LabelReader: Sendable {
         panel: PanelQuad,
         regions: [PanelRect]
     ) async throws -> [String?] {
-        fatalError("unimplemented — owned by Team 1 (SurfaceUnderstanding)")
+        fatalError("unimplemented — owned by Surface / Labels & Target Matching")
     }
 }

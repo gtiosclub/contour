@@ -7,7 +7,8 @@
 //  │  Changes after the freeze require sign-off from all four team leads.     │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
-//  Consumed by: Team 3 (ContourFeedback). This is the ONLY thing Team 3 reads.
+//  Consumed by: Experience (ContourFeedback). It is the ONLY thing that
+//  package reads.
 //
 //  `vector` is in NORMALIZED PANEL SPACE:
 //  +dx is rightward, +dy is DOWNWARD. See Packages/ContourCore/COORDINATES.md.
@@ -19,9 +20,9 @@ import Foundation
 
 /// A terminal event worth telling the user about.
 ///
-/// Exactly four cases. This enum is the reason Team 3 can build its whole haptic
-/// and audio vocabulary before Teams 1 and 2 have working code: there are four
-/// things that can happen, and that list is closed.
+/// Exactly four cases. This enum is the reason Experience can build its whole
+/// haptic and audio vocabulary before Surface Understanding and Tracking have
+/// working code: there are four things that can happen, and that list is closed.
 ///
 /// Adding a fifth case is a `ContourCore` change — after the Week 2 freeze it
 /// needs all four leads, because every `switch` in the app has to grow a branch.
@@ -48,7 +49,7 @@ public enum OutcomeSignal: String, Hashable, Sendable, Codable, CaseIterable {
 
 /// Which way the finger has to move, and how far it has to go.
 ///
-/// Split into direction and distance on purpose: Team 3's haptics encode
+/// Split into direction and distance on purpose: Experience's haptics encode
 /// *direction* and its audio encodes *proximity*, and neither wants to do
 /// trigonometry at 60 Hz.
 public struct GuidanceVector: Hashable, Sendable, Codable {
@@ -87,7 +88,7 @@ public struct GuidanceVector: Hashable, Sendable, Codable {
 /// Everything the feedback layer needs to know, right now.
 ///
 /// One value, one moment. `GuidanceState` is deliberately not a stream type and
-/// not a state machine — Team 3 receives these one at a time through
+/// not a state machine — Experience receives these one at a time through
 /// `FeedbackEngine.present(_:)` and decides for itself what to do with the
 /// history.
 ///
@@ -107,7 +108,7 @@ public struct GuidanceState: Hashable, Sendable, Codable {
     /// A terminal event, if one just happened.
     ///
     /// `nil` is the common case and means "still guiding, nothing to announce".
-    /// Non-`nil` means the interaction reached an end state — Team 3 plays the
+    /// Non-`nil` means the interaction reached an end state — Experience plays
     /// corresponding signal.
     public var outcome: OutcomeSignal?
 

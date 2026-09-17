@@ -1,10 +1,10 @@
 //
 //  PlaceholderViews.swift
-//  ContourUI — Team 4
+//  ContourUI — Experience / Accessibility & Launch
 //
 //  Scaffolding so ContourApp has something to present on day one. These render
 //  a labelled placeholder and nothing else — no camera session, no preview
-//  layer, no overlay maths. Team 4 replaces them wholesale.
+//  layer, no overlay maths. The App Flow lane replaces them wholesale.
 //
 
 import ContourCore
@@ -20,7 +20,7 @@ public struct ContourCameraView: View {
     public var body: some View {
         ContourPlaceholder(
             title: "Camera experience",
-            detail: "ContourUI — owned by Team 4. Not implemented yet."
+            detail: "ContourUI — owned by Experience. Not implemented yet."
         )
     }
 }
@@ -41,7 +41,7 @@ public struct TargetSelectionView: View {
         VStack(alignment: .leading, spacing: 8) {
             ContourPlaceholder(
                 title: "Target selection",
-                detail: "ContourUI — owned by Team 4. Not implemented yet."
+                detail: "ContourUI — owned by Experience. Not implemented yet."
             )
 
             ForEach(map.buttons) { button in
