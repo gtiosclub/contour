@@ -7,8 +7,8 @@
 //  │  Changes after the freeze require sign-off from all four team leads.     │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
-//  Produced by: Team 4 (ContourUI, capture)
-//  Consumed by: Team 1 (SurfaceUnderstanding)
+//  Produced by: Experience (ContourUI, capture)
+//  Consumed by: Surface Understanding (SurfaceUnderstanding)
 //
 //  The handoff from "the user took a picture" to "what is on this panel".
 //  See Packages/ContourCore/COORDINATES.md for how the answer comes back.
@@ -20,8 +20,9 @@ import Foundation
 ///
 /// A deliberately small subset: the four right-angle rotations. Mirrored and
 /// flipped orientations are not produced by our capture path, so they are not in
-/// the contract. Team 1 normalizes to upright before detection; everything that
-/// leaves Team 1 is in upright panel space regardless of this value.
+/// the contract. Surface Understanding normalizes to upright before detection;
+/// everything that leaves that package is in upright panel space regardless of
+/// this value.
 public enum PhotoOrientation: String, Hashable, Sendable, Codable, CaseIterable {
     case up
     case right

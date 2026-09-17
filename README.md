@@ -7,7 +7,7 @@ on it. Point the phone at a microwave, a lift panel, a washing machine; the app
 reads the panel, you say which control you want, and it guides your finger there
 with haptics, audio, and speech until you're on it.
 
-The hard part isn't any one of those things. It's that four student teams have
+The hard part isn't any one of those things. It's that three student teams have
 to build them at the same time, on different schedules, without blocking each
 other. That's what this repo's shape is for.
 
@@ -15,29 +15,35 @@ other. That's what this repo's shape is for.
 
 ## The one rule
 
-> **Every package depends on `ContourCore` and nothing else.**
+> **Every package's shipping code depends on `ContourCore` and nothing else.**
+> **Test targets may also use `ContourMocks`.**
 
 `ContourCore` holds the shared types and the three protocols. It depends on
-nothing. The four team packages depend only on it, which means **no team can
+nothing. Every other package depends only on it, which means **no team can
 import another team's code** — not by accident, not on a deadline, not "just
 this once". `ContourApp` and `Harness` are the only places the packages meet.
 
+That holds *within* a team too. Experience owns `ContourFeedback`, `ContourUI`
+and `ContourMocks`, and they still can't import each other. Same team, same
+rule — the boundary is about what ships linked together, not about who is in
+which group chat.
+
 ```
-                      ┌──────────────────┐
-                      │   ContourCore    │   types + protocols. depends on nothing.
-                      └────────▲─────────┘
-            ┌──────────┬───────┴──┬──────────┬──────────┐
-            │          │          │          │          │
-   ┌────────┴───┐ ┌────┴────┐ ┌───┴──────┐ ┌─┴──────┐ ┌─┴──────────┐
-   │  Surface   │ │Tracking │ │ Contour  │ │Contour │ │  Contour   │
-   │ Understand │ │         │ │ Feedback │ │  UI    │ │   Mocks    │
-   │   Team 1   │ │ Team 2  │ │  Team 3  │ │ Team 4 │ │  shared    │
-   └────────┬───┘ └────┬────┘ └───┬──────┘ └─┬──────┘ └─┬──────────┘
-            └──────────┴──────┬───┴──────────┴──────────┘
-                    ┌─────────┴──────────┐
-                    │ ContourApp (iOS)   │   the wiring. may depend on everything.
-                    │ Harness   (macOS)  │
-                    └────────────────────┘
+                                    ┌──────────────────┐
+                                    │   ContourCore    │   types + protocols. depends on nothing.
+                                    └─────────▲────────┘
+          ┌─────────────────┬─────────────────┴─────────────────┬─────────────────┐
+  ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐ ┌───────────────┐
+  │    Surface    │ │    Tracking   │ │    Contour    │ │    Contour    │ │    Contour    │
+  │ Understanding │ │               │ │    Feedback   │ │       UI      │ │     Mocks     │
+  ├───────────────┤ ├───────────────┤ ├───────────────┤ ├───────────────┤ ├───────────────┤
+  │    Surface    │ │    Tracking   │ │   Experience  │ │   Experience  │ │   Experience  │
+  └───────┬───────┘ └───────┬───────┘ └───────┬───────┘ └───────┬───────┘ └───────┬───────┘
+          └─────────────────┴─────────────────┼─────────────────┴─────────────────┘
+                                   ┌──────────┴─────────┐
+                                   │ ContourApp (iOS)   │   the wiring. may depend on everything.
+                                   │ Harness   (macOS)  │
+                                   └────────────────────┘
 ```
 
 `Scripts/check-dependencies.sh` enforces this, and CI runs it on every PR. If it
@@ -53,14 +59,14 @@ that the type belongs in `ContourCore`, or that the wiring belongs in
 is marked **DRAFT** and it is open: argue with it, file issues, bring changes to
 a lead. That window closes at the **end of Week 2**.
 
-**After the freeze, any change to `ContourCore` requires sign-off from all four
-team leads.** Not one lead, not a majority — all four. A change there breaks
-everyone at once, so the cost of getting it wrong is four teams' week, not one
-person's afternoon.
+**After the freeze, any change to `ContourCore` requires sign-off from the leads
+of all three teams.** Not one team, not a majority — all three. A change there
+breaks everyone at once, so the cost of getting it wrong is three teams' week,
+not one person's afternoon.
 
 If you open a PR that touches `ContourCore` after the freeze:
 
-1. Tag all four leads.
+1. Tag the leads of all three teams.
 2. Say in the PR description exactly what breaks and who has to change code.
 3. Update `ContourMocks` in the same PR so the fakes still match.
 4. Update `COORDINATES.md` if the coordinate convention is affected.
@@ -72,31 +78,58 @@ time you will ever have to change it.
 
 ---
 
-## The four teams
+## The three teams
 
 Each package has its own README with that track's Weeks 2–3 deliverables, its
-contract, and the specific traps that will bite it. Start there, not here.
+contract, its lanes, and the specific traps that will bite it. Start there, not
+here.
 
-| Team | Package | Owns | Produces |
-|------|---------|------|----------|
-| **Team 1** | [`Packages/SurfaceUnderstanding`](Packages/SurfaceUnderstanding/README.md) | Reading a panel from a photo — detection, OCR, layout | `SurfaceMap` |
-| **Team 2** | [`Packages/Tracking`](Packages/Tracking/README.md) | Finding the finger and the panel in live frames, frame to frame | `AsyncStream<TrackingFrame>` |
-| **Team 3** | [`Packages/ContourFeedback`](Packages/ContourFeedback/README.md) | Haptics, audio, speech, the four outcome signals | consumes `GuidanceState` |
-| **Team 4** | [`Packages/ContourUI`](Packages/ContourUI/README.md) | Camera experience, target selection, accessibility | `PanelPhoto`, target choice |
+| Team | Leads | Packages | Owns | Produces |
+|------|-------|----------|------|----------|
+| **Surface Understanding** | Neel, Aadarsh | [`SurfaceUnderstanding`](Packages/SurfaceUnderstanding/README.md) | Reading a panel from a photo — detection, OCR, layout, matching a spoken request to a control | `SurfaceMap`, `TargetMatch` |
+| **Tracking / Spatial** | Remy, Zaynah | [`Tracking`](Packages/Tracking/README.md) | Finding the finger and the panel in live frames, frame to frame | `AsyncStream<TrackingFrame>` |
+| **Experience** | Ashwanth, Nancy, Anushka | [`ContourFeedback`](Packages/ContourFeedback/README.md), [`ContourUI`](Packages/ContourUI/README.md), [`ContourMocks`](Packages/ContourMocks/README.md) | Everything the user perceives: haptics, audio, speech, the camera experience, target selection, accessibility | `PanelPhoto`, target choice; consumes `GuidanceState` |
+
+Experience is the two old Feedback/Guidance and Product/UI teams, merged. The
+packages did not merge with them — see [the one rule](#the-one-rule).
 
 Shared, owned by the leads:
 
 | | |
 |---|---|
 | [`Packages/ContourCore`](Packages/ContourCore/README.md) | The contract. Types + three protocols. **Frozen end of Week 2.** |
-| [`Packages/ContourMocks`](Packages/ContourMocks/README.md) | Fake implementations of all three protocols. What everyone builds against until Week 4. |
 | `ContourApp/` | The iOS app. Wires the packages together and owns no features. |
-| `Harness/` | macOS rig for Team 3. Synthetic tracking frames, no phone required. |
 
-There is a fifth track in the timeline — **Design** (state-by-state feel spec,
-camera acquisition and target selection flows). It has no Swift package because
-its Weeks 2–3 deliverables are specs and flows, not code. It owes Team 3 the feel
-spec and Team 4 the flows.
+`Packages/ContourMocks` and `Harness/` sit with Experience but serve everyone;
+a change to either is reviewed by the leads as well.
+
+There is a fourth track in the timeline — **Design** (Kaylee): state-by-state
+feel spec, camera acquisition and target selection flows. It has no Swift package
+because its Weeks 2–3 deliverables are specs and flows, not code. It owes
+Experience both the feel spec and the flows.
+
+### Lanes
+
+Every junior owns a lane. A lane is a named slice of a package with one owner,
+so that "who is doing the haptics" has an answer that isn't "Experience".
+
+| Team | Lane | Owner | Files |
+|---|---|---|---|
+| Surface Understanding | Panel Reader | Sanvi | `PanelDetector`, `ButtonDetector`, `LiveSurfaceUnderstanding` |
+| Surface Understanding | Labels & Target Matching | Srinivas | `LabelReader`, `TargetMatcher` |
+| Surface Understanding | Eval & Test Set | Neel, Aadarsh | `TestSet` |
+| Tracking / Spatial | Panel Registration & Lost Tracking | Miguel | `PanelTracker` |
+| Tracking / Spatial | Fingertip & Frame Math | Babitha | `FingertipTracker` |
+| Tracking / Spatial | TrackingFrame emitter & latency | Remy, Zaynah | `LiveTrackingSource` |
+| Experience | Haptics | Karan | `ProximityHaptics`, `ChosenGuidanceModel` |
+| Experience | Audio & Speech | Rishika | `DirectionalAudio`, `SpeechQueue` |
+| Experience | App Flow | Asav | `CaptureFlow`, `GuidanceFlow` |
+| Experience | Outcome Signals & Harness | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer`, `LiveFeedbackEngine`, `Harness/` |
+| Experience | Accessibility & Launch | Ashwanth, Nancy, Anushka | `PlaceholderViews`, `ContourApp/ContentView` |
+| Experience | Mocks & Integration | Ashwanth, Nancy, Anushka | `Packages/ContourMocks`, `ContourApp/ContourPipeline` |
+
+Each source file's header names its lane. The PR template asks which lane a
+change sits in — that is the question, not which package.
 
 Dates, gates, and every track's deliverables: **[`docs/TIMELINE.md`](docs/TIMELINE.md)**.
 
@@ -105,16 +138,25 @@ Dates, gates, and every track's deliverables: **[`docs/TIMELINE.md`](docs/TIMELI
 Every protocol has a mock from day one, so each team can build and test its
 whole package before any other team has working code:
 
-- **Team 1** gets `PanelPhoto` in, returns a `SurfaceMap`. Doesn't need a camera.
-- **Team 2** gets a target and emits frames. Doesn't need detection to work.
-- **Team 3** gets `GuidanceState` and nothing else — and gets the Harness, which
-  runs on a Mac with no phone and no camera at all.
-- **Team 4** gets `MockSurfaceMaps.microwave`, a hardcoded six-button panel, and
+- **Surface Understanding** gets `PanelPhoto` in, returns a `SurfaceMap`.
+  Doesn't need a camera.
+- **Tracking / Spatial** gets a target and emits frames. Doesn't need detection
+  to work.
+- **Experience** gets `GuidanceState` and nothing else for feedback — and gets
+  the Harness, which runs on a Mac with no phone and no camera at all. For the
+  UI side it gets `MockSurfaceMaps.microwave`, a hardcoded six-button panel, and
   can build the whole selection flow against it.
 
+**How you actually reach the mocks:** `import ContourMocks` in your package's
+**test target**, which every team package's manifest already allows. Your
+package's *source* target still cannot see them, and CI fails the PR if it does —
+that is what keeps fake microwaves off a user's phone. So a mock-driven test
+lives in `Tests/`, and the app gets its mocks from `ContourApp`, which may import
+anything.
+
 The mocks are **deterministic** — seeded, no randomness, fixed timestamps. Same
-input, same output, every run, every machine. Don't break that; tests across
-four teams depend on it.
+input, same output, every run, every machine. Don't break that; tests across all
+three teams depend on it.
 
 ---
 
@@ -150,8 +192,8 @@ that pins it.
 
 - **macOS 26** or later
 - **Xcode 26** (Swift 6, iOS 26 SDK) — the project will not open in Xcode 25
-- An **iPhone running iOS 26** for anything involving the camera. Teams 1 and 3
-  can get a long way without one.
+- An **iPhone running iOS 26** for anything involving the camera. Surface
+  Understanding, and Experience's feedback lanes, can get a long way without one.
 
 ### Clone and open
 
@@ -185,13 +227,13 @@ pointing at a microwave.
 
 What you'll see on day one is a status screen listing which components are live
 and which are mocked, plus buttons to run the mock pipeline end to end. That's
-expected — all four packages are empty rooms.
+expected — the four team packages are still empty rooms.
 
 ### Run the Harness
 
 The Harness is a **macOS app**. No iPhone, no camera, no tracking. It builds
 synthetic `TrackingFrame`s from sliders and pushes them into whatever
-`FeedbackEngine` you inject. Team 3 should live in it.
+`FeedbackEngine` you inject. Experience should live in it.
 
 1. Open `Contour.xcworkspace`.
 2. Select the **`Harness`** scheme and **My Mac**.
@@ -237,14 +279,14 @@ app target — they'll run in seconds instead of minutes.
 ## Working in your package
 
 Your package is an **empty room**. Every function body is
-`fatalError("unimplemented — owned by <team>")` and every file has a header
-saying what the package owes the app. Replace the bodies; **keep the
-signatures** — other teams are compiling against them right now.
+`fatalError("unimplemented — owned by <team> / <lane>")` and every file has a
+header naming its lane and what the package owes the app. Replace the bodies;
+**keep the signatures** — other teams are compiling against them right now.
 
 When your package is ready to be switched on, move your line from
 `ContourPipeline.mock()` into `ContourPipeline.live()` in
 `ContourApp/ContourApp/ContourPipeline.swift` and add your `Component` to
-`liveComponents`. Mixed configurations — two teams live, two still mocked — are
+`liveComponents`. Mixed configurations — one team live, two still mocked — are
 expected and supported. That's why each protocol is mocked separately.
 
 ### Conventions
@@ -256,8 +298,9 @@ expected and supported. That's why each protocol is mocked separately.
 - **Accessibility is the product, not a pass at the end.** Contour exists for
   people who can't see the panel. Every control gets a label and a trait the day
   it's added, and VoiceOver is how you test UI work.
-- **One PR, one package.** If you're touching two teams' packages, something is
-  in the wrong place.
+- **One PR, one lane.** If you're touching two teams' packages, something is in
+  the wrong place. Experience owns three packages, so "one team" isn't a tight
+  enough rule there — name the lane instead.
 
 ---
 
@@ -271,12 +314,12 @@ contour/
 ├── Packages/                    every package has its own README — read yours
 │   ├── ContourCore/             the contract — FROZEN END OF WEEK 2
 │   │   └── COORDINATES.md       the coordinate convention. read it.
-│   ├── SurfaceUnderstanding/    Team 1 — Surface Understanding
-│   ├── Tracking/                Team 2 — Tracking / Spatial
-│   ├── ContourFeedback/         Team 3 — Feedback / Guidance
-│   ├── ContourUI/               Team 4 — Product / UI
-│   └── ContourMocks/            deterministic fakes (Team 4 ships these)
-├── Harness/                     macOS rig — Team 3's blindfold tester
+│   ├── SurfaceUnderstanding/    Surface Understanding
+│   ├── Tracking/                Tracking / Spatial
+│   ├── ContourFeedback/         Experience
+│   ├── ContourUI/               Experience
+│   └── ContourMocks/            deterministic fakes (Experience ships these)
+├── Harness/                     macOS rig — Experience's blindfold tester
 ├── Scripts/
 │   └── check-dependencies.sh    enforces the one rule
 └── .github/                     CI, PR template, CODEOWNERS
@@ -289,7 +332,9 @@ contour/
 Every PR and every push to `main` runs:
 
 1. **Package isolation** — `Scripts/check-dependencies.sh`. Catches a team
-   reaching into another team's package, in the manifest or in an `import`.
+   reaching into another team's package, in the manifest or in an `import`, and
+   catches `ContourMocks` reaching a shipping target rather than staying in
+   `Tests/`.
 2. **`swift test`** for all six packages, in parallel, natively on macOS.
 3. **`xcodebuild build`** for `ContourApp` (iOS Simulator) and `Harness` (macOS).
 

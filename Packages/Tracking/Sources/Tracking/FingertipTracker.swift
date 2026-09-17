@@ -1,6 +1,6 @@
 //
 //  FingertipTracker.swift
-//  Tracking — Team 2
+//  Tracking — Tracking / Fingertip & Frame Math
 //
 //  Weeks 2–3 deliverable: "Track the index fingertip."
 //
@@ -28,6 +28,6 @@ public struct FingertipTracker: Sendable {
     /// - Returns: the fingertip in normalized panel space, or `nil` if no hand
     ///   was observed this frame. `nil` means "not seen" — never `(0, 0)`.
     public func fingertip(projectedOnto pose: PanelPose) async -> PanelPoint? {
-        fatalError("unimplemented — owned by Team 2 (Tracking)")
+        fatalError("unimplemented — owned by Tracking / Fingertip & Frame Math")
     }
 }

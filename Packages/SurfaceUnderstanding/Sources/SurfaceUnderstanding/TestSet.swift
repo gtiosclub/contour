@@ -1,6 +1,6 @@
 //
 //  TestSet.swift
-//  SurfaceUnderstanding — Team 1
+//  SurfaceUnderstanding — Surface / Eval & Test Set
 //
 //  Weeks 2–3 deliverable: "Hand-label the test set."
 //
@@ -87,6 +87,6 @@ public enum TestSet {
         against expected: SurfaceMap,
         overlapThreshold: Double = 0.5
     ) -> SampleScore {
-        fatalError("unimplemented — owned by Team 1 (SurfaceUnderstanding)")
+        fatalError("unimplemented — owned by Surface / Eval & Test Set")
     }
 }

@@ -1,6 +1,6 @@
 //
 //  GuidanceFlow.swift
-//  ContourUI — Team 4
+//  ContourUI — Experience / App Flow
 //
 //  Weeks 2–3 deliverable: "Basic target selection and guidance flow."
 //
@@ -10,7 +10,8 @@
 //  accessibility document as a controller.
 //
 //  WHAT THIS DOES NOT DO
-//  It never calls Team 1, 2, or 3 directly. ContourUI depends on ContourCore
+//  It never calls Surface Understanding, Tracking, or ContourFeedback directly.
+//  ContourUI depends on ContourCore
 //  and nothing else. The flow says "I have a photo" and "the user chose this
 //  button"; ContourApp does the rest and hands results back.
 //
@@ -53,7 +54,7 @@ public struct GuidanceFlow: Sendable {
 
     /// The stage the flow is in right now.
     public func currentStage() async -> GuidanceFlowStage {
-        fatalError("unimplemented — owned by Team 4 (ContourUI)")
+        fatalError("unimplemented — owned by Experience / App Flow")
     }
 
     /// Move the flow to `stage`, announcing the transition.
@@ -61,7 +62,7 @@ public struct GuidanceFlow: Sendable {
     /// Every transition is announced. A user who cannot see the screen has no
     /// other way to know the app moved on.
     public func advance(to stage: GuidanceFlowStage) async {
-        fatalError("unimplemented — owned by Team 4 (ContourUI)")
+        fatalError("unimplemented — owned by Experience / App Flow")
     }
 
     /// What to tell the user when the flow enters `stage`.
@@ -71,6 +72,6 @@ public struct GuidanceFlow: Sendable {
     /// `GuidanceFlowStage` produces a non-empty announcement is worth writing
     /// before any UI exists.
     public func announcement(for stage: GuidanceFlowStage) -> String {
-        fatalError("unimplemented — owned by Team 4 (ContourUI)")
+        fatalError("unimplemented — owned by Experience / App Flow")
     }
 }

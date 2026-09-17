@@ -2,7 +2,7 @@
 //  MockSurfaceUnderstanding.swift
 //  ContourMocks
 //
-//  Team 1's stand-in. Returns the same microwave panel every time.
+//  Surface Understanding's stand-in. Returns the same microwave panel every time.
 //
 //  COORDINATES: normalized panel space, (0,0) top-left, (1,1) bottom-right,
 //  y DOWNWARD. See Packages/ContourCore/COORDINATES.md.
@@ -95,7 +95,7 @@ public struct MockSurfaceUnderstanding: SurfaceUnderstanding {
     public let map: SurfaceMap
 
     /// If set, `surfaceMap(from:)` throws this instead of returning `map`.
-    /// Use it to exercise the failure paths without waiting for Team 1.
+    /// Use it to exercise the failure paths without waiting for Surface Understanding.
     public let failure: SurfaceUnderstandingError?
 
     /// Artificial delay before returning, to stand in for detection latency.

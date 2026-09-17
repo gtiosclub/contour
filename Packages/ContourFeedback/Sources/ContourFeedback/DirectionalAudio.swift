@@ -1,6 +1,6 @@
 //
 //  DirectionalAudio.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience / Audio & Speech
 //
 //  Weeks 2–3 deliverable: "Prototype directional audio."
 //
@@ -52,16 +52,16 @@ public struct DirectionalAudio: Sendable {
     /// Pure and synchronous on purpose — this is the part you can unit-test, and
     /// it is where the axis trap above gets caught.
     public func cue(for direction: PanelVector) -> AudioCue {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Audio & Speech")
     }
 
     /// Render the cue for `state`. Starts audio and returns.
     public func play(for state: GuidanceState) async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Audio & Speech")
     }
 
     /// Stop anything currently playing. Must be safe to call when idle.
     public func stop() async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Audio & Speech")
     }
 }

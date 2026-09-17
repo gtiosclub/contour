@@ -1,9 +1,10 @@
 //
 //  LiveTrackingSource.swift
-//  Tracking — Team 2
+//  Tracking — Tracking / TrackingFrame emitter & latency
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  EMPTY ROOM. This is Team 2's package and nobody else commits here.      │
+//  │  EMPTY ROOM. This is Tracking / Spatial's package, and nobody else       │
+//  │  commits here.                                                           │
 //  │                                                                          │
 //  │  Everything below is a stub. Replace the bodies, keep the signatures —   │
 //  │  the signatures are ContourCore's contract and other teams are building  │
@@ -32,7 +33,7 @@
 import ContourCore
 import Foundation
 
-/// The real tracker. Team 2 builds this out.
+/// The real tracker. Tracking / Spatial builds this out.
 public struct LiveTrackingSource: TrackingSource {
 
     public init() {}
@@ -41,6 +42,6 @@ public struct LiveTrackingSource: TrackingSource {
     ///
     /// - Returns: frames in normalized panel space, at camera rate.
     public func frames() -> AsyncStream<TrackingFrame> {
-        fatalError("unimplemented — owned by Team 2 (Tracking)")
+        fatalError("unimplemented — owned by Tracking / TrackingFrame emitter & latency")
     }
 }

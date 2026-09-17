@@ -1,10 +1,10 @@
 //
 //  ContourFeedbackTests.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience
 //
 //  Structural tests so CI is green on day one.
 //
-//  Team 3: feedback is more testable than it sounds. Assert on the PATTERN you
+//  Experience: feedback is more testable than it sounds. Assert on the PATTERN you
 //  would hand to Core Haptics — event times, intensities, sharpness — not on
 //  what it feels like. Two tests worth writing first:
 //
@@ -30,6 +30,23 @@ func channelsExist() {
     _ = ProximityHaptics()
     _ = DirectionalAudio()
     _ = OutcomeAnnouncer()
+    _ = SpeechQueue()
+}
+
+@Test("speech priorities order so that interrupting outranks the rest")
+func speechPrioritiesAreOrdered() {
+    #expect(SpeechPriority.low < SpeechPriority.normal)
+    #expect(SpeechPriority.normal < SpeechPriority.interrupting)
+    #expect(SpeechPriority.allCases.count == 3)
+}
+
+@Test("an utterance can carry an expiry, because stale guidance misleads")
+func utterancesCanExpire() {
+    let stale = Utterance(text: "left a bit", priority: .low, expiresAfter: .seconds(1))
+    let outcome = Utterance(text: "arrived", priority: .interrupting)
+
+    #expect(stale.expiresAfter != nil, "corrections must be droppable when stale")
+    #expect(outcome.expiresAfter == nil, "an outcome stays true until it is said")
 }
 
 @Test("there are exactly four outcomes to design for")

@@ -1,9 +1,9 @@
 //
 //  ContourPipeline.swift
-//  ContourApp
+//  ContourApp — Experience / Mocks & Integration
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  THE WIRING. This file is where the four packages are assembled, and it  │
+//  │  THE WIRING. This file is where the team packages are assembled, and it  │
 //  │  is the only file in the repo that imports more than one of them.        │
 //  │                                                                          │
 //  │  Teams: you do not need to edit this to work. Build against the          │
@@ -13,7 +13,8 @@
 //
 //  The dependency rule, restated: SurfaceUnderstanding, Tracking,
 //  ContourFeedback and ContourUI each depend on ContourCore and nothing else.
-//  None of them can see each other. This file can see all of them. That
+//  None of them can see each other — not even ContourFeedback and ContourUI,
+//  which Experience owns both of. This file can see all of them. That
 //  asymmetry is the entire architecture.
 //
 
@@ -47,9 +48,9 @@ final class ContourPipeline {
 
         var team: String {
             switch self {
-            case .surfaceUnderstanding: "Team 1"
-            case .tracking: "Team 2"
-            case .feedback: "Team 3"
+            case .surfaceUnderstanding: "Surface Understanding"
+            case .tracking: "Tracking / Spatial"
+            case .feedback: "Experience"
             }
         }
     }
@@ -106,8 +107,8 @@ final class ContourPipeline {
     /// Guide the user's finger to `target` until the stream ends or the task is
     /// cancelled.
     ///
-    /// The whole pipeline in five lines: frames in from Team 2, composed into
-    /// guidance, out to Team 3. The composition step is
+    /// The whole pipeline in five lines: frames in from Tracking, composed into
+    /// guidance, out to Experience. The composition step is
     /// `MockGuidance` — placeholder wiring that gets replaced once the real
     /// guidance policy has an owner. See MockGuidance.swift.
     func guide(to target: SurfaceMap.Button) async {

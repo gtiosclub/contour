@@ -2,7 +2,7 @@
 //  PrintingFeedbackEngine.swift
 //  ContourMocks
 //
-//  Team 3's stand-in. Prints each GuidanceState and keeps it, so the same object
+//  Experience's stand-in. Prints each GuidanceState and keeps it, so the same object
 //  serves as a console trace during development and as a spy in tests.
 //
 //  COORDINATES: `direction` is in normalized panel space — +dx right,

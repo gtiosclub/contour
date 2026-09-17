@@ -1,9 +1,10 @@
 //
 //  LiveFeedbackEngine.swift
-//  ContourFeedback — Team 3
+//  ContourFeedback — Experience / Outcome Signals & Harness
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  EMPTY ROOM. This is Team 3's package and nobody else commits here.      │
+//  │  EMPTY ROOM. This is Experience's package, and nobody outside the team   │
+//  │  commits here.                                                           │
 //  │                                                                          │
 //  │  Everything below is a stub. Replace the bodies, keep the signatures —   │
 //  │  the signatures are ContourCore's contract and other teams are building  │
@@ -18,7 +19,7 @@
 //  YOU ARE NOT BLOCKED BY ANYONE
 //  This package reads exactly one type — GuidanceState — and that type is
 //  already frozen-shaped and already mocked. You do not need a camera, a phone,
-//  or Teams 1 and 2 to start. Run the Harness:
+//  or Surface Understanding and Tracking to start. Run the Harness:
 //
 //      open Contour.xcworkspace     # then run the `Harness` scheme, My Mac
 //
@@ -39,7 +40,7 @@
 import ContourCore
 import Foundation
 
-/// The real feedback engine. Team 3 builds this out.
+/// The real feedback engine. Experience builds this out.
 public struct LiveFeedbackEngine: FeedbackEngine {
 
     public init() {}
@@ -49,6 +50,6 @@ public struct LiveFeedbackEngine: FeedbackEngine {
     /// A state with a non-`nil` `outcome` is terminal — play the corresponding
     /// signal for `arrived`, `lostTracking`, `notFound`, or `lowConfidence`.
     public func present(_ state: GuidanceState) async {
-        fatalError("unimplemented — owned by Team 3 (ContourFeedback)")
+        fatalError("unimplemented — owned by Experience / Outcome Signals & Harness")
     }
 }

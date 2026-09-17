@@ -2,36 +2,45 @@
 #
 # One package, one team. The point of the layout is that a PR to one team's
 # package never needs another team's review — except for ContourCore, which
-# needs all four.
+# needs all three teams' leads.
 #
-# TODO(leads): replace these placeholder handles with the real GitHub teams
-# under the gtiosclub org, or with individual @usernames if teams are not set
-# up yet. Nothing here works until the handles exist.
+# TODO(leads): these are the GitHub teams to create under the gtiosclub org.
+# Nothing here routes until the teams exist and the handles resolve. Until then
+# CODEOWNERS is documentation, not enforcement, and the ContourCore gate is
+# honour-system.
+#
+#   @gtiosclub/contour-leads        every lead, all three teams
+#   @gtiosclub/contour-surface      Surface Understanding
+#   @gtiosclub/contour-tracking     Tracking / Spatial
+#   @gtiosclub/contour-experience   Experience
 
 # Fallback: anything not matched below goes to the leads.
 *                                   @gtiosclub/contour-leads
 
 # ── THE CONTRACT ─────────────────────────────────────────────────────────────
-# Frozen end of Week 2. Every lead reviews. Do not narrow this list.
-/Packages/ContourCore/              @gtiosclub/contour-lead-surface @gtiosclub/contour-lead-tracking @gtiosclub/contour-lead-feedback @gtiosclub/contour-lead-ui
+# Frozen end of Week 2. Every team's leads review. Do not narrow this list.
+/Packages/ContourCore/              @gtiosclub/contour-surface @gtiosclub/contour-tracking @gtiosclub/contour-experience @gtiosclub/contour-leads
 
 # ── TEAM PACKAGES ────────────────────────────────────────────────────────────
-/Packages/SurfaceUnderstanding/     @gtiosclub/contour-team-surface
-/Packages/Tracking/                 @gtiosclub/contour-team-tracking
-/Packages/ContourFeedback/          @gtiosclub/contour-team-feedback
-/Packages/ContourUI/                @gtiosclub/contour-team-ui
+/Packages/SurfaceUnderstanding/     @gtiosclub/contour-surface
+/Packages/Tracking/                 @gtiosclub/contour-tracking
+
+# Experience owns three packages and the Harness. They stay separate packages so
+# that the isolation rule still applies between them — ContourFeedback cannot
+# import ContourUI, same as anyone else.
+/Packages/ContourFeedback/          @gtiosclub/contour-experience
+/Packages/ContourUI/                @gtiosclub/contour-experience
 
 # ── SHARED ───────────────────────────────────────────────────────────────────
-# The timeline puts the mocks on Product/UI ("Mocks for all three interfaces,
-# shipped by Monday Sep 21"). Everyone builds against them, so the leads review
-# alongside Team 4 — a careless change here breaks all four teams' tests.
-/Packages/ContourMocks/             @gtiosclub/contour-team-ui @gtiosclub/contour-leads
+# Every team's tests build against the mocks, so the leads review alongside
+# Experience — a careless change here breaks all three teams' tests at once.
+/Packages/ContourMocks/             @gtiosclub/contour-experience @gtiosclub/contour-leads
 
 # The wiring. Whoever is switching their package on edits this.
 /ContourApp/                        @gtiosclub/contour-leads
 
-# Team 3's rig — they own it, but anyone may add a control they need.
-/Harness/                           @gtiosclub/contour-team-feedback
+# Experience's rig — they own it, but anyone may add a control they need.
+/Harness/                           @gtiosclub/contour-experience
 
 # ── PLUMBING ─────────────────────────────────────────────────────────────────
 /.github/                           @gtiosclub/contour-leads

@@ -50,12 +50,12 @@ space**: a unit square laid over the front face of the detected control panel.
 
 ## Why normalized, and why the panel
 
-Four teams ship independently. Team 1 sees a still photo at whatever resolution
-the capture pipeline gave it. Team 2 sees live frames at a different resolution,
-rotated, cropped. Team 3 never sees an image at all. Team 4 lays out over a
-preview layer at yet another size. The panel's own unit square is the only frame
-of reference all four can agree on without knowing anything about each other's
-internals.
+Three teams ship independently, across five packages. Surface Understanding sees
+a still photo at whatever resolution the capture pipeline gave it. Tracking sees
+live frames at a different resolution, rotated, cropped. Experience's feedback
+side never sees an image at all, while its UI side lays out over a preview layer
+at yet another size. The panel's own unit square is the only frame of reference
+all of them can agree on without knowing anything about each other's internals.
 
 ## Types that use this convention
 
@@ -69,4 +69,5 @@ All of them, in `ContourCore`:
 
 `PanelPose` is the one deliberate exception: it describes where the panel itself
 sits **relative to the camera**, in metres, which is by definition not expressible
-in panel space. It is the bridge between the two worlds and Team 2 owns it.
+in panel space. It is the bridge between the two worlds, and Tracking / Spatial
+owns it.

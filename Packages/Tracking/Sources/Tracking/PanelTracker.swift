@@ -1,6 +1,6 @@
 //
 //  PanelTracker.swift
-//  Tracking — Team 2
+//  Tracking — Tracking / Panel Registration & Lost Tracking
 //
 //  Weeks 2–3 deliverable: "Track the panel as the phone moves."
 //
@@ -24,10 +24,10 @@ public struct PanelTracker: Sendable {
 
     /// Begin tracking the panel described by `map`.
     ///
-    /// The map gives you the panel's layout from Team 1's still-photo pass —
-    /// the anchor you are re-finding in live frames.
+    /// The map gives you the panel's layout from Surface Understanding's
+    /// still-photo pass — the anchor you are re-finding in live frames.
     public func startTracking(_ map: SurfaceMap) async throws {
-        fatalError("unimplemented — owned by Team 2 (Tracking)")
+        fatalError("unimplemented — owned by Tracking / Panel Registration & Lost Tracking")
     }
 
     /// The panel's pose for the current frame.
@@ -36,7 +36,7 @@ public struct PanelTracker: Sendable {
     ///   than nothing when the panel is partly visible — `.degraded` is a real
     ///   state and feedback softens rather than stops for it.
     public func currentPose() async -> PanelPose {
-        fatalError("unimplemented — owned by Team 2 (Tracking)")
+        fatalError("unimplemented — owned by Tracking / Panel Registration & Lost Tracking")
     }
 
     /// Stop tracking and release the camera.
@@ -44,6 +44,6 @@ public struct PanelTracker: Sendable {
     /// Must be safe to call from `AsyncStream.onTermination`, which is where
     /// `LiveTrackingSource` will call it when its consumer is cancelled.
     public func stopTracking() async {
-        fatalError("unimplemented — owned by Team 2 (Tracking)")
+        fatalError("unimplemented — owned by Tracking / Panel Registration & Lost Tracking")
     }
 }

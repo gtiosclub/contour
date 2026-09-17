@@ -1,16 +1,39 @@
-# Feedback / Guidance — Team 3
+# Experience — ContourFeedback
 
 > Everything the user perceives that is not on screen.
 
 The person using Contour is not looking at the phone. Haptics, audio, and speech
-*are* the interface. If your half is wrong, the other three teams' work is
+*are* the interface. If this half is wrong, the other two teams' work is
 invisible — literally.
 
-## What you own
+**Leads:** Ashwanth, Nancy, Anushka · **Juniors:** Karan, Rishika, Asav
 
-`Packages/ContourFeedback` — and nothing else. You do not own detection, live
-tracking, or the camera UI. You own what the guidance *feels* like, and the four
-outcome signals.
+Experience owns three packages — `ContourFeedback`, [`ContourUI`](../ContourUI/README.md)
+and [`ContourMocks`](../ContourMocks/README.md) — plus the `Harness`. This README
+covers `ContourFeedback`.
+
+## What you own here
+
+`Packages/ContourFeedback`. You do not own detection or live tracking. You own
+what the guidance *feels* like, and the four outcome signals.
+
+**You still cannot `import ContourUI` from here**, even though the same team owns
+it. The isolation rule is about what links together, not about who writes it;
+`ContourApp` is where the two meet. If you want a type in both, it belongs in
+`ContourCore`.
+
+## Lanes
+
+| Lane | Owner | Files |
+|---|---|---|
+| **Haptics** | Karan | `ProximityHaptics.swift`, `ChosenGuidanceModel` in `GuidanceModel.swift` |
+| **Audio & Speech** | Rishika | `DirectionalAudio.swift`, `SpeechQueue.swift` |
+| **Outcome Signals & Harness** *(officers)* | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer.swift`, `LiveFeedbackEngine.swift`, `Harness/` |
+
+`GuidanceModel.swift` is shared ground: the bake-off is a whole-team exercise,
+but `ChosenGuidanceModel.kind` sits with Haptics because that lane lives with the
+consequence. `OutcomeAnnouncer` says *what* to speak; `SpeechQueue` decides
+whether it gets said — that split is why they are in different lanes.
 
 ## Your contract
 
@@ -40,8 +63,9 @@ public enum OutcomeSignal: Sendable {
 ```
 
 That list is closed, which is exactly why you can build your whole vocabulary
-before Teams 1 and 2 have working code. Adding a fifth case is a `ContourCore`
-change and needs all four leads after the Week 2 freeze.
+before Surface Understanding and Tracking have working code. Adding a fifth case
+is a `ContourCore` change and needs the leads of all three teams after the Week 2
+freeze.
 
 `notFound` and `lowConfidence` are easy to conflate and must not feel the same.
 "There is no defrost button on this microwave" and "I think I see one but I
@@ -74,10 +98,14 @@ actual test, and you can run it in Week 1.
 
 From the project timeline, your deliverables:
 
-- [ ] **Run the guidance model bake-off (Week 2) and pick one** → `GuidanceModel`
-- [ ] **Prototype proximity haptics** → `ProximityHaptics`
-- [ ] **Prototype directional audio** → `DirectionalAudio`
-- [ ] **Define success and lost-tracking feedback with Design** → `OutcomeAnnouncer`
+- [ ] **Run the guidance model bake-off (Week 2) and pick one** → `GuidanceModel` *(Haptics, whole team)*
+- [ ] **Prototype proximity haptics** → `ProximityHaptics` *(Haptics)*
+- [ ] **Prototype directional audio** → `DirectionalAudio`, `SpeechQueue` *(Audio & Speech)*
+- [ ] **Define success and lost-tracking feedback with Design** → `OutcomeAnnouncer` *(Outcome Signals & Harness)*
+
+These are four of Experience's six Weeks 2–3 deliverables; the other two are in
+[`ContourUI`](../ContourUI/README.md). That is a lot for one team — the lanes
+exist so it is four parallel jobs rather than one queue.
 
 The bake-off is a **gate**, not a task: *"End of Week 2: interfaces and
 coordinate convention frozen. Guidance model chosen from the bake-off."* Whatever
@@ -112,8 +140,9 @@ Full convention: [`../ContourCore/COORDINATES.md`](../ContourCore/COORDINATES.md
 | `ProximityHaptics.swift` | How close, as something you feel. |
 | `DirectionalAudio.swift` | Which way, as something you hear. |
 | `OutcomeAnnouncer.swift` | The four terminal signals, agreed with Design. |
+| `SpeechQueue.swift` | Whether an utterance is said now, later, or dropped as stale. |
 
-Every body is `fatalError("unimplemented — owned by Team 3 (ContourFeedback)")`.
+Every body is `fatalError("unimplemented — owned by Experience / <lane>")`.
 Replace the bodies, keep the signatures.
 
 ## Working
@@ -130,10 +159,12 @@ regression that your fingers will not.
 
 ## Rules
 
-- This package depends on **`ContourCore` and nothing else**. Not on
-  SurfaceUnderstanding, not on Tracking, not on ContourUI, not on ContourMocks.
-  `Scripts/check-dependencies.sh` enforces it in CI.
+- This package's **source** depends on **`ContourCore` and nothing else**. Not on
+  SurfaceUnderstanding, not on Tracking, not on ContourUI — same-team ownership
+  does not change that — and not on ContourMocks.
+- This package's **tests** may also use **`ContourMocks`**.
+  `Scripts/check-dependencies.sh` enforces both halves in CI.
 - `ContourCore` is **frozen at the end of Week 2**. `GuidanceState` is your whole
   world — if it is missing something you need, say so in Week 1 or Week 2.
-- Design owes you the state-by-state feel spec. Weeks 2–3 list it as a joint
-  deliverable; go and get it rather than waiting for it.
+- Design (Kaylee) owes you the state-by-state feel spec. Weeks 2–3 list it as a
+  joint deliverable; go and get it rather than waiting for it.
