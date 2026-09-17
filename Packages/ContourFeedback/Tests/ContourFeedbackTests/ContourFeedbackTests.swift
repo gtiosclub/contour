@@ -30,6 +30,23 @@ func channelsExist() {
     _ = ProximityHaptics()
     _ = DirectionalAudio()
     _ = OutcomeAnnouncer()
+    _ = SpeechQueue()
+}
+
+@Test("speech priorities order so that interrupting outranks the rest")
+func speechPrioritiesAreOrdered() {
+    #expect(SpeechPriority.low < SpeechPriority.normal)
+    #expect(SpeechPriority.normal < SpeechPriority.interrupting)
+    #expect(SpeechPriority.allCases.count == 3)
+}
+
+@Test("an utterance can carry an expiry, because stale guidance misleads")
+func utterancesCanExpire() {
+    let stale = Utterance(text: "left a bit", priority: .low, expiresAfter: .seconds(1))
+    let outcome = Utterance(text: "arrived", priority: .interrupting)
+
+    #expect(stale.expiresAfter != nil, "corrections must be droppable when stale")
+    #expect(outcome.expiresAfter == nil, "an outcome stays true until it is said")
 }
 
 @Test("there are exactly four outcomes to design for")

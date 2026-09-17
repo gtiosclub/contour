@@ -3,7 +3,8 @@
 //
 // DEPENDENCY RULE: ContourMocks depends on ContourCore and nothing else.
 // It implements all three protocols without importing any team's package —
-// that is what makes it safe for all three teams to depend on at once.
+// that is what makes it safe for all three teams to depend on at once, and what
+// lets every team package's TEST target depend on it without creating a cycle.
 // Scripts/check-dependencies.sh enforces this in CI.
 
 import PackageDescription

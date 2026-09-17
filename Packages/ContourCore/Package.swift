@@ -4,6 +4,10 @@
 // ContourCore is THE CONTRACT. It depends on nothing, by design and forever.
 // If you are about to add a `dependencies:` entry to this file, stop and talk
 // to all three teams' leads first. See ../../README.md.
+//
+// Note: ContourCore cannot depend on ContourMocks even in tests — ContourMocks
+// depends on ContourCore, so that would be a cycle. The test-target carve-out
+// in Scripts/check-dependencies.sh is for the team packages only.
 
 import PackageDescription
 
