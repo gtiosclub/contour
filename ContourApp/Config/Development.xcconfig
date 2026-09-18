@@ -1,0 +1,8 @@
+// Shared signing defaults for Debug and Release. Personal values stay local.
+CONTOUR_DEVELOPMENT_TEAM =
+CONTOUR_BUNDLE_ID = edu.gatech.gtiosclub.contour
+
+#include? "Signing.xcconfig.local"
+
+DEVELOPMENT_TEAM = $(CONTOUR_DEVELOPMENT_TEAM)
+CODE_SIGN_STYLE = Automatic

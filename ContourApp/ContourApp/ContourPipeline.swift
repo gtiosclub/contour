@@ -36,6 +36,9 @@ final class ContourPipeline {
     let tracking: any TrackingSource
     let feedback: any FeedbackEngine
 
+    /// Retained for future live tracker initialization; live tracking is still a stub.
+    private(set) var panelReference: PanelReference?
+
     /// Which of the three are real implementations rather than mocks. Rendered
     /// on the placeholder screen so the state of the project is visible at a
     /// glance on day one.
@@ -101,7 +104,10 @@ final class ContourPipeline {
 
     /// Detect the panel in `photo`.
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
-        try await surfaceUnderstanding.surfaceMap(from: photo)
+        panelReference = nil
+        let detection = try await surfaceUnderstanding.detectPanel(from: photo)
+        panelReference = try PanelReference(photo: photo, detection: detection)
+        return detection.map
     }
 
     /// Guide the user's finger to `target` until the stream ends or the task is

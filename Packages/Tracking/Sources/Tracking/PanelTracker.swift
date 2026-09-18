@@ -22,11 +22,11 @@ public struct PanelTracker: Sendable {
 
     public init() {}
 
-    /// Begin tracking the panel described by `map`.
+    /// Begin tracking using the matching reference image, quad, and button map.
     ///
-    /// The map gives you the panel's layout from Surface Understanding's
-    /// still-photo pass — the anchor you are re-finding in live frames.
-    public func startTracking(_ map: SurfaceMap) async throws {
+    /// The reference preserves the pixels, orientation, and logical corner identities
+    /// established by Surface Understanding.
+    public func startTracking(_ reference: PanelReference) async throws {
         fatalError("unimplemented — owned by Tracking / Panel Registration & Lost Tracking")
     }
 
@@ -39,7 +39,7 @@ public struct PanelTracker: Sendable {
         fatalError("unimplemented — owned by Tracking / Panel Registration & Lost Tracking")
     }
 
-    /// Stop tracking and release the camera.
+    /// Stop tracking and release its frame subscription; the app owns the camera.
     ///
     /// Must be safe to call from `AsyncStream.onTermination`, which is where
     /// `LiveTrackingSource` will call it when its consumer is cancelled.

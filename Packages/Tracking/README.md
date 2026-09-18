@@ -47,8 +47,8 @@ a `PanelPose` relative to the camera, and a `trackingQuality` of
 1. **Never go silent.** When tracking drops, keep emitting
    `TrackingFrame.lost(at:)`. Consumers must be able to tell "no finger" from
    "no source". A silent stream reads as a hang.
-2. **Clean up in `onTermination`.** Cancelling the consuming task must stop the
-   camera. The `AsyncStream` continuation is where you hook that.
+2. **Clean up in `onTermination`.** Cancelling the consuming task must stop tracking and release its
+   frame subscription. The app owns the shared camera lifetime. The `AsyncStream` continuation is where you hook that.
 
 ## Weeks 2–3 (Sep 21 – Oct 2)
 
@@ -72,8 +72,8 @@ above the top edge, and guidance needs that to say "down and left". Clamping it
 to `0` silently tells the user they are on the edge of the panel when they are
 not.
 
-`PanelPose` is the one camera-space thing you emit, and it is yours. Everything
-else is panel space. Full convention:
+`PanelPose` is the one camera-space thing you emit, and it is yours. Production fingertip output is panel space; debug image points and
+reference quads use Core’s separate image-space types. Full convention:
 [`../ContourCore/COORDINATES.md`](../ContourCore/COORDINATES.md).
 
 ## Files
@@ -118,3 +118,14 @@ CI fails the PR if it does.
 - `ContourCore` is **frozen at the end of Week 2**. `PanelPose` is the type most
   likely to need a change — if its shape is wrong for you, say so in Week 1 or
   Week 2, not Week 4. After the freeze it needs the leads of all three teams.
+
+## Development scaffold
+
+The app's Developer tools → Tracking Diagnostics screen uses a shared camera
+and a replaceable `TrackingFrameProcessor`. It currently reports unimplemented.
+Tracking algorithms stay in this package; app debug screens are maintained with
+Experience's Mocks & Integration lane. See [camera setup](../../docs/CAMERA_SCAFFOLD.md).
+
+Panel initialization now accepts `PanelReference`, not a bare map. Start with
+[the fingertip issue](../../docs/issues/fingertip-tracking.md) and
+[the two-image panel issue](../../docs/issues/panel-tracking.md).

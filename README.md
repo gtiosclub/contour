@@ -162,7 +162,7 @@ three teams depend on it.
 
 ## Coordinates: read this before you write a position
 
-Every position that crosses a package boundary is in **normalized panel space**:
+Button and guidance positions are in **normalized panel space**:
 
 ```
     x = 0                        x = 1
@@ -214,14 +214,21 @@ pointing at a microwave.
 
 1. Plug in an iPhone running iOS 26 and trust the Mac.
 2. Select the **`ContourApp`** scheme and your device.
-3. **Set your signing team.** `DEVELOPMENT_TEAM` is deliberately blank in the
-   repo so it doesn't fight with your Apple ID:
-   - Select the `ContourApp` target → **Signing & Capabilities**
-   - Tick **Automatically manage signing**
-   - Pick your personal team (a free Apple ID works)
-   - If the bundle ID `edu.gatech.gtiosclub.contour` is taken, append something:
-     `edu.gatech.gtiosclub.contour.yourname`
-   - **Do not commit either change.** If you do, you break everyone else's build.
+3. **Set up local signing once.** Sign into Xcode's Apple Accounts settings.
+   Copy the template from the repo root (edit instead if the local file exists):
+
+   ```bash
+   cp ContourApp/Config/Signing.example.xcconfig ContourApp/Config/Signing.xcconfig.local
+   ```
+
+   Set `CONTOUR_DEVELOPMENT_TEAM` to your 10-character team ID and
+   `CONTOUR_BUNDLE_ID` to a unique ID such as `edu.gatech.contour.yourname`.
+   Edit this Git-ignored file instead of changing the team in the project's
+   Signing tab. Debug and Release use it; the test bundle gets a `.tests` suffix.
+   Automatic signing is enabled. Without the local file, simulator builds work;
+   device builds require your valid team and provisioning. Your team ID is in
+   Apple Developer membership details or the DEVELOPMENT_TEAM setting from a
+   project where you have already selected the team.
 4. Run. First launch on a free account needs
    *Settings → General → VPN & Device Management → Trust*.
 
@@ -340,3 +347,12 @@ Every PR and every push to `main` runs:
 
 `main` is protected: PR required, CI green required, no force pushes. If CI is
 red, it's red for everyone — fix it before you start something new.
+
+## Camera and panel-reference integration
+
+The app owns shared capture and debug UI; Tracking consumes frames. Surface
+Understanding returns `PanelDetection` (reference photo ID, image-space quad,
+and button map). Core's `PanelReference` pairs it with the matching photo.
+See [the handoff](docs/PANEL_TRACKING.md), [camera scaffold](docs/CAMERA_SCAFFOLD.md),
+and the [finger](docs/issues/fingertip-tracking.md) / [panel](docs/issues/panel-tracking.md)
+starting tasks. Live algorithms remain lane assignments, not scaffold features.

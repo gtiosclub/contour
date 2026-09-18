@@ -67,6 +67,6 @@ func testSetIsEmptyForNow() {
 
 @Test("a full-frame quad covers the unit square")
 func fullFrameQuad() {
-    #expect(PanelQuad.fullFrame.topLeft == PanelPoint(x: 0, y: 0))
-    #expect(PanelQuad.fullFrame.bottomRight == PanelPoint(x: 1, y: 1))
+    #expect(PanelQuad.fullFrame.topLeft == ImagePoint(x: 0, y: 0))
+    #expect(PanelQuad.fullFrame.bottomRight == ImagePoint(x: 1, y: 1))
 }

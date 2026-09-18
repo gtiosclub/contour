@@ -26,7 +26,7 @@
 //  TWO RULES THAT WILL SAVE EVERYONE PAIN
 //  1. Never go silent. When tracking drops, keep emitting `.lost(at:)` frames so
 //     consumers can tell "no finger" from "no source".
-//  2. Clean up in `onTermination`. The stream must stop the camera when the
+//  2. Clean up in `onTermination`. The stream must release its frame subscription when the
 //     consuming task is cancelled.
 //
 

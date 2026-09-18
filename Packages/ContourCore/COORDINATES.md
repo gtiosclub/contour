@@ -2,7 +2,7 @@
 
 **One convention. Every package. No exceptions.**
 
-Every position that crosses a package boundary is expressed in **normalized panel
+Button and guidance positions are expressed in **normalized panel
 space**: a unit square laid over the front face of the detected control panel.
 
 ```
@@ -67,7 +67,24 @@ All of them, in `ContourCore`:
 - `TrackingFrame.fingertip` — where the user's finger is.
 - `GuidanceState.vector` — fingertip to target.
 
-`PanelPose` is the one deliberate exception: it describes where the panel itself
+`PanelPose` is a deliberate exception: it describes where the panel itself
 sits **relative to the camera**, in metres, which is by definition not expressible
 in panel space. It is the bridge between the two worlds, and Tracking / Spatial
 owns it.
+
+## Reference-image coordinates
+
+Core's `ImagePoint` is normalized against the full upright, unmirrored image,
+after applying its orientation: top-left origin, y down. It is not `PanelPoint`.
+For quarter-turns use the oriented (swapped) image dimensions. Preview cropping
+and screen coordinates stay outside the contract.
+
+`PanelQuad` names the image positions of logical panel TL/TR/BR/BL, corresponding
+to panel (0,0)/(1,0)/(1,1)/(0,1). Preserve these identities as the panel moves;
+do not sort the corners again when it rotates. Convert Vision's y-up coordinates
+at the package boundary. Image-space tracking diagnostics may use these types.
+
+`PanelDetection` couples the quad and its button map to a reference photo ID.
+`PanelReference` retains the matching pixels and orientation. Changing the
+stored pixels/crop requires a new photo identity. The map and tracker must use
+the same panel boundary, not independently chosen crops.
