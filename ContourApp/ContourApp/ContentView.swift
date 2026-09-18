@@ -17,6 +17,7 @@ import SwiftUI
 struct ContentView: View {
 
     let pipeline: ContourPipeline
+    @State private var camera = CameraService()
 
     @State private var map: SurfaceMap?
     @State private var lastError: String?
@@ -25,6 +26,14 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
+                #if DEBUG
+                Section("Developer tools") {
+                    NavigationLink("Tracking Diagnostics") {
+                        TrackingDebugView(camera: camera)
+                    }
+                }
+                #endif
+
                 Section("Pipeline") {
                     ForEach(ContourPipeline.Component.allCases, id: \.self) { component in
                         LabeledContent(component.rawValue) {

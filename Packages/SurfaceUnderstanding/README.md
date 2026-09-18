@@ -34,7 +34,7 @@ after.
 
 ```swift
 public protocol SurfaceUnderstanding: Sendable {
-    func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap
+    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection
 }
 ```
 
@@ -118,3 +118,10 @@ rather than hand-rolling a `SurfaceMap` in a test.
 - `ContourCore` is **frozen at the end of Week 2**. If you need a change there,
   raise it in Week 1 or Week 2 — after that it needs the leads of all three
   teams.
+
+## Reference handoff
+
+`PanelDetection` returns the input photo ID, an ordered image-space `PanelQuad`,
+and a map normalized using those exact corners. The app constructs
+`PanelReference` with the matching photo for Tracking. `ImagePoint` and
+`PanelQuad` live in Core. See [the handoff](../../docs/PANEL_TRACKING.md).

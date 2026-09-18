@@ -37,6 +37,9 @@ public enum PhotoOrientation: String, Hashable, Sendable, Codable, CaseIterable 
 /// has no camera and no UIKit. Decode at your package's edge.
 public struct PanelPhoto: Hashable, Sendable, Codable {
 
+    /// Stable capture identity. Use a new ID when replacing the stored pixels.
+    public let id: UUID
+
     /// The encoded image — HEIC or JPEG as the capture path produced it.
     public var data: Data
 
@@ -53,11 +56,13 @@ public struct PanelPhoto: Hashable, Sendable, Codable {
     public var timestamp: Date
 
     public init(
+        id: UUID = UUID(),
         data: Data,
         pixelSize: PixelSize,
         orientation: PhotoOrientation = .up,
         timestamp: Date
     ) {
+        self.id = id
         self.data = data
         self.pixelSize = pixelSize
         self.orientation = orientation
@@ -67,7 +72,7 @@ public struct PanelPhoto: Hashable, Sendable, Codable {
 
 /// Why detection could not produce a `SurfaceMap`.
 ///
-/// Thrown by `SurfaceUnderstanding.surfaceMap(from:)`. Note that "we found a
+/// Thrown by `SurfaceUnderstanding.detectPanel(from:)`. Note that "we found a
 /// panel but we are not sure" is **not** an error — that is a low-confidence
 /// `SurfaceMap`, and the caller decides whether to surface
 /// `OutcomeSignal.lowConfidence`. Errors are for "there is no answer at all".

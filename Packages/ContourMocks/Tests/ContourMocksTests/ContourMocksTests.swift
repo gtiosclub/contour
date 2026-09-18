@@ -62,11 +62,15 @@ struct CannedSurfaceMapTests {
         )
 
         let working = MockSurfaceUnderstanding()
-        #expect(try await working.surfaceMap(from: photo) == MockSurfaceMaps.microwave)
+        let detection = try await working.detectPanel(from: photo)
+        #expect(detection.map == MockSurfaceMaps.microwave)
+        #expect(detection.referencePhotoID == photo.id)
+        #expect(detection.quad == .fullFrame)
+        #expect(try await working.detectPanel(from: photo) == detection)
 
         let broken = MockSurfaceUnderstanding(failure: .noPanelFound)
         await #expect(throws: SurfaceUnderstandingError.noPanelFound) {
-            _ = try await broken.surfaceMap(from: photo)
+            _ = try await broken.detectPanel(from: photo)
         }
     }
 }

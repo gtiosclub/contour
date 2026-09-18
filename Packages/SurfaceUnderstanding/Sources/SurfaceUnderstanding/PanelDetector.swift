@@ -16,41 +16,6 @@
 import ContourCore
 import Foundation
 
-/// Where the panel sits in the source image, before rectification.
-///
-/// The four corners are in **image-relative** coordinates — fractions of the
-/// image's width and height, not pixels — so that this type can cross into a
-/// test without dragging a resolution along with it.
-///
-/// Corners are in reading order: top-left, top-right, bottom-right, bottom-left,
-/// as the panel appears when upright.
-public struct PanelQuad: Hashable, Sendable {
-    public var topLeft: PanelPoint
-    public var topRight: PanelPoint
-    public var bottomRight: PanelPoint
-    public var bottomLeft: PanelPoint
-
-    public init(
-        topLeft: PanelPoint,
-        topRight: PanelPoint,
-        bottomRight: PanelPoint,
-        bottomLeft: PanelPoint
-    ) {
-        self.topLeft = topLeft
-        self.topRight = topRight
-        self.bottomRight = bottomRight
-        self.bottomLeft = bottomLeft
-    }
-
-    /// The whole image, unrectified. Useful as a fallback and in tests.
-    public static let fullFrame = PanelQuad(
-        topLeft: PanelPoint(x: 0, y: 0),
-        topRight: PanelPoint(x: 1, y: 0),
-        bottomRight: PanelPoint(x: 1, y: 1),
-        bottomLeft: PanelPoint(x: 0, y: 1)
-    )
-}
-
 /// Stage 1 — find the panel.
 public struct PanelDetector: Sendable {
 
@@ -73,7 +38,7 @@ public struct PanelDetector: Sendable {
     /// This is the rectification step, and it is the single place where image
     /// space becomes panel space. Once you have this, nothing else in the
     /// package should think about the source image at all.
-    public func rectify(_ point: PanelPoint, within quad: PanelQuad) -> PanelPoint {
+    public func rectify(_ point: ImagePoint, within quad: PanelQuad) -> PanelPoint {
         fatalError("unimplemented — owned by Surface / Panel Reader")
     }
 }

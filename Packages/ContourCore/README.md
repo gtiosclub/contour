@@ -30,7 +30,7 @@ Owned by the leads: Neel and Aadarsh (Surface Understanding), Remy and Zaynah
 
 ```swift
 protocol SurfaceUnderstanding: Sendable {   // Surface Understanding
-    func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap
+    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection
 }
 
 protocol TrackingSource: Sendable {          // Tracking / Spatial
@@ -72,3 +72,10 @@ Things worth arguing about **now**:
 4. Update `COORDINATES.md` if the convention is affected.
 
 The PR template has this as a checklist. `CODEOWNERS` routes the review.
+
+## Reference handoff
+
+`PanelDetection` returns the input photo ID, an ordered image-space `PanelQuad`,
+and a map normalized using those exact corners. The app constructs
+`PanelReference` with the matching photo for Tracking. `ImagePoint` and
+`PanelQuad` live in Core. See [the handoff](../../docs/PANEL_TRACKING.md).

@@ -37,6 +37,8 @@ struct PipelineWiringTests {
 
         let map = try await pipeline.detectPanel(in: photo)
 
+        #expect(pipeline.panelReference?.photo == photo)
+        #expect(pipeline.panelReference?.detection.map == map)
         #expect(map.buttons.count == 6)
         #expect(map.button(labelled: "Start") != nil)
     }

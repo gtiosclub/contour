@@ -88,13 +88,16 @@ public enum MockSurfaceMaps {
 /// A `SurfaceUnderstanding` that always returns the same canned microwave panel.
 ///
 /// Deterministic: same input, same output, no randomness, no I/O. The `photo`
-/// argument is ignored entirely — this mock never decodes anything.
+/// pixels are never decoded; its identity is echoed in the result.
 public struct MockSurfaceUnderstanding: SurfaceUnderstanding {
 
     /// The map to return.
     public let map: SurfaceMap
 
-    /// If set, `surfaceMap(from:)` throws this instead of returning `map`.
+    /// Synthetic image geometry; no pixel analysis is performed.
+    public let quad: PanelQuad
+
+    /// If set, `detectPanel(from:)` throws this instead of returning `map`.
     /// Use it to exercise the failure paths without waiting for Surface Understanding.
     public let failure: SurfaceUnderstandingError?
 
@@ -104,21 +107,23 @@ public struct MockSurfaceUnderstanding: SurfaceUnderstanding {
 
     public init(
         map: SurfaceMap = MockSurfaceMaps.microwave,
+        quad: PanelQuad = .fullFrame,
         failure: SurfaceUnderstandingError? = nil,
         latency: Duration = .zero
     ) {
         self.map = map
+        self.quad = quad
         self.failure = failure
         self.latency = latency
     }
 
-    public func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap {
+    public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
         if latency > .zero {
             try await Task.sleep(for: latency)
         }
         if let failure {
             throw failure
         }
-        return map
+        return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
 }

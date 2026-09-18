@@ -13,7 +13,7 @@
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
 //  WHAT THIS PACKAGE OWES THE APP
-//  A photo of a control panel goes in; a SurfaceMap comes out — what the buttons
+//  A photo goes in; PanelDetection returns its quad, map, and photo ID — what the buttons
 //  are, where they sit, how sure we are.
 //
 //  COORDINATES
@@ -40,11 +40,12 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
     public init() {}
 
-    /// Detect the controls on the panel in `photo`.
+    /// Detect controls using the returned quad for normalization. Echo photo.id.
+    /// Quad corners use the full upright image before panel rectification.
     ///
     /// - Returns: a `SurfaceMap` in normalized panel space.
     /// - Throws: `SurfaceUnderstandingError`.
-    public func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap {
+    public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
         fatalError("unimplemented — owned by Surface / Panel Reader")
     }
 }

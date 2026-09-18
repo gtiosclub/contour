@@ -69,6 +69,56 @@ public struct TargetMatcher: Sendable {
     /// Unlabelled buttons (`label == nil`) can never match by text; if the
     /// request is positional ("top left"), that is a separate problem and it is
     /// not this method's job yet.
+    
+    ///A manual HashMap/Dictionary of values that would be given for a microwave
+    private let synonymTable: [String : String] = [
+        //===== Start =====
+        "start" : "start", "go" : "start", "begin" : "start", "run" : "start", "play" : "start",
+        //===== Stop =====
+        "stop" : "stop", "pause" : "stop", "halt" : "stop", "cancel" : "stop", "clear" : "stop",
+        //===== Defrost =====
+        "defrost" : "defrost", "thaw" : "defrost", "unfreeze" : "defrost",
+        //===== Time =====
+        "timer" : "timer", "clock" : "timer", "time" : "timer",
+        //===== add 30 =====
+        "add30" : "add30", "+30" : "add30", "addthirty" : "add30", "+thirty" : "add30",
+        //===== Numbers to Digits =====
+        "one" : "1", "two" : "2", "three" : "3", "four" : "4", "five" : "5",
+        "six": "6", "seven": "7", "eight": "8", "nine": "9", "ten": "10",
+        "thirty" : "30",
+        //===== add one minute =====
+        "add one minute" : "add one minute", "oneminute" : "add one minute", "addoneminute" : "add one minute",
+        "+ 1 minute" : "add one minute", "+1 minute" : "add one minute", "plus 1 minute" : "add one minute",
+        "plus one minute" : "add one minute", "add 1 minute" : "add one minute",
+    ]
+    
+    ///Makes the given input String:
+    /// Lowercased
+    /// Only contain letters, numbers and "+"
+    /// Filters those out through a given scalar
+    /// Then returns the Unicode version of that scalar that is removed of whitespace and only has 1 space between words
+    
+    private func normalize(_ raw: String) -> String {
+        let lowered = raw.lowercased()
+        let allowed = CharacterSet.alphanumerics
+            .union(.whitespaces)
+            .union(CharacterSet(charactersIn: "+"))
+        let scalars = lowered.unicodeScalars.lazy.filter { allowed.contains($0)}
+        let cleaned = String(String.UnicodeScalarView(scalars))
+        return cleaned
+            .split(separator: " ")
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
+    
+    ///Splits a label on "/" into matchable, normazlied parts
+    
+    private func labelParts(_ label: String) -> [String] {
+        label.split(separator: "/")
+            .map { normalize(String($0)) }
+            .filter { !$0.isEmpty }
+    }
+    
     public func match(_ request: String, in map: SurfaceMap) -> TargetMatch? {
         fatalError("unimplemented — owned by Surface / Labels & Target Matching")
     }

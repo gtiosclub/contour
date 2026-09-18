@@ -4,14 +4,14 @@
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
 //  │  DRAFT — FROZEN END OF WEEK 2                                            │
-//  │  Changes after the freeze require sign-off from all four team leads.     │
+//  │  Changes after the freeze require sign-off from all three teams’ leads.     │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
 //  Three protocols, one per producing team. Each team ships a type conforming to
 //  its own protocol and never imports another team's package. `ContourApp` and
 //  `Harness` are the only places the three meet.
 //
-//      Surface Understanding   SurfaceUnderstanding  ──▶  SurfaceMap
+//      Surface Understanding   SurfaceUnderstanding  ──▶  PanelDetection
 //      Tracking / Spatial      TrackingSource        ──▶  AsyncStream<TrackingFrame>
 //      Experience              FeedbackEngine        ◀──  GuidanceState
 //      Experience              ContourUI             ──▶  PanelPhoto, target selection
@@ -23,7 +23,7 @@ import Foundation
 
 // MARK: - Surface Understanding
 
-/// Turns a photo of a control panel into a `SurfaceMap`.
+/// Returns a panel map and its exact reference-image quad and photo identity.
 ///
 /// Owned by **Surface Understanding — SurfaceUnderstanding**.
 ///
@@ -36,14 +36,15 @@ import Foundation
 ///   Every other package can use the bare name.
 public protocol SurfaceUnderstanding: Sendable {
 
-    /// Detect the controls on the panel in `photo`.
+    /// Detect controls using the returned quad for normalization. Echo photo.id.
+    /// Quad corners use the full upright image before panel rectification.
     ///
     /// A panel found with poor confidence is a **successful** return with a low
     /// `SurfaceMap.confidence`, not a thrown error. Throw only when there is no
     /// answer at all.
     ///
     /// - Throws: `SurfaceUnderstandingError`.
-    func surfaceMap(from photo: PanelPhoto) async throws -> SurfaceMap
+    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection
 }
 
 // MARK: - Tracking / Spatial

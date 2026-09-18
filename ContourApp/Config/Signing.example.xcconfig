@@ -1,0 +1,5 @@
+// Copy to Signing.xcconfig.local in this directory (Git ignores that file).
+// Enter your Apple development team's 10-character ID, not its display name.
+CONTOUR_DEVELOPMENT_TEAM = YOUR_TEAM_ID
+// Use a unique bundle identifier if signing with a personal team.
+CONTOUR_BUNDLE_ID = edu.gatech.contour.yourname
