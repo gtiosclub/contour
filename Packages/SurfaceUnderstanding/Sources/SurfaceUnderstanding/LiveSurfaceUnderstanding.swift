@@ -1,6 +1,6 @@
 //
 //  LiveSurfaceUnderstanding.swift
-//  SurfaceUnderstanding — Surface / Panel Reader
+//  SurfaceUnderstanding — Surface / Officers (integration)
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
 //  │  EMPTY ROOM. This is Surface Understanding's package, and nobody else    │
@@ -46,6 +46,6 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
     /// - Returns: a `SurfaceMap` in normalized panel space.
     /// - Throws: `SurfaceUnderstandingError`.
     public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
-        fatalError("unimplemented — owned by Surface / Panel Reader")
+        fatalError("unimplemented — owned by Surface / Officers (integration)")
     }
 }

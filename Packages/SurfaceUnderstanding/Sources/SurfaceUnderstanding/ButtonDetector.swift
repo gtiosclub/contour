@@ -1,6 +1,6 @@
 //
 //  ButtonDetector.swift
-//  SurfaceUnderstanding — Surface / Panel Reader
+//  SurfaceUnderstanding — Surface / Button Detector
 //
 //  Weeks 2–3 deliverable: "Identify basic buttons and labels" (the buttons half).
 //
@@ -30,6 +30,6 @@ public struct ButtonDetector: Sendable {
         in photo: PanelPhoto,
         panel: PanelQuad
     ) async throws -> [(bounds: PanelRect, confidence: Double)] {
-        fatalError("unimplemented — owned by Surface / Panel Reader")
+        fatalError("unimplemented — owned by Surface / Button Detector")
     }
 }
