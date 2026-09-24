@@ -23,6 +23,12 @@ struct TrackingDebugView: View {
             if let confidence = model.latest?.confidence {
                 LabeledContent("Confidence", value: confidence.formatted(.percent))
             }
+            if let assessment = model.assessment {
+                LabeledContent("Tracking quality", value: assessment.qualityLabel)
+                Text(assessment.reason.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let error = model.error { Text(error).foregroundStyle(.red) }
             Text("Scaffolding only: finger detection and panel tracking are team tasks. No landmarks are generated yet.")
                 .font(.caption).foregroundStyle(.secondary)
