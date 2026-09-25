@@ -1,6 +1,6 @@
 //
 //  LabelReader.swift
-//  SurfaceUnderstanding — Surface / Labels & Target Matching
+//  SurfaceUnderstanding — Surface / Labels
 //
 //  Weeks 2–3 deliverable: "Identify basic buttons and labels" (the labels half).
 //
@@ -29,6 +29,6 @@ public struct LabelReader: Sendable {
         panel: PanelQuad,
         regions: [PanelRect]
     ) async throws -> [String?] {
-        fatalError("unimplemented — owned by Surface / Labels & Target Matching")
+        fatalError("unimplemented — owned by Surface / Labels")
     }
 }

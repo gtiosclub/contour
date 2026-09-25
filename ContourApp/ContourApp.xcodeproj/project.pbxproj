@@ -28,9 +28,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		C04700020000000000000060 /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Development.xcconfig; sourceTree = "<group>"; };
 		14A1805630536BAC00FEEF08 /* ContourApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ContourApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		14A1806530536BAD00FEEF08 /* ContourTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ContourTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		C04700020000000000000060 /* Config/Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config/Development.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -75,7 +75,7 @@
 		14A1804D30536BAC00FEEF08 = {
 			isa = PBXGroup;
 			children = (
-				C04700020000000000000060 /* Development.xcconfig */,
+				C04700020000000000000060 /* Config/Development.xcconfig */,
 				14A1805830536BAC00FEEF08 /* ContourApp */,
 				14A1806830536BAD00FEEF08 /* ContourTests */,
 				14A1805730536BAC00FEEF08 /* Products */,
@@ -239,7 +239,7 @@
 /* Begin XCBuildConfiguration section */
 		14A1807730536BAD00FEEF08 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = C04700020000000000000060 /* Development.xcconfig */;
+			baseConfigurationReference = C04700020000000000000060 /* Config/Development.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -303,7 +303,7 @@
 		};
 		14A1807830536BAD00FEEF08 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = C04700020000000000000060 /* Development.xcconfig */;
+			baseConfigurationReference = C04700020000000000000060 /* Config/Development.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;

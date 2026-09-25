@@ -336,17 +336,20 @@ contour/
 
 ## CI
 
-Every PR and every push to `main` runs:
+The org's free GitHub Actions minutes don't stretch to macOS runners (they bill
+at 10x), so CI is deliberately thin:
 
-1. **Package isolation** — `Scripts/check-dependencies.sh`. Catches a team
-   reaching into another team's package, in the manifest or in an `import`, and
-   catches `ContourMocks` reaching a shipping target rather than staying in
-   `Tests/`.
-2. **`swift test`** for all six packages, in parallel, natively on macOS.
-3. **`xcodebuild build`** for `ContourApp` (iOS Simulator) and `Harness` (macOS).
+1. **Every PR** — `Scripts/check-dependencies.sh` on Linux. Catches a team
+   reaching into another team's package, and `ContourMocks` leaking into a
+   shipping target. Free, ten seconds.
+2. **On demand** — Actions → CI → Run workflow. One macOS job that runs
+   `swift test` in all six packages and builds `ContourApp` and `Harness`. A
+   lead kicks this off before a merge to `main` matters (integration Fridays,
+   Demo Day builds), not on every PR.
 
-`main` is protected: PR required, CI green required, no force pushes. If CI is
-red, it's red for everyone — fix it before you start something new.
+The real gate is `swift test` on your own Mac before you open the PR. The PR
+template asks which package you ran it in. Reviewers: if the template says
+"it builds," send it back.
 
 ## Camera and panel-reference integration
 
