@@ -22,6 +22,7 @@ public struct DebugMenu: View {
         List {
             // Add your debug screens here:
             NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
+            NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
             //NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: CameraService()) }
             // Example: NavigationLink("My Debug Tool") { MyDebugToolView() }
         }
