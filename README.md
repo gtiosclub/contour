@@ -336,20 +336,17 @@ contour/
 
 ## CI
 
-The org's free GitHub Actions minutes don't stretch to macOS runners (they bill
-at 10x), so CI is deliberately thin:
+The repo is public, so GitHub Actions is free. Every PR and every push to
+`main` runs:
 
-1. **Every PR** — `Scripts/check-dependencies.sh` on Linux. Catches a team
-   reaching into another team's package, and `ContourMocks` leaking into a
-   shipping target. Free, ten seconds.
-2. **On demand** — Actions → CI → Run workflow. One macOS job that runs
-   `swift test` in all six packages and builds `ContourApp` and `Harness`. A
-   lead kicks this off before a merge to `main` matters (integration Fridays,
-   Demo Day builds), not on every PR.
+1. **Package isolation** on Linux. `Scripts/check-dependencies.sh` catches a
+   team reaching into another team's package, and `ContourMocks` leaking into a
+   shipping target.
+2. **build + test** on macOS. `swift test` in all six packages, then
+   `xcodebuild` for `ContourApp` (iOS Simulator) and `Harness` (macOS).
 
-The real gate is `swift test` on your own Mac before you open the PR. The PR
-template asks which package you ran it in. Reviewers: if the template says
-"it builds," send it back.
+Red CI, no merge. Run `swift test` in your package before you push anyway, it's
+faster than waiting on CI.
 
 ## Camera and panel-reference integration
 

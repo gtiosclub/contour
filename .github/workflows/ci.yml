@@ -1,11 +1,8 @@
 name: CI
 
-# macOS runners cost 10x against the org's free Actions minutes and we ran out
-# in week one. So: the cheap check runs on every PR on Linux, and the real
-# build/test runs on a Mac only when a lead triggers it by hand.
-#
-# The gate for merging is `swift test` on your own machine. The PR template
-# asks which package you ran it in. Don't lie on the template.
+# The repo is public, so GitHub-hosted runners (macOS included) are free.
+# Every PR runs the isolation check on Linux and one combined macOS job that
+# tests every package and builds both apps. Red CI, no merge.
 
 on:
   pull_request:
@@ -30,11 +27,9 @@ jobs:
       - uses: actions/checkout@v4
       - run: ./Scripts/check-dependencies.sh
 
-  # Manual only: Actions tab → CI → Run workflow. One Mac job instead of nine.
-  # Builds and tests every package, then builds both app targets.
+  # One Mac job: test every package, then build both app targets.
   mac:
-    name: build + test (manual)
-    if: github.event_name == 'workflow_dispatch'
+    name: build + test
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
