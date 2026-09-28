@@ -1,112 +1,63 @@
-//
-//  MockSurfaceUnderstanding.swift
-//  ContourMocks
-//
-//  Surface Understanding's stand-in. Returns the same microwave panel every time.
-//
-//  COORDINATES: normalized panel space, (0,0) top-left, (1,1) bottom-right,
-//  y DOWNWARD. See Packages/ContourCore/COORDINATES.md.
-//
-
 import ContourCore
 import Foundation
 
-/// Canned `SurfaceMap`s for development, demos, and tests.
-public enum MockSurfaceMaps {
-
-    /// A six-button microwave keypad, two rows of three.
-    ///
-    /// ```
-    ///        x=0                                  x=1
-    ///   y=0   +----------------------------------+
-    ///         |                                  |
-    ///         |  [Popcorn ] [Beverage] [Defrost] |   <- y 0.18 ... 0.38
-    ///         |                                  |
-    ///         |  [Add 30s ] [ Start  ] [ Stop  ] |   <- y 0.52 ... 0.72
-    ///         |                                  |
-    ///   y=1   +----------------------------------+
-    ///            0.06     0.38     0.70
-    /// ```
-    ///
-    /// Confidences are deliberately uneven: "Defrost" is the scuffed one at
-    /// `0.61`, so anything that filters on per-button confidence has something
-    /// to filter. Panel confidence is `0.94`.
-    ///
-    /// Ids are hardcoded, so they are stable across runs and across machines —
-    /// you can write an assertion against a specific button id.
+/// Canned surface maps for development, demos, and tests.
+public enum MockSurfaceMap {
+    /// A realistic six-button microwave keypad in normalized panel space.
+    /// The cancel control is icon-only, so its label is intentionally nil.
     public static let microwave: SurfaceMap = {
         func id(_ suffix: String) -> UUID {
             UUID(uuidString: "C047C0DE-0000-4000-8000-0000000000\(suffix)")!
         }
 
-        let columnX = [0.06, 0.38, 0.70]
-        let width = 0.24
-        let height = 0.20
+        let columnX = [0.08, 0.39, 0.70]
+        let rowY = [0.24, 0.53]
 
         func button(
             _ suffix: String,
-            _ label: String,
+            label: String?,
             column: Int,
-            y: Double,
+            row: Int,
             confidence: Double
         ) -> SurfaceMap.Button {
             SurfaceMap.Button(
                 id: id(suffix),
                 label: label,
-                bounds: PanelRect(
-                    x: columnX[column],
-                    y: y,
-                    width: width,
-                    height: height
-                ),
+                bounds: PanelRect(x: columnX[column], y: rowY[row], width: 0.22, height: 0.18),
                 confidence: confidence
             )
         }
 
         return SurfaceMap(
             buttons: [
-                button("01", "Popcorn", column: 0, y: 0.18, confidence: 0.93),
-                button("02", "Beverage", column: 1, y: 0.18, confidence: 0.88),
-                button("03", "Defrost", column: 2, y: 0.18, confidence: 0.61),
-                button("04", "Add 30 Sec", column: 0, y: 0.52, confidence: 0.90),
-                button("05", "Start", column: 1, y: 0.52, confidence: 0.97),
-                button("06", "Stop/Clear", column: 2, y: 0.52, confidence: 0.95),
+                button("01", label: "Popcorn", column: 0, row: 0, confidence: 0.72),
+                button("02", label: "Defrost", column: 1, row: 0, confidence: 0.80),
+                button("03", label: "Stop", column: 2, row: 0, confidence: 0.91),
+                button("04", label: "+30s", column: 0, row: 1, confidence: 0.88),
+                button("05", label: "Start", column: 1, row: 1, confidence: 0.94),
+                button("06", label: nil, column: 2, row: 1, confidence: 0.95)
             ],
             confidence: 0.94
         )
     }()
 
-    /// The "Start" button — the default target for demos and for
-    /// `MockTrackingSource`.
     public static var microwaveStartButton: SurfaceMap.Button {
-        // Force-unwrapped on purpose: if this stops resolving, the canned map
-        // above was edited wrongly and every mock consumer should fail loudly.
         microwave.button(labelled: "Start")!
     }
 }
 
-/// A `SurfaceUnderstanding` that always returns the same canned microwave panel.
-///
-/// Deterministic: same input, same output, no randomness, no I/O. The `photo`
-/// pixels are never decoded; its identity is echoed in the result.
+/// Backward-compatible plural spelling used by existing clients.
+public typealias MockSurfaceMaps = MockSurfaceMap
+
+/// A SurfaceUnderstanding that always returns the same canned microwave panel.
 public struct MockSurfaceUnderstanding: SurfaceUnderstanding {
-
-    /// The map to return.
     public let map: SurfaceMap
-
-    /// Synthetic image geometry; no pixel analysis is performed.
     public let quad: PanelQuad
-
-    /// If set, `detectPanel(from:)` throws this instead of returning `map`.
-    /// Use it to exercise the failure paths without waiting for Surface Understanding.
     public let failure: SurfaceUnderstandingError?
-
-    /// Artificial delay before returning, to stand in for detection latency.
-    /// Fixed, not random.
     public let latency: Duration
 
     public init(
-        map: SurfaceMap = MockSurfaceMaps.microwave,
+        map: SurfaceMap = MockSurfaceMap.microwave,
         quad: PanelQuad = .fullFrame,
         failure: SurfaceUnderstandingError? = nil,
         latency: Duration = .zero

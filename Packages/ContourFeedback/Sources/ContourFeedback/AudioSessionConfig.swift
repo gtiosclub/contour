@@ -27,7 +27,22 @@ public enum AudioSessionConfig {
             mode: .default,
             options: [.defaultToSpeaker, .allowBluetoothA2DP]
         )
-        try session.setActive(true)
+        if #available(iOS 27, *) {
+            session.activate { success, error in
+                guard !success else { return }
+                reportActivationFailure(error)
+            }
+        } else {
+            // iOS 26 does not expose asynchronous activation. Keep the synchronous
+            // API off the main actor to avoid blocking launch-time UI responsiveness.
+            Task.detached {
+                do {
+                    try AVAudioSession.sharedInstance().setActive(true)
+                } catch {
+                    reportActivationFailure(error)
+                }
+            }
+        }
 
         observers = [
             NotificationCenter.default.addObserver(
@@ -35,17 +50,31 @@ public enum AudioSessionConfig {
                 object: session,
                 queue: .main
             ) { notification in
-                handleInterruption(notification)
+                if let event = interruptionEvent(from: notification) {
+                    Task { @MainActor in
+                        broadcast(event)
+                    }
+                }
             },
             NotificationCenter.default.addObserver(
                 forName: AVAudioSession.routeChangeNotification,
                 object: session,
                 queue: .main
             ) { notification in
-                handleRouteChange(notification)
+                let event = routeChangeEvent(from: notification)
+                Task { @MainActor in
+                    broadcast(event)
+                }
             }
         ]
         isConfigured = true
+    }
+
+    nonisolated private static func reportActivationFailure(_ error: (any Error)?) {
+        let message = error.map(String.init(describing:)) ?? "Unknown activation failure"
+        Task { @MainActor in
+            assertionFailure("Unable to activate Contour audio session: \(message)")
+        }
     }
 
     /// A broadcast stream of interruptions and route changes for audio engines.
@@ -61,29 +90,29 @@ public enum AudioSessionConfig {
         }
     }
 
-    private static func handleInterruption(_ notification: Notification) {
+    nonisolated private static func interruptionEvent(from notification: Notification) -> Event? {
         guard
             let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
             let type = AVAudioSession.InterruptionType(rawValue: rawType)
         else {
-            return
+            return nil
         }
 
         switch type {
         case .began:
-            broadcast(.interruptionBegan)
+            return .interruptionBegan
         case .ended:
             let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
             let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
-            broadcast(.interruptionEnded(shouldResume: options.contains(.shouldResume)))
+            return .interruptionEnded(shouldResume: options.contains(.shouldResume))
         @unknown default:
-            break
+            return nil
         }
     }
 
-    private static func handleRouteChange(_ notification: Notification) {
+    nonisolated private static func routeChangeEvent(from notification: Notification) -> Event {
         let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
-        broadcast(.routeChanged(reasonRawValue: rawReason))
+        return .routeChanged(reasonRawValue: rawReason)
     }
 
     private static func broadcast(_ event: Event) {

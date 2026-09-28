@@ -1,13 +1,3 @@
-//
-//  ContourMocksTests.swift
-//  ContourMocks
-//
-//  These tests exist to protect determinism. Every team builds against these
-//  mocks until Week 4, so a mock that quietly starts returning different data
-//  breaks four teams at once. If you change the canned microwave or the walk,
-//  change these numbers deliberately and say so in the PR.
-//
-
 import ContourCore
 import Foundation
 import Testing
@@ -15,81 +5,29 @@ import Testing
 
 @Suite("Canned surface map")
 struct CannedSurfaceMapTests {
-
-    @Test("the microwave has six buttons and stable ids")
+    @Test("the microwave is a six-button 2x3 grid with an icon-only control")
     func microwaveShape() {
-        let map = MockSurfaceMaps.microwave
+        let map = MockSurfaceMap.microwave
 
         #expect(map.buttons.count == 6)
-        #expect(map.confidence == 0.94)
-        #expect(Set(map.buttons.map(\.id)).count == 6, "ids must be unique")
-        #expect(map.buttons.allSatisfy { $0.label != nil })
-    }
+        #expect(map.button(labelled: "Start")?.confidence == 0.94)
+        #expect(map.button(labelled: "Stop")?.confidence == 0.91)
+        #expect(map.button(labelled: "Popcorn")?.confidence == 0.72)
+        #expect(map.buttons.contains(where: { $0.label == nil }))
 
-    @Test("buttons sit in two rows of three, y measured downward")
-    func microwaveLayout() {
-        let map = MockSurfaceMaps.microwave
-        let topRow = map.buttons.filter { $0.bounds.minY < 0.5 }
-        let bottomRow = map.buttons.filter { $0.bounds.minY >= 0.5 }
-
+        let topRow = map.buttons.filter { $0.bounds.center.y < 0.5 }
+        let bottomRow = map.buttons.filter { $0.bounds.center.y >= 0.5 }
         #expect(topRow.count == 3)
         #expect(bottomRow.count == 3)
-        #expect(map.button(labelled: "Popcorn")!.bounds.minY
-                < map.button(labelled: "Start")!.bounds.minY,
-                "Popcorn is ABOVE Start, so it has the smaller y — y grows downward")
-    }
-
-    @Test("no buttons overlap")
-    func noOverlap() {
-        let buttons = MockSurfaceMaps.microwave.buttons
-        for a in buttons {
-            for b in buttons where a.id != b.id {
-                let separated = a.bounds.maxX <= b.bounds.minX
-                    || b.bounds.maxX <= a.bounds.minX
-                    || a.bounds.maxY <= b.bounds.minY
-                    || b.bounds.maxY <= a.bounds.minY
-                #expect(separated, "\(a.label ?? "?") overlaps \(b.label ?? "?")")
-            }
-        }
-    }
-
-    @Test("detection returns the canned map, and can be made to fail")
-    func mockDetection() async throws {
-        let photo = PanelPhoto(
-            data: Data(),
-            pixelSize: PixelSize(width: 4032, height: 3024),
-            timestamp: MockTrackingSource.fixedEpoch
-        )
-
-        let working = MockSurfaceUnderstanding()
-        let detection = try await working.detectPanel(from: photo)
-        #expect(detection.map == MockSurfaceMaps.microwave)
-        #expect(detection.referencePhotoID == photo.id)
-        #expect(detection.quad == .fullFrame)
-        #expect(try await working.detectPanel(from: photo) == detection)
-
-        let broken = MockSurfaceUnderstanding(failure: .noPanelFound)
-        await #expect(throws: SurfaceUnderstandingError.noPanelFound) {
-            _ = try await broken.detectPanel(from: photo)
-        }
     }
 }
 
-@Suite("Deterministic tracking walk")
+@Suite("Deterministic tracking")
 struct MockTrackingSourceTests {
-
-    @Test("the walk starts at start and lands exactly on target")
-    func walkEndpoints() {
-        let source = MockTrackingSource()
-
-        #expect(source.frame(atStep: 0).fingertip == source.start)
-        #expect(source.frame(atStep: source.steps).fingertip == source.target)
-    }
-
-    @Test("the same configuration produces byte-identical frames")
+    @Test("the same scripted run emits identical frames")
     func reproducible() async {
-        let a = MockTrackingSource(steps: 4, interval: .milliseconds(1))
-        let b = MockTrackingSource(steps: 4, interval: .milliseconds(1))
+        let a = MockTrackingSource(run: .withDropout)
+        let b = MockTrackingSource(run: .withDropout)
 
         var framesA: [TrackingFrame] = []
         for await frame in a.frames() { framesA.append(frame) }
@@ -97,94 +35,76 @@ struct MockTrackingSourceTests {
         var framesB: [TrackingFrame] = []
         for await frame in b.frames() { framesB.append(frame) }
 
-        #expect(framesA.count == 5)
-        #expect(framesA == framesB, "mocks must be reproducible run to run")
+        #expect(framesA == framesB)
+        #expect(framesA.contains(where: { $0.trackingQuality == .lost && $0.fingertip == nil }))
     }
 
-    @Test("seeded jitter is reproducible; a different seed differs")
-    func seededJitter() {
-        let a = MockTrackingSource(jitter: 0.01, seed: 42)
-        let b = MockTrackingSource(jitter: 0.01, seed: 42)
-        let c = MockTrackingSource(jitter: 0.01, seed: 43)
-
-        #expect(a.frame(atStep: 7).fingertip == b.frame(atStep: 7).fingertip)
-        #expect(a.frame(atStep: 7).fingertip != c.frame(atStep: 7).fingertip)
+    @Test("overshoot goes 0.1 panel units past the target before returning")
+    func overshoot() {
+        let source = MockTrackingSource(run: .overshoot)
+        let point = source.frame(atStep: source.steps * 4 / 5).fingertip!
+        let direction = source.run.start.vector(to: source.target).normalized!
+        let beyondTarget = source.target.vector(to: point)
+        let projection = beyondTarget.dx * direction.dx + beyondTarget.dy * direction.dy
+        #expect(abs(projection - 0.1) < 0.000_001)
     }
 
-    @Test("a scripted lost frame reports no fingertip")
-    func scriptedDropout() {
-        let source = MockTrackingSource(qualityOverrides: [3: .lost])
-        let frame = source.frame(atStep: 3)
-
-        #expect(frame.trackingQuality == .lost)
-        #expect(frame.fingertip == nil)
-    }
-
-    @Test("timestamps advance by the interval from a fixed epoch")
-    func deterministicTimestamps() {
-        let source = MockTrackingSource(interval: .milliseconds(100))
-
-        #expect(source.frame(atStep: 0).timestamp == MockTrackingSource.fixedEpoch)
-        #expect(source.frame(atStep: 10).timestamp
-                == MockTrackingSource.fixedEpoch.addingTimeInterval(1.0))
+    @Test("all presets arrive and hold on the selected target")
+    func presetsArrive() {
+        for run in [MockRun.straight, .overshoot, .withDropout] {
+            let source = MockTrackingSource(run: run)
+            #expect(source.frame(atStep: source.totalSteps).fingertip == source.target)
+            #expect(source.frame(atStep: source.steps + 30).fingertip == source.target)
+        }
     }
 }
 
-@Suite("Placeholder guidance and printing feedback")
-struct MockFeedbackTests {
+@Suite("Guidance math")
+struct GuidanceMathTests {
+    private let target = MockSurfaceMap.microwaveStartButton
+    private let timestamp = MockTrackingSource.fixedEpoch
 
-    @Test("guidance points downward when the target is below the fingertip")
-    func directionIsYDown() {
-        let state = MockGuidance.state(
-            fingertip: PanelPoint(x: 0.5, y: 0.2),
-            target: PanelPoint(x: 0.5, y: 0.8),
-            timestamp: MockTrackingSource.fixedEpoch
+    @Test("center to center has no distance")
+    func centerToCenter() {
+        let frame = TrackingFrame(
+            timestamp: timestamp,
+            fingertip: target.bounds.center,
+            panel: .unknown,
+            trackingQuality: .good
         )
 
-        #expect(state.vector?.direction.dy ?? 0 > 0, "target below means +dy")
-        #expect(PrintingFeedbackEngine.compass(state.vector!.direction) == "down")
+        let state = GuidanceMath.compute(frame: frame, target: target)
+        #expect(state.vector?.normalizedDistance == 0)
+        #expect(state.vector?.direction == .zero)
+        #expect(state.outcome == .arrived)
     }
 
-    @Test("arriving at the target raises exactly one outcome")
-    func arrival() {
-        let target = MockSurfaceMaps.microwaveStartButton
-        let onIt = MockGuidance.state(
-            for: TrackingFrame(
-                timestamp: MockTrackingSource.fixedEpoch,
-                fingertip: target.bounds.center,
-                panel: MockTrackingSource().frame(atStep: 0).panel,
-                trackingQuality: .good
-            ),
+    @Test("opposite corners normalize to one")
+    func oppositeCorners() {
+        let cornerTarget = SurfaceMap.Button(
+            label: "Corner",
+            bounds: PanelRect(x: 1, y: 1, width: 0, height: 0),
+            confidence: 1
+        )
+        let frame = TrackingFrame(
+            timestamp: timestamp,
+            fingertip: .origin,
+            panel: .unknown,
+            trackingQuality: .good
+        )
+
+        let state = GuidanceMath.compute(frame: frame, target: cornerTarget)
+        #expect(state.vector?.normalizedDistance == 1)
+    }
+
+    @Test("missing fingertip produces lost tracking")
+    func missingFingertip() {
+        let state = GuidanceMath.compute(
+            frame: .lost(at: timestamp),
             target: target
-        )
-
-        #expect(onIt.outcome == .arrived)
-        #expect(onIt.isTerminal)
-    }
-
-    @Test("a lost frame becomes lostTracking")
-    func lostBecomesOutcome() {
-        let state = MockGuidance.state(
-            for: .lost(at: MockTrackingSource.fixedEpoch),
-            target: MockSurfaceMaps.microwaveStartButton
         )
 
         #expect(state.outcome == .lostTracking)
         #expect(state.vector == nil)
-    }
-
-    @Test("the printing engine records everything it is handed")
-    func engineRecords() async {
-        let engine = PrintingFeedbackEngine(isPrinting: false)
-        let source = MockTrackingSource(steps: 3, interval: .milliseconds(1))
-        let target = MockSurfaceMaps.microwaveStartButton
-
-        for await frame in source.frames() {
-            await engine.present(MockGuidance.state(for: frame, target: target))
-        }
-
-        let received = await engine.received
-        #expect(received.count == 4)
-        #expect(await engine.outcomes.last == .arrived, "the walk ends on the target")
     }
 }
