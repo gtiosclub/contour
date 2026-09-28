@@ -10,12 +10,22 @@
 //  in first.
 //
 
+import ContourFeedback
 import SwiftUI
 
 @main
+@MainActor
 struct ContourApp: App {
 
     @State private var pipeline = ContourPipeline.mock()
+
+    init() {
+        do {
+            try AudioSessionConfig.configure()
+        } catch {
+            assertionFailure("Unable to configure Contour audio session: \(error)")
+        }
+    }
 
     var body: some Scene {
         WindowGroup {

@@ -120,7 +120,7 @@ final class ContourPipeline {
     func guide(to target: SurfaceMap.Button) async {
         for await frame in tracking.frames() {
             if Task.isCancelled { return }
-            await feedback.present(MockGuidance.state(for: frame, target: target))
+            await feedback.present(GuidanceMath.compute(frame: frame, target: target))
         }
     }
 }

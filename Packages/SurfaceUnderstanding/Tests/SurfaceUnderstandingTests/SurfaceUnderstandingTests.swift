@@ -40,7 +40,7 @@ func targetMatcherExists() {
 
 @Test("a TargetMatch carries the button and a separate match confidence")
 func targetMatchKeepsBothConfidences() throws {
-    // Defrost is the deliberately scuffed detection in the canned panel.
+    // Defrost has deliberately lower confidence than the primary controls.
     let button = try #require(MockSurfaceMaps.microwave.button(labelled: "Defrost"))
 
     let match = TargetMatch(button: button, confidence: 0.92)
@@ -49,15 +49,15 @@ func targetMatchKeepsBothConfidences() throws {
     // matcher can be sure what the user meant while the detector is unsure the
     // button is really there.
     #expect(match.confidence == 0.92)
-    #expect(match.button.confidence == 0.61)
+    #expect(match.button.confidence == 0.80)
     #expect(match.confidence != match.button.confidence)
 }
 
 @Test("the canned panel gives the matcher labelled buttons to match against")
 func mockPanelIsMatchable() {
     let labelled = MockSurfaceMaps.microwave.buttons.filter { $0.label != nil }
-    #expect(labelled.count == MockSurfaceMaps.microwave.buttons.count,
-            "every button in the canned panel should be labelled")
+    #expect(labelled.count == 5,
+            "the canned panel intentionally includes one icon-only button")
 }
 
 @Test("the test set starts empty and is waiting for Week 2 labels")

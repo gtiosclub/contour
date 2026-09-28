@@ -31,6 +31,9 @@ struct ContentView: View {
                     NavigationLink("Tracking Diagnostics") {
                         TrackingDebugView(camera: camera)
                     }
+                    NavigationLink("Mock Runs") {
+                        MockRunDebugView()
+                    }
                 }
                 #endif
 

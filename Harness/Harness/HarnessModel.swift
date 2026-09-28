@@ -81,7 +81,7 @@ final class HarnessModel {
             panel: MockTrackingSource().frame(atStep: 0).panel,
             trackingQuality: trackingQuality
         )
-        send(MockGuidance.state(for: frame, target: target), note: "slider")
+        send(GuidanceMath.compute(frame: frame, target: target), note: "slider")
     }
 
     /// Fire one of the four outcome signals by hand.
@@ -98,13 +98,12 @@ final class HarnessModel {
             return
         }
 
-        let source = MockTrackingSource(
+        let run = MockRun(
             start: PanelPoint(x: fingertipX, y: fingertipY),
-            target: target.bounds.center,
-            steps: 60,
-            interval: .milliseconds(50),
-            baseTimestamp: Date()
+            targetButtonID: target.id,
+            duration: 2
         )
+        let source = MockTrackingSource(run: run, map: map, baseTimestamp: Date())
 
         walk = Task { [weak self] in
             for await frame in source.frames() {
@@ -114,7 +113,7 @@ final class HarnessModel {
                 self.fingertipY = frame.fingertip?.y ?? self.fingertipY
                 self.isSuppressingEmit = false
                 self.send(
-                    MockGuidance.state(for: frame, target: self.target),
+                    GuidanceMath.compute(frame: frame, target: self.target),
                     note: "walk"
                 )
             }
