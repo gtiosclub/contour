@@ -75,29 +75,34 @@ struct ModelImageSpikeView: View {
         // A synthetic "panel": dark rectangle, three light buttons, one label.
         let image = Self.makeTestImage()
 
+        #if compiler(>=6.4)
+        // Built with the iOS 27 SDK (Xcode 27+). `Attachment` does not exist in
+        // older SDKs, so this whole branch is compiled out on Xcode 26.
         if #available(iOS 27, *) {
             do {
                 let session = LanguageModelSession()
-                // ── iOS 27 image call site ──────────────────────────────────
                 let prompt = Prompt {
                     "This is a photo of an appliance control panel. How many buttons are on it, and what text is printed on them? Answer in one sentence."
-                    Attachment(image)                       // ← if this line fails to compile, check the Attachment init in the iOS 27 SDK
+                    Attachment(image)
                 }
                 let response = try await session.respond(to: prompt)
-                // ───────────────────────────────────────────────────────────
                 result = "iOS 27 image prompt worked.\n\n\(response.content)"
             } catch {
                 result = "iOS 27 image prompt threw: \(error)"
             }
-        } else {
-            // Text-only sanity check so the screen still proves the model runs.
-            do {
-                let session = LanguageModelSession()
-                let response = try await session.respond(to: "Reply with the single word OK.")
-                result = "Model runs, but this is iOS 26 — no image input. Text reply: \(response.content)"
-            } catch {
-                result = "Text prompt threw: \(error)"
-            }
+            return
+        }
+        #endif
+
+        // iOS 26, or built with an SDK that has no image input: prove the
+        // model runs with a text-only prompt.
+        _ = image
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: "Reply with the single word OK.")
+            result = "Model runs, but no image input here (needs iOS 27 and the iOS 27 SDK). Text reply: \(response.content)"
+        } catch {
+            result = "Text prompt threw: \(error)"
         }
         #else
         result = "FoundationModels not available."
