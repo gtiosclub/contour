@@ -1,5 +1,7 @@
-import AVFAudio
 import Foundation
+
+#if os(iOS)
+import AVFAudio
 
 /// The one shared audio-session owner for Contour.
 ///
@@ -27,6 +29,7 @@ public enum AudioSessionConfig {
             mode: .default,
             options: [.defaultToSpeaker, .allowBluetoothA2DP]
         )
+
         if #available(iOS 27, *) {
             session.activate { success, error in
                 guard !success else { return }
@@ -121,3 +124,24 @@ public enum AudioSessionConfig {
         }
     }
 }
+
+#else
+
+/// Compatibility surface for the macOS Harness. AVAudioSession is iOS-only.
+@MainActor
+public enum AudioSessionConfig {
+    public enum Event: Sendable, Equatable {
+        case interruptionBegan
+        case interruptionEnded(shouldResume: Bool)
+        case routeChanged(reasonRawValue: UInt)
+    }
+
+    public static func configure() throws {}
+
+    public static func events() -> AsyncStream<Event> {
+        AsyncStream { continuation in
+            continuation.finish()
+        }
+    }
+}
+#endif
