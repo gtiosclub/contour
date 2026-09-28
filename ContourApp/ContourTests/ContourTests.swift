@@ -48,7 +48,13 @@ struct PipelineWiringTests {
         let engine = PrintingFeedbackEngine(isPrinting: false)
         let pipeline = ContourPipeline(
             surfaceUnderstanding: MockSurfaceUnderstanding(),
-            tracking: MockTrackingSource(steps: 3, interval: .milliseconds(1)),
+            tracking: MockTrackingSource(
+                run: MockRun(
+                    start: PanelPoint(x: 0.12, y: 0.14),
+                    targetButtonID: MockSurfaceMap.microwaveStartButton.id,
+                    duration: 0.1
+                )
+            ),
             feedback: engine,
             liveComponents: []
         )
@@ -56,7 +62,7 @@ struct PipelineWiringTests {
         await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
 
         let received = await engine.received
-        #expect(received.count == 4)
+        #expect(received.count == 64)
         #expect(await engine.outcomes.last == .arrived)
     }
 }

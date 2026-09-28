@@ -30,20 +30,13 @@ public enum AudioSessionConfig {
             options: [.defaultToSpeaker, .allowBluetoothA2DP]
         )
 
-        if #available(iOS 27, *) {
-            session.activate { success, error in
-                guard !success else { return }
+        // The current deployment SDK exposes only synchronous activation. Keep it
+        // off the main actor to avoid blocking launch-time UI responsiveness.
+        Task.detached {
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+            } catch {
                 reportActivationFailure(error)
-            }
-        } else {
-            // iOS 26 does not expose asynchronous activation. Keep the synchronous
-            // API off the main actor to avoid blocking launch-time UI responsiveness.
-            Task.detached {
-                do {
-                    try AVAudioSession.sharedInstance().setActive(true)
-                } catch {
-                    reportActivationFailure(error)
-                }
             }
         }
 
