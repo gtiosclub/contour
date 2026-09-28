@@ -34,6 +34,12 @@ public struct PanelDetector: Sendable {
     public func detectPanel(
         in photo: PanelPhoto
     ) async throws -> (quad: PanelQuad, confidence: Double) {
+        let result = try await analyze(photo)
+        return (result.quad, result.confidence)
+    }
+
+    private func analyze(_ photo: PanelPhoto) async throws
+        -> (quad: PanelQuad, confidence: Double, estimatedAlignment: Bool, warnings: [String]) {
         guard !Task.isCancelled else {
             throw SurfaceUnderstandingError.cancelled
         }
@@ -117,13 +123,174 @@ public struct PanelDetector: Sendable {
             bottomLeft: imagePoint(rectangle.bottomLeft)
         )
 
-        return (quad: quad, confidence: Double(rectangle.confidence))
+        // A strong rectangle can be only one button bank. Use nearby text to
+        // include the display and keypad rather than equating rectangle confidence
+        // with confidence that the entire panel has been found.
+        return try refinePanel(seed: quad, confidence: Double(rectangle.confidence)) {
+            try controlEvidence(in: image, orientation: orientation, seed: quad)
+        }
+    }
+
+    /// OCR is optional refinement. A failure must not discard a valid rectangle.
+    func refinePanel(seed: PanelQuad, confidence: Double,
+                     evidence: () throws -> (labels: [[ImagePoint]], displays: [[ImagePoint]])) throws
+        -> (quad: PanelQuad, confidence: Double, estimatedAlignment: Bool, warnings: [String]) {
+        guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+        do {
+            let found = try evidence()
+            guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+            let enclosing = enclosingControls(seed: seed, evidence: found.labels, displays: found.displays)
+            return (enclosing, min(confidence, enclosing == seed ? 1 : 0.85), enclosing != seed, [])
+        } catch {
+            if Task.isCancelled || error is CancellationError ||
+                (error as? SurfaceUnderstandingError) == .cancelled {
+                throw SurfaceUnderstandingError.cancelled
+            }
+            return (seed, confidence, false,
+                    ["Text recognition failed; using the detected rectangle without expanding it. The crop may omit controls; review it visually."])
+        }
+    }
+
+    /// Grow a detected button rectangle to include nearby controls in the same column.
+    /// Evidence is expressed in the upright source image, never in raw EXIF pixels.
+    func enclosingControls(seed: PanelQuad, evidence: [[ImagePoint]], displays: [[ImagePoint]] = []) -> PanelQuad {
+        struct Bounds {
+            var left: Double
+            var top: Double
+            var right: Double
+            var bottom: Double
+        }
+        let boxes = evidence.compactMap { points -> Bounds? in
+            let mapped = points.map { rectify($0, within: seed) }
+            guard mapped.count >= 4, mapped.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+            let box = Bounds(left: mapped.map(\.x).min()!, top: mapped.map(\.y).min()!,
+                             right: mapped.map(\.x).max()!, bottom: mapped.map(\.y).max()!)
+            // Stay in the control column; reject distant branding and large scene rectangles.
+            guard box.left >= -0.55, box.right <= 1.55,
+                  box.top >= -1.8, box.bottom <= 3.5,
+                  box.right - box.left < 1.7, box.bottom - box.top < 1.2 else { return nil }
+            return box
+        }
+        // Do not enlarge an arbitrary cabinet/door rectangle without control evidence.
+        guard boxes.filter({ $0.right > 0 && $0.left < 1 && $0.bottom > 0 && $0.top < 1 }).count >= 3 else {
+            return seed
+        }
+        // If the detected boundary already contains a display with controls on
+        // both sides and below, retain that boundary instead of growing to branding.
+        for display in displays {
+            let points = display.map { rectify($0, within: seed) }
+            guard points.count == 4, points.allSatisfy({ $0.isOnPanel }) else { continue }
+            let left = points.map(\.x).min()!
+            let right = points.map(\.x).max()!
+            let bottom = points.map(\.y).max()!
+            let inside = boxes.filter { $0.left >= 0 && $0.right <= 1 && $0.top >= 0 && $0.bottom <= 1 }
+            if inside.contains(where: { $0.right < left }),
+               inside.contains(where: { $0.left > right }),
+               inside.contains(where: { $0.top > bottom }) {
+                return seed
+            }
+        }
+        let interiorHeights = boxes.filter { $0.left >= 0 && $0.right <= 1 && $0.top >= 0 && $0.bottom <= 1 }
+            .map { $0.bottom - $0.top }.sorted()
+        let typicalHeight = interiorHeights.isEmpty ? 1 : interiorHeights[interiorHeights.count / 2]
+        var bounds = Bounds(left: 0, top: 0, right: 1, bottom: 1)
+        // Isolated oversized text below a panel is often branding, not a control.
+        // Preserve large keypad digits that form a row with other nearby evidence.
+        var remaining = boxes.filter { box in
+            guard box.top > 1, box.bottom - box.top > typicalHeight * 2 else { return true }
+            return boxes.contains { other in
+                (other.right < box.left || other.left > box.right) &&
+                min(other.bottom, box.bottom) > max(other.top, box.top)
+            }
+        }
+        var grew = true
+        while grew {
+            grew = false
+            remaining.removeAll { box in
+                let gap = max(0, max(bounds.top - box.bottom, box.top - bounds.bottom))
+                guard gap <= 0.65, box.right >= bounds.left, box.left <= bounds.right else { return false }
+                bounds.left = min(bounds.left, box.left)
+                bounds.right = max(bounds.right, box.right)
+                bounds.top = min(bounds.top, box.top)
+                bounds.bottom = max(bounds.bottom, box.bottom)
+                grew = true
+                return true
+            }
+        }
+        // Padding includes button outlines, rather than trimming to the glyphs.
+        bounds.left -= 0.04
+        bounds.right += 0.04
+        bounds.top -= 0.10
+        bounds.bottom += 0.10
+
+        // Invert the seed homography by treating source x/y as target coordinates.
+        func mapped(_ x: Double, _ y: Double) -> ImagePoint {
+            let point = rectify(ImagePoint(x: x, y: y), within: seed)
+            return ImagePoint(x: point.x, y: point.y)
+        }
+        let inverseQuad = PanelQuad(topLeft: mapped(0, 0), topRight: mapped(1, 0),
+                                    bottomRight: mapped(1, 1), bottomLeft: mapped(0, 1))
+        func source(_ x: Double, _ y: Double) -> ImagePoint {
+            let point = rectify(ImagePoint(x: x, y: y), within: inverseQuad)
+            return ImagePoint(x: point.x, y: point.y)
+        }
+        let corners = [source(bounds.left, bounds.top), source(bounds.right, bounds.top),
+                       source(bounds.right, bounds.bottom), source(bounds.left, bounds.bottom)]
+        guard corners.allSatisfy({ $0.x.isFinite && $0.y.isFinite && abs($0.x) < 3 && abs($0.y) < 3 }) else {
+            return seed
+        }
+        // Keep the projective geometry even if the photographed panel meets the frame edge.
+        // Core Image leaves any genuinely missing source pixels transparent.
+        return PanelQuad(topLeft: corners[0], topRight: corners[1], bottomRight: corners[2], bottomLeft: corners[3])
+    }
+
+    private func controlEvidence(in image: CGImage, orientation: CGImagePropertyOrientation,
+                                 seed: PanelQuad) throws -> (labels: [[ImagePoint]], displays: [[ImagePoint]]) {
+        let upright = CIImage(cgImage: image).oriented(orientation)
+        // Deskew first so OCR can read labels even when the camera is tilted 45 degrees.
+        let dx = (seed.topRight.x - seed.topLeft.x) * upright.extent.width
+        let dy = -(seed.topRight.y - seed.topLeft.y) * upright.extent.height
+        let rotation = CGAffineTransform(rotationAngle: -atan2(dy, dx))
+        let rotated = upright.transformed(by: rotation)
+        let extent = rotated.extent.integral
+        let scale = min(1, 2000 / max(extent.width, extent.height))
+        let transform = rotation.concatenating(CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
+            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
+        let prepared = upright.transformed(by: transform)
+        let renderBounds = CGRect(x: 0, y: 0, width: ceil(extent.width * scale), height: ceil(extent.height * scale))
+        guard let pixels = CIContext().createCGImage(prepared, from: renderBounds) else {
+            throw SurfaceUnderstandingError.underlying("Could not prepare the image for text recognition")
+        }
+        let text = VNRecognizeTextRequest()
+        text.recognitionLevel = .accurate
+        text.usesLanguageCorrection = false
+        text.minimumTextHeight = 0.005
+        try VNImageRequestHandler(cgImage: pixels, options: [:]).perform([text])
+        let inverse = transform.inverted()
+        var labels = [[ImagePoint]]()
+        var displays = [[ImagePoint]]()
+        for observation in text.results ?? [] {
+            guard let candidate = observation.topCandidates(1).first, candidate.confidence >= 0.2 else { continue }
+            let corners = [observation.topLeft, observation.topRight, observation.bottomRight, observation.bottomLeft].map {
+                let pixel = CGPoint(x: $0.x * renderBounds.width, y: $0.y * renderBounds.height).applying(inverse)
+                return ImagePoint(x: (pixel.x - upright.extent.minX) / upright.extent.width,
+                                  y: 1 - (pixel.y - upright.extent.minY) / upright.extent.height)
+            }
+            labels.append(corners)
+            let value = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value.range(of: #"^\d{1,2}[:.]\d{2}$"#, options: .regularExpression) != nil {
+                displays.append(corners)
+            }
+        }
+        return (labels, displays)
     }
 
     /// Return a 1024-pixel-wide upright crop, original upright-image corners, and confidence.
     /// The caller supplies orientation through `PanelPhoto`, just as for detection.
-    public func detect(_ photo: PanelPhoto) async throws -> (image: CGImage, quad: PanelQuad, confidence: Double) {
-        let result = try await detectPanel(in: photo)
+    /// `warnings` reports OCR fallback, out-of-frame crops, and estimated alignment. Display these
+    /// alongside the image; absence of warnings is not a quality guarantee.
+    public func detect(_ photo: PanelPhoto) async throws -> (image: CGImage, quad: PanelQuad, confidence: Double, warnings: [String]) {
+        let result = try await analyze(photo)
         guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
               let pixels = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             throw SurfaceUnderstandingError.undecodableImage
@@ -166,7 +333,22 @@ public struct PanelDetector: Sendable {
             throw SurfaceUnderstandingError.underlying("Could not render the straightened panel")
         }
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
-        return (image: image, quad: result.quad, confidence: result.confidence)
+        return (image: image, quad: result.quad, confidence: result.confidence,
+                warnings: result.warnings + cropWarnings(quad: result.quad, estimatedAlignment: result.estimatedAlignment))
+    }
+
+    /// Conservative review notices, not a measured alignment score.
+    /// An empty list does not guarantee a correct crop or perfect alignment.
+    func cropWarnings(quad: PanelQuad, estimatedAlignment: Bool) -> [String] {
+        var warnings = [String]()
+        let corners = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+        if corners.contains(where: { !(0...1).contains($0.x) || !(0...1).contains($0.y) }) {
+            warnings.append("Crop extends beyond the original photo; missing panel content cannot be recovered.")
+        }
+        if estimatedAlignment {
+            warnings.append("Alignment needs visual review: the crop was expanded from a smaller rectangle, so some controls may remain slanted.")
+        }
+        return warnings
     }
 
     /// Map an upright image point to the panel unit square with a homography.
