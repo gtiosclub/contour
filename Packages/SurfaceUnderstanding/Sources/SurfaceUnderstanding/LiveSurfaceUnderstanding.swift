@@ -86,7 +86,7 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         //
         //     let labels = try await LabelReader()
         //         .readLabels(in: photo, panel: quad,
-        //                     regions: buttons.map { $0.bounds })
+        //                     regions: buttons.map(\.bounds))
         //
         //     let map = SurfaceMap(
         //         buttons: zip(buttons, labels).map { found, label in
