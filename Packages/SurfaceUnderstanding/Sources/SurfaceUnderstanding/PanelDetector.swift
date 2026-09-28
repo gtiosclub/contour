@@ -1,6 +1,6 @@
 //
 //  PanelDetector.swift
-//  SurfaceUnderstanding — Surface / Panel Reader
+//  SurfaceUnderstanding — Surface / Panel Detector
 //
 //  Weeks 2–3 deliverable: "Detect an appliance interface in a photo."
 //
