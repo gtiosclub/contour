@@ -26,7 +26,7 @@ it. The isolation rule is about what links together, not about who writes it;
 
 | Lane | Owner | Files |
 |---|---|---|
-| **Haptics** | Karan | `ProximityHaptics.swift`, `ChosenGuidanceModel` in `GuidanceModel.swift` |
+| **Haptics** | Karan | `HapticEngineManager.swift`, `ProximityHaptics.swift`, `ChosenGuidanceModel` in `GuidanceModel.swift` |
 | **Audio & Speech** | Rishika | `DirectionalAudio.swift`, `SpeechQueue.swift` |
 | **Outcome Signals & Harness** *(officers)* | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer.swift`, `LiveFeedbackEngine.swift`, `Harness/` |
 
