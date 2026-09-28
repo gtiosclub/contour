@@ -190,9 +190,10 @@ that pins it.
 
 ### What you need
 
-- **macOS 26** or later
-- **Xcode 26** (Swift 6, iOS 26 SDK) — the project will not open in Xcode 25
-- An **iPhone running iOS 26** for anything involving the camera. Surface
+- **macOS 27** or later — the Harness targets macOS 27
+- **Xcode 27** (Swift 6.4, iOS 27 SDK) — the packages use `swift-tools-version: 6.4`
+  and will not load in Xcode 26
+- An **iPhone running iOS 27** for anything involving the camera. Surface
   Understanding, and Experience's feedback lanes, can get a long way without one.
 
 ### Clone and open
@@ -212,7 +213,7 @@ see the other team's packages.
 The camera work needs a real phone — the simulator has no rear camera worth
 pointing at a microwave.
 
-1. Plug in an iPhone running iOS 26 and trust the Mac.
+1. Plug in an iPhone running iOS 27 and trust the Mac.
 2. Select the **`ContourApp`** scheme and your device.
 3. **Set up local signing once.** Sign into Xcode's Apple Accounts settings.
    Copy the template from the repo root (edit instead if the local file exists):

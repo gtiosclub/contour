@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Contour — Experience
 //
 // DEPENDENCY RULE: this package's SOURCE target may depend on ContourCore and
@@ -13,7 +13,7 @@ import PackageDescription
 
 let package = Package(
     name: "ContourFeedback",
-    platforms: [.iOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v27), .macOS(.v27)],
     products: [
         .library(name: "ContourFeedback", targets: ["ContourFeedback"])
     ],
