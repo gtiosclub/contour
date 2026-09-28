@@ -273,8 +273,9 @@ public struct PanelDetector: Sendable {
             guard let candidate = observation.topCandidates(1).first, candidate.confidence >= 0.2 else { continue }
             let corners = [observation.topLeft, observation.topRight, observation.bottomRight, observation.bottomLeft].map {
                 let pixel = CGPoint(x: $0.x * renderBounds.width, y: $0.y * renderBounds.height).applying(inverse)
-                return ImagePoint(x: (pixel.x - upright.extent.minX) / upright.extent.width,
-                                  y: 1 - (pixel.y - upright.extent.minY) / upright.extent.height)
+                let nx = (pixel.x - upright.extent.minX) / upright.extent.width
+                let ny = (pixel.y - upright.extent.minY) / upright.extent.height
+                return ImagePoint(x: Double(nx), y: Double(1 - ny))
             }
             labels.append(corners)
             let value = candidate.string.trimmingCharacters(in: .whitespacesAndNewlines)
