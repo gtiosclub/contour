@@ -1,6 +1,6 @@
 //
 //  TargetMatcher.swift
-//  SurfaceUnderstanding — Surface / Labels & Target Matching
+//  SurfaceUnderstanding — Surface / Target Matching
 //
 //  The user says what they want; this decides which control they meant.
 //
@@ -120,6 +120,6 @@ public struct TargetMatcher: Sendable {
     }
     
     public func match(_ request: String, in map: SurfaceMap) -> TargetMatch? {
-        fatalError("unimplemented — owned by Surface / Labels & Target Matching")
+        fatalError("unimplemented — owned by Surface / Target Matching")
     }
 }

@@ -1,90 +1,71 @@
 name: CI
 
+# The repo is public, so GitHub-hosted runners (macOS included) are free.
+# Every PR runs the isolation check on Linux and one combined macOS job that
+# tests every package and builds both apps. Red CI, no merge.
+
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  # Bump this when the club moves to a new Xcode. Everything in the repo
-  # assumes Xcode 26 / Swift 6 / iOS 26.
   XCODE_VERSION: "26"
 
 jobs:
-  # Fast, and the one that catches the mistake that actually hurts: a team
+  # Every PR. Free. Catches the one mistake that actually hurts: a team
   # reaching into another team's package.
   isolation:
     name: Package isolation
-    runs-on: macos-26
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: ./Scripts/check-dependencies.sh
 
-  # Every package tested natively on macOS — no simulator, no signing, seconds
-  # not minutes. This is where team tests belong.
-  packages:
-    name: test ${{ matrix.package }}
+  # One Mac job: test every package, then build both app targets.
+  mac:
+    name: build + test
     runs-on: macos-26
-    strategy:
-      fail-fast: false
-      matrix:
-        package:
-          - ContourCore
-          - SurfaceUnderstanding
-          - Tracking
-          - ContourFeedback
-          - ContourUI
-          - ContourMocks
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         run: |
-          # Pick the newest installed Xcode matching XCODE_VERSION.
           app=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1)
           if [ -n "$app" ]; then sudo xcode-select -s "$app"; fi
           xcodebuild -version
           swift --version
 
-      - name: swift build
-        working-directory: Packages/${{ matrix.package }}
-        run: swift build
-
-      - name: swift test
-        working-directory: Packages/${{ matrix.package }}
-        run: swift test
-
-  # The two app targets have to keep compiling as the packages move under them.
-  apps:
-    name: build ${{ matrix.scheme }}
-    runs-on: macos-26
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - scheme: ContourApp
-            destination: generic/platform=iOS Simulator
-          - scheme: Harness
-            destination: platform=macOS
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Select Xcode
+      - name: swift test — all packages
         run: |
-          app=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$app" ]; then sudo xcode-select -s "$app"; fi
-          xcodebuild -version
+          set -e
+          for pkg in ContourCore ContourMocks SurfaceUnderstanding Tracking ContourFeedback ContourUI; do
+            echo "::group::$pkg"
+            (cd "Packages/$pkg" && swift test)
+            echo "::endgroup::"
+          done
 
-      - name: Build
+      - name: Build ContourApp
         run: |
           set -o pipefail
           xcodebuild build \
             -workspace Contour.xcworkspace \
-            -scheme "${{ matrix.scheme }}" \
-            -destination "${{ matrix.destination }}" \
+            -scheme ContourApp \
+            -destination "generic/platform=iOS Simulator" \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Build Harness
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -workspace Contour.xcworkspace \
+            -scheme Harness \
+            -destination "platform=macOS" \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
