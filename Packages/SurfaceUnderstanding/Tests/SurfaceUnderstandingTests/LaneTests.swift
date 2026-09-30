@@ -90,8 +90,7 @@ func buttonDetectorFindsSixButtons() async throws {
 
 // MARK: - Labels — Srinivas
 
-@Test("Labels: reads the label on each button region",
-      .disabled("Srinivas — delete this line when LabelReader works"))
+@Test("Labels: reads the label on each button region")
 func labelReaderReadsStart() async throws {
     let photo = try SyntheticPanel.photo()
     let regions = SyntheticPanel.expected.buttons.map(\.bounds)
