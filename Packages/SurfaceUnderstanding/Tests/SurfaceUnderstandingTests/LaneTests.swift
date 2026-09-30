@@ -73,8 +73,7 @@ func panelDetectorFindsThePanel() async throws {
 
 // MARK: - Button Detector — Sanvi
 
-@Test("Button Detector: finds six buttons roughly where the mock says they are",
-      .disabled("Sanvi — delete this line when ButtonDetector works"))
+@Test("Button Detector: finds six buttons roughly where the mock says they are")
 func buttonDetectorFindsSixButtons() async throws {
     let photo = try SyntheticPanel.photo()
     let found = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
@@ -85,6 +84,35 @@ func buttonDetectorFindsSixButtons() async throws {
     for expected in SyntheticPanel.expected.buttons {
         let hit = found.contains { $0.bounds.contains(expected.bounds.center) }
         #expect(hit, "no detected box covers \(expected.label ?? "?")")
+    }
+}
+
+@Test("Button Detector: real photo")
+func buttonDetectorRealPhoto() async throws {
+    let url = Bundle.module.url(
+        forResource: "generated_buttons", // change name + extension as needed, also need to put in Package.swift
+        withExtension: "jpeg"
+    )!
+
+    let data = try Data(contentsOf: url)
+
+    let photo = PanelPhoto(
+        data: data,
+        pixelSize: PixelSize(width: 2816, height: 1536), // change pixels as needed
+        timestamp: Date()
+    )
+
+    let found = try await ButtonDetector().detectButtons(
+        in: photo,
+        panel: .fullFrame
+    )
+
+    print("Detected \(found.count) buttons")
+
+    for (i, button) in found.enumerated() {
+        print(
+            "\(i): bounds=\(button.bounds), confidence=\(button.confidence)"
+        )
     }
 }
 
