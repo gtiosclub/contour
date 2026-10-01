@@ -96,57 +96,72 @@ public struct ButtonDetector: Sendable {
     }
 }
 
-/// Removes boxes that overlap another box (at least 50% of smaller box is covered by larger box).
+/// Removes nested boxes so each button is reported once.
 ///
-/// If one box is mostly inside another, keep the higher-confidence box.
-/// If confidence is equal, keep the larger box.
-
+/// Vision finds rectangles at several levels: a plate or frame around a group of
+/// keys, each key, and sometimes the text or icon printed on a key. Two boxes are
+/// nested when at least half of the smaller one is inside the larger one.
+///
+/// If their confidences differ, the more confident box wins, as before. But
+/// Vision gives almost every rectangle a confidence of 1.0, so usually it comes
+/// down to what the inner boxes cover:
+/// - if they fill at least half of the outer box, the outer box is a frame
+///   around keys, so it's dropped and the keys stay;
+/// - otherwise they're details printed on one key, so the key stays and they're
+///   dropped.
+/// Neither "keep the larger" nor "keep the smaller" works on its own: the first
+/// lets a frame swallow the keys inside it, the second keeps a key's text
+/// instead of the key. The result doesn't depend on the order Vision returned
+/// the boxes in.
 private func removeOverlappingBoxes(
     _ results: [(bounds: PanelRect, confidence: Double)]
 ) -> [(bounds: PanelRect, confidence: Double)] {
-    var kept: [(bounds: PanelRect, confidence: Double)] = []
+    func area(_ i: Int) -> Double {
+        results[i].bounds.width * results[i].bounds.height
+    }
 
-    for candidate in results {
-        var shouldKeep = true
-        var indexesToRemove: [Int] = []
+    // Box `j` sits inside box `i`. The index breaks exact ties, so two copies
+    // of the same rectangle collapse to one.
+    func isInside(_ j: Int, _ i: Int) -> Bool {
+        j != i
+            && (area(j) < area(i) || (area(j) == area(i) && j > i))
+            && overlapRatio(results[j].bounds, results[i].bounds) >= 0.5
+    }
 
-        for (index, existing) in kept.enumerated() {
-            let overlap = overlapRatio(
-                candidate.bounds,
-                existing.bounds
-            )
+    var dropped = Set<Int>()
 
-            if overlap >= 0.5 {
-                if candidate.confidence > existing.confidence {
-                    indexesToRemove.append(index)
-                } else if candidate.confidence == existing.confidence {
-                    let candidateArea =
-                        candidate.bounds.width * candidate.bounds.height
-                    let existingArea =
-                        existing.bounds.width * existing.bounds.height
-
-                    if candidateArea > existingArea {
-                        indexesToRemove.append(index)
-                    } else {
-                        shouldKeep = false
-                        break
-                    }
-                } else {
-                    shouldKeep = false
-                    break
-                }
+    // The more confident of two nested boxes wins outright.
+    for i in results.indices {
+        for j in results.indices where isInside(j, i) {
+            if results[j].confidence > results[i].confidence {
+                dropped.insert(i)
+            } else if results[j].confidence < results[i].confidence {
+                dropped.insert(j)
             }
-        }
-
-        if shouldKeep {
-            for index in indexesToRemove.reversed() {
-                kept.remove(at: index)
-            }
-            kept.append(candidate)
         }
     }
 
-    return kept
+    // Equal confidence: decide by how much of the outer box the inner ones fill.
+    var frames = Set<Int>()
+    var details = Set<Int>()
+    for i in results.indices where !dropped.contains(i) {
+        let inner = results.indices.filter {
+            !dropped.contains($0) && isInside($0, i)
+                && results[$0].confidence == results[i].confidence
+        }
+        if inner.isEmpty { continue }
+
+        let filled = inner.map(area).reduce(0, +)
+        if filled >= 0.5 * area(i) {
+            frames.insert(i)
+        } else {
+            details.formUnion(inner)
+        }
+    }
+
+    dropped.formUnion(frames)
+    dropped.formUnion(details)
+    return results.indices.filter { !dropped.contains($0) }.map { results[$0] }
 }
 
 /// Returns the intersection area divided by the area of the smaller box.
