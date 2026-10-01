@@ -18,9 +18,10 @@ CameraService ── session ── CameraPreview
 
 Run ContourApp's Debug configuration on an iPhone, open **Developer tools →
 Tracking Diagnostics**, and allow camera access. Frames processed should increase.
-“Detector not implemented” is intentional. The overlay toggle is ready for a
-processor that returns a fingertip; no fake dot is displayed. Release builds
-have no developer navigation. The original mock pipeline remains available.
+The default `FingertipFrameProcessor` runs Vision index-fingertip detection.
+The overlay shows a usable fingertip and clears on missing or low-confidence
+detections. Position/confidence diagnostics are logged at most twice per second.
+Release builds have no developer navigation. The original mock pipeline remains available.
 
 The scaffold uses a fixed portrait camera basis. Keep the phone upright for
 initial experiments; coordinated physical rotation remains a UI task.
@@ -38,8 +39,16 @@ initial experiments; coordinated physical rotation remains a UI task.
   Never mutate a shared buffer. Orientation describes how to orient its pixels.
 - `TrackingDiagnostics.swift`: replaceable processor and debug data. ImagePoint
   uses oriented image coordinates, top-left origin, y down. It is not PanelPoint.
-- `LiveTrackingSource` and both existing trackers remain unimplemented. The
-  diagnostics path does not invoke them or claim usable production tracking.
+- `FingertipTracker.detect(in:)` returns a `FingertipObservation` containing the
+  capture timestamp, optional image-space fingertip, and optional confidence.
+  It uses `DetectHumanHandPoseRequest` with one hand, honors frame orientation,
+  and converts Vision coordinates to top-left/y-down coordinates. Confidence
+  must exceed 0.3; the existing quality evaluator can still mark a detection
+  below 0.5 as degraded. Errors propagate to the caller; the debug adapter logs
+  errors and returns `notDetected`. No previous point is reused.
+- `LiveTrackingSource` and `PanelTracker` remain unimplemented. The diagnostics
+  path does not invoke them or claim usable production tracking. Panel conversion
+  remains separate (`PanelHomography`); no approximate 3D projection is used.
 
 Only the app owns camera lifetime. The old tracker comments saying “release the
 camera” should be read as release its frame subscription when live integration
@@ -52,10 +61,11 @@ supports future replay adapters; no replay implementation is included yet.
 
 ## Assignable next tasks
 
-1. **Fingertip processor (Tracking):** implement TrackingFrameProcessor using
-   Vision; honor CameraFrame.orientation, convert to ImagePoint, return confidence
-   and explicit notDetected. Inject it into TrackingDebugModel. Test with recorded
-   pointing hands and verify overlays on device.
+1. **Fingertip validation (Tracking):** the detector and debug adapter are wired.
+   Validate with recorded pointing hands and on-device center/edge alignment,
+   low-confidence loss, hand removal/re-entry, and aspect-fill cropping.
+   The integrated pipeline can call `FingertipTracker.detect(in:)` with the same
+   `CameraFrame` used by panel detection, preserving the shared capture timestamp.
 2. **Manual panel initialization (Tracking + app debug UI):** collect four image
    corners; compute image-to-panel homography; show rectified fingertip coordinates.
 3. **Panel follow (Tracking):** prototype feature matching/registration from a
@@ -73,7 +83,8 @@ supports future replay adapters; no replay implementation is included yet.
 - Grant/deny permission; denial must display an explanation.
 - Open the screen, confirm frame count rises, leave and reopen it.
 - Background the app: the camera stops. Reopen the debug screen to restart.
-- Once a detector is added, verify all four preview corners and aspect-fill crop.
+- Verify all four preview corners and aspect-fill crop; remove and reintroduce
+  the hand and check that an unusable detection never leaves the old dot.
 - Verify no detection work or debug navigation is enabled in Release.
 
 Current assignable issues: [finger](issues/fingertip-tracking.md) and [panel](issues/panel-tracking.md).
