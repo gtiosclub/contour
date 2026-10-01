@@ -23,8 +23,14 @@ struct TrackingDebugView: View {
             if let confidence = model.latest?.confidence {
                 LabeledContent("Confidence", value: confidence.formatted(.percent))
             }
+            if let assessment = model.assessment {
+                LabeledContent("Tracking quality", value: assessment.qualityLabel)
+                Text(assessment.reason == .tracking ? "Fingertip tracked" : assessment.reason.message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             if let error = model.error { Text(error).foregroundStyle(.red) }
-            Text("Scaffolding only: finger detection and panel tracking are team tasks. No landmarks are generated yet.")
+            Text("Point one index finger at the rear camera. The dot shows image-space detection; panel tracking is separate. Keep the phone upright.")
                 .font(.caption).foregroundStyle(.secondary)
         }
         .padding()
