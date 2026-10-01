@@ -1,6 +1,8 @@
 #if DEBUG
+import ContourCore
 import Foundation
 import Observation
+import OSLog
 import Tracking
 
 @MainActor
@@ -14,10 +16,12 @@ final class TrackingDebugModel {
     private let processor: any TrackingFrameProcessor
     private let evaluator: TrackingQualityEvaluator
     private var previous: TrackingObservation?
+    private var lastLogTime: ContinuousClock.Instant?
+    private let logger = Logger(subsystem: "edu.gatech.contour", category: "TrackingDiagnostics")
 
-    init(processor: any TrackingFrameProcessor = UnimplementedFrameProcessor()) {
+    init(processor: any TrackingFrameProcessor = FingertipFrameProcessor()) {
         self.processor = processor
-         var thresholds = TrackingQualityThresholds()
+        var thresholds = TrackingQualityThresholds()
         thresholds.panelRequired = false
         self.evaluator = TrackingQualityEvaluator(thresholds: thresholds)
     }
@@ -28,6 +32,7 @@ final class TrackingDebugModel {
         latest = nil
         assessment = nil
         previous = nil
+        lastLogTime = nil
         framesProcessed = 0
         error = nil
         do {
@@ -49,6 +54,7 @@ final class TrackingDebugModel {
                 latest = result
                 assessment = assessed
                 framesProcessed += 1
+                log(result)
             }
         } catch is CancellationError {
             // Normal navigation/background lifecycle.
@@ -59,6 +65,17 @@ final class TrackingDebugModel {
         latest = nil
         assessment = nil
         await camera.stop()
+    }
+
+    private func log(_ result: TrackingDiagnostics) {
+        let now = ContinuousClock.now
+        if let lastLogTime, now - lastLogTime < .milliseconds(500) { return }
+        lastLogTime = now
+        if let point = result.fingertip, let confidence = result.confidence {
+            logger.debug("Fingertip x=\(point.x) y=\(point.y) confidence=\(confidence)")
+        } else {
+            logger.debug("No usable fingertip")
+        }
     }
 }
 #endif
