@@ -4,16 +4,17 @@
 //
 //  Test support for anything that runs Vision text recognition.
 //
-//  On macOS 27 the neural model behind `.accurate` sometimes fails to load, on
-//  dev Macs and on GitHub's xcode-27 runner alike, and LabelReader falls back
-//  to `.fast` when it does. So OCR tests:
-//  - skip only when `.fast` text recognition doesn't work on the machine, and
+//  On macOS 27 the neural model behind `.accurate` sometimes fails to load, and
+//  LabelReader falls back to `.fast` when it does. So OCR tests:
+//  - skip on CI. On GitHub's xcode-27 runner Vision text recognition either
+//    throws or hangs the whole test process (the job sat for 20 minutes without
+//    running a test), so it can't be trusted there. Run them on a Mac.
+//  - skip when `.fast` doesn't work on the machine at all, and
 //  - compare labels allowing one wrong character, because `.fast` can read
 //    "Start" as "Stsrt". What they check is which button each label lands on.
 //
-//  The check runs off the main thread with a time limit. On the CI VM a Vision
-//  call made while the test runner was planning (on the main thread) hung
-//  forever, so it must never block the runner.
+//  The local check runs off the main thread with a time limit, so it can never
+//  block the test runner.
 
 import CoreGraphics
 import CoreText
@@ -23,8 +24,13 @@ import Vision
 
 enum TextRecognitionCheck {
 
-    /// True when `.fast` text recognition can read a plain word here.
+    /// GitHub Actions sets CI=true.
+    static let onCI = ProcessInfo.processInfo.environment["CI"] != nil
+
+    /// True when `.fast` text recognition can read a plain word here. Never
+    /// touches Vision on CI.
     static let works: Bool = {
+        if onCI { return false }
         let result = Result()
         let done = DispatchSemaphore(value: 0)
         Thread.detachNewThread {
@@ -49,7 +55,7 @@ enum TextRecognitionCheck {
     /// fails the test instead of stalling CI for hours.
     static let timeLimit: TimeLimitTrait = .timeLimit(.minutes(2))
 
-    static let skipReason: Comment = "Vision text recognition (.fast) doesn't run on this machine."
+    static let skipReason: Comment = "Skipped: Vision text recognition fails or hangs on CI (or doesn't work on this machine). Run swift test on a Mac."
 
     /// Labels match slot by slot, allowing one wrong character per label.
     ///
