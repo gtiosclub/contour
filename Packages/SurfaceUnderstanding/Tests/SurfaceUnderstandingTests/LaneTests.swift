@@ -91,17 +91,19 @@ func buttonDetectorFindsSixButtons() async throws {
 // MARK: - Labels — Srinivas
 
 @Test("Labels: reads the label on each button region",
-      .disabled("Srinivas — delete this line when LabelReader works"))
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func labelReaderReadsStart() async throws {
     let photo = try SyntheticPanel.photo()
     let regions = SyntheticPanel.expected.buttons.map(\.bounds)
 
     let labels = try await LabelReader().readLabels(in: photo, panel: .fullFrame, regions: regions)
 
+    // Slot by slot: button i's label has to come back at index i. Checking that
+    // "start" shows up somewhere would pass even if every label were swapped.
     #expect(labels.count == regions.count)
-    let read = labels.compactMap { $0?.lowercased() }
-    #expect(read.contains("start"))
-    #expect(read.contains("popcorn"))
+    let expected = SyntheticPanel.expected.buttons.map(\.label)
+    #expect(TextRecognitionCheck.labelsMatch(labels, expected), "read \(labels), expected \(expected)")
 }
 
 // MARK: - Target Matching — Asav
