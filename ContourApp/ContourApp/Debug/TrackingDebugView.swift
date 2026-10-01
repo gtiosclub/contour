@@ -1,4 +1,6 @@
 #if DEBUG
+import ContourCore
+import ContourMocks
 import SwiftUI
 import Tracking
 
@@ -6,6 +8,8 @@ struct TrackingDebugView: View {
     let camera: CameraService
     @State private var model = TrackingDebugModel()
     @State private var showOverlay = true
+    @State private var showReferenceSetup = false
+    @State private var manualReference = ManualReferenceState()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -18,6 +22,26 @@ struct TrackingDebugView: View {
                         .font(.caption).padding(8).background(.regularMaterial)
                 }
             Toggle("Show tracking overlay", isOn: $showOverlay)
+            Button(manualReference.reference == nil
+                   ? "Prepare manual panel reference" : "Replace manual panel reference") {
+                showReferenceSetup = true
+            }
+                .buttonStyle(.bordered)
+            if let reference = manualReference.reference {
+                Text("Reference prepared: \(reference.detection.map.buttons.count) buttons. "
+                     + "Live initialization waits for the tracker and pipeline reset interfaces.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Debug target", selection: Binding(
+                    get: { manualReference.selectedTargetID },
+                    set: { manualReference.selectTarget($0) }
+                )) {
+                    Text("No target").tag(UUID?.none)
+                    ForEach(reference.detection.map.buttons) { button in
+                        Text(button.label ?? "Unlabelled button")
+                            .tag(Optional(button.id))
+                    }
+                }
+            }
             LabeledContent("Frames processed", value: "\(model.framesProcessed)")
             Text(model.latest?.status.rawValue ?? (model.running ? "Waiting for frames" : "Camera stopped"))
             if let confidence = model.latest?.confidence {
@@ -35,6 +59,15 @@ struct TrackingDebugView: View {
         }
         .padding()
         .navigationTitle("Tracking Diagnostics")
+        .sheet(isPresented: $showReferenceSetup) {
+            NavigationStack {
+                ManualReferenceSetupView(layout: MockSurfaceMaps.microwave,
+                                         layoutName: "six-button microwave fixture") { reference in
+                    model.clearDisplayedResults()
+                    manualReference.replace(with: reference)
+                }
+            }
+        }
         .task {
             await model.run(camera: camera)
         }
