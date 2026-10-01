@@ -102,6 +102,50 @@ enum SyntheticPanel {
         return (try photo(image, size: size), regions, labels)
     }
 
+    /// Four keys sitting on a raised plate, plus two loose keys beside it.
+    /// Vision finds the plate as a rectangle too, with the same confidence as
+    /// the keys, so a "keep the bigger box" rule would return the plate and
+    /// lose the four keys on it. Returns the six keys in panel space; the panel
+    /// fills the frame.
+    static func groupedKeysPhoto() throws -> (photo: PanelPhoto, keys: [PanelRect]) {
+        let ctx = try context(size, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(size.width), h = CGFloat(size.height)
+        let plate = CGRect(x: 0.08 * w, y: 0.15 * h, width: 0.40 * w, height: 0.44 * h)
+        ctx.setFillColor(CGColor(gray: 0.45, alpha: 1))
+        ctx.fill(plate)
+
+        let gap: CGFloat = 18
+        let keyWidth = (plate.width - 3 * gap) / 2
+        let keyHeight = (plate.height - 3 * gap) / 2
+        var keys: [CGRect] = []
+        for row in 0..<2 {
+            for column in 0..<2 {
+                keys.append(CGRect(
+                    x: plate.minX + gap + CGFloat(column) * (keyWidth + gap),
+                    y: plate.minY + gap + CGFloat(row) * (keyHeight + gap),
+                    width: keyWidth, height: keyHeight
+                ))
+            }
+        }
+        for x in [0.60, 0.78] {
+            keys.append(CGRect(x: x * w, y: 0.30 * h, width: 0.14 * w, height: 0.16 * h))
+        }
+
+        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
+        keys.forEach { ctx.fill($0) }
+
+        let rects = keys.map {
+            PanelRect(
+                x: Double($0.minX / w), y: Double($0.minY / h),
+                width: Double($0.width / w), height: Double($0.height / h)
+            )
+        }
+        return (try photo(try makeImage(ctx), size: size), rects)
+    }
+
     // MARK: - Drawing
 
     private static func render() throws -> CGImage {

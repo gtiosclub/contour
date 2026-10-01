@@ -30,6 +30,9 @@ let package = Package(
             dependencies: [
                 "SurfaceUnderstanding",
                 .product(name: "ContourMocks", package: "ContourMocks"),
+            ],
+            resources: [
+                .process("generated_buttons.jpeg")
             ]
         ),
     ]

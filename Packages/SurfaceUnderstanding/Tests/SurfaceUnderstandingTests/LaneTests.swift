@@ -73,8 +73,7 @@ func panelDetectorFindsThePanel() async throws {
 
 // MARK: - Button Detector — Sanvi
 
-@Test("Button Detector: finds six buttons roughly where the mock says they are",
-      .disabled("Sanvi — delete this line when ButtonDetector works"))
+@Test("Button Detector: finds six buttons roughly where the mock says they are")
 func buttonDetectorFindsSixButtons() async throws {
     let photo = try SyntheticPanel.photo()
     let found = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
@@ -86,6 +85,28 @@ func buttonDetectorFindsSixButtons() async throws {
         let hit = found.contains { $0.bounds.contains(expected.bounds.center) }
         #expect(hit, "no detected box covers \(expected.label ?? "?")")
     }
+}
+
+@Test("Button Detector: finds all 26 keys on a generated microwave keypad")
+func buttonDetectorGeneratedKeypad() async throws {
+    // A generated image, not a real photo: a 26-key microwave keypad filling
+    // the frame, with START in the right-hand column.
+    let url = try #require(Bundle.module.url(forResource: "generated_buttons", withExtension: "jpeg"))
+    let data = try Data(contentsOf: url)
+
+    let photo = PanelPhoto(
+        data: data,
+        pixelSize: PixelSize(width: 2816, height: 1536),
+        timestamp: Date()
+    )
+
+    let found = try await ButtonDetector().detectButtons(
+        in: photo,
+        panel: .fullFrame
+    )
+
+    #expect(found.count == 26)
+    #expect(found.contains { $0.bounds.contains(PanelPoint(x: 0.896, y: 0.524)) }, "no box covers START")
 }
 
 // MARK: - Labels — Srinivas
