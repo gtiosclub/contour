@@ -86,7 +86,12 @@ struct ManualReferenceSetupView: View {
                 Button("Prepare PanelReference") { prepare() }
                     .buttonStyle(.borderedProminent)
                     .disabled(photo == nil || corners.count != 4 || !confirmsLayout)
-                if let error { Text(error).foregroundStyle(.red) }
+                if let error {
+                    Text(error).foregroundStyle(.red)
+                    if let selectedItem {
+                        Button("Retry loading photo") { Task { await load(selectedItem) } }
+                    }
+                }
             }
             .padding()
         }
