@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Contour — Tracking / Spatial
 //
 // DEPENDENCY RULE: this package's SOURCE target may depend on ContourCore and
@@ -11,7 +11,7 @@ import PackageDescription
 
 let package = Package(
     name: "Tracking",
-    platforms: [.iOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v27), .macOS(.v27)],
     products: [
         .library(name: "Tracking", targets: ["Tracking"])
     ],
