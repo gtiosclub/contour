@@ -15,7 +15,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  XCODE_VERSION: "26"
+  # An exact release, not a major. The xcode-27 image also carries 27.1 and 27.2,
+  # both betas, and a bare "27" glob sorts a beta to the top.
+  XCODE_VERSION: "27.0"
 
 jobs:
   # Every PR. Free. Catches the one mistake that actually hurts: a team
@@ -30,14 +32,22 @@ jobs:
   # One Mac job: test every package, then build both app targets.
   mac:
     name: build + test
-    runs-on: macos-26
+    # GitHub preview image. The GA macos-26 image has no Xcode 27 at all.
+    runs-on: xcode-27
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         run: |
-          app=$(ls -d /Applications/Xcode_${XCODE_VERSION}*.app 2>/dev/null | sort -V | tail -1)
-          if [ -n "$app" ]; then sudo xcode-select -s "$app"; fi
+          # Fail if the pinned Xcode is missing. Falling back to whatever the
+          # image defaults to would build on the wrong toolchain and still go green.
+          app="/Applications/Xcode_${XCODE_VERSION}.app"
+          if [ ! -d "$app" ]; then
+            echo "::error::$app is not on this runner. Installed:"
+            ls -d /Applications/Xcode_*.app
+            exit 1
+          fi
+          sudo xcode-select -s "$app"
           xcodebuild -version
           swift --version
 
