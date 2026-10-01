@@ -152,8 +152,7 @@ func targetMatcherResolvesRequests() throws {
 
 // MARK: - Eval & Test Set — Vrishin
 
-@Test("Eval: a perfect detection scores 1.0 on everything",
-      .disabled("Vrishin — delete this line when TestSet.score works"))
+@Test("Eval: a perfect detection scores 1.0 on everything")
 func perfectDetectionScoresOne() {
     let map = MockSurfaceMaps.microwave
     let score = TestSet.score(detected: map, against: map)
@@ -162,8 +161,7 @@ func perfectDetectionScoresOne() {
     #expect(score.labelAccuracy == 1)
 }
 
-@Test("Eval: dropping one button costs recall but not precision",
-      .disabled("Vrishin — delete this line when TestSet.score works"))
+@Test("Eval: dropping one button costs recall but not precision")
 func missingButtonCostsRecall() {
     let expected = MockSurfaceMaps.microwave
     var detected = expected
