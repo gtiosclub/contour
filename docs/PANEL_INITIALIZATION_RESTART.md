@@ -9,6 +9,11 @@ TL/TR/BR/BL corners in order. The app orients the photo upright, then builds a
 with the matching fixture; its button positions are not meaningful on another
 appliance. No still-image detector runs in this path.
 
+The debug screen can replace a prepared reference without leaving the screen.
+Replacement clears its selected debug target and displayed diagnostics; a
+processor result already in flight is discarded if it belongs to the prior
+display generation. A failed photo load can be retried from the setup sheet.
+
 The current debug screen reports **prepared**, not **tracking**. The repository's
 `PanelTracker.startTracking` and `stopTracking` still call `fatalError`, and
 `ContourPipeline` has no cancellation/replacement interface. Do not call those
