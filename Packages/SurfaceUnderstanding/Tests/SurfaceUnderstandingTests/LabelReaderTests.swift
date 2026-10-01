@@ -12,7 +12,8 @@ import Testing
 @testable import SurfaceUnderstanding
 
 @Test("Labels: read through the real quad when the panel doesn't fill the photo",
-      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason))
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func labelReaderUsesTheQuad() async throws {
     let (photo, quad) = try SyntheticPanel.insetPhoto()
     let regions = SyntheticPanel.expected.buttons.map(\.bounds)
@@ -24,7 +25,8 @@ func labelReaderUsesTheQuad() async throws {
 }
 
 @Test("Labels: labels close together on one row each go to their own button",
-      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason))
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func labelReaderSplitsAMergedLine() async throws {
     let (photo, regions, expected) = try SyntheticPanel.tightRowPhoto()
 

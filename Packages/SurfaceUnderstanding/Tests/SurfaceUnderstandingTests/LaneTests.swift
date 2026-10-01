@@ -91,7 +91,8 @@ func buttonDetectorFindsSixButtons() async throws {
 // MARK: - Labels — Srinivas
 
 @Test("Labels: reads the label on each button region",
-      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason))
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func labelReaderReadsStart() async throws {
     let photo = try SyntheticPanel.photo()
     let regions = SyntheticPanel.expected.buttons.map(\.bounds)

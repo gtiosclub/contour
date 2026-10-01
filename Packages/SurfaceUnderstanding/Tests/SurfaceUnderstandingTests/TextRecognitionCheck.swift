@@ -7,12 +7,13 @@
 //  On macOS 27 the neural model behind `.accurate` sometimes fails to load, on
 //  dev Macs and on GitHub's xcode-27 runner alike, and LabelReader falls back
 //  to `.fast` when it does. So OCR tests:
-//  - skip only when no text recognition works on the machine at all, and
+//  - skip only when `.fast` text recognition doesn't work on the machine, and
 //  - compare labels allowing one wrong character, because `.fast` can read
 //    "Start" as "Stsrt". What they check is which button each label lands on.
 //
-//  The check prints which modes work, so CI logs show what actually ran.
-//
+//  The check runs off the main thread with a time limit. On the CI VM a Vision
+//  call made while the test runner was planning (on the main thread) hung
+//  forever, so it must never block the runner.
 
 import CoreGraphics
 import CoreText
@@ -22,15 +23,33 @@ import Vision
 
 enum TextRecognitionCheck {
 
-    /// True when Vision can read a plain word here, in either mode.
+    /// True when `.fast` text recognition can read a plain word here.
     static let works: Bool = {
-        let accurate = attempt(.accurate)
-        let fast = attempt(.fast)
-        print("TextRecognitionCheck: accurate=\(accurate), fast=\(fast)")
-        return accurate == "ok" || fast == "ok"
+        let result = Result()
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            result.set(attempt(.fast))
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 90) == .timedOut { result.set("timed out after 90s") }
+        let fast = result.value
+        FileHandle.standardError.write(Data("TextRecognitionCheck: fast=\(fast)\n".utf8))
+        return fast == "ok"
     }()
 
-    static let skipReason: Comment = "Vision text recognition doesn't run on this machine at all."
+    /// The check's outcome, written by the worker thread and read by the runner.
+    private final class Result: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored = "not run"
+        var value: String { lock.withLock { stored } }
+        func set(_ value: String) { lock.withLock { if stored == "not run" { stored = value } } }
+    }
+
+    /// Long enough for a slow first Vision call, short enough that a hang
+    /// fails the test instead of stalling CI for hours.
+    static let timeLimit: TimeLimitTrait = .timeLimit(.minutes(2))
+
+    static let skipReason: Comment = "Vision text recognition (.fast) doesn't run on this machine."
 
     /// Labels match slot by slot, allowing one wrong character per label.
     ///
