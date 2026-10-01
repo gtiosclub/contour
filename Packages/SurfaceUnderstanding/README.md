@@ -21,14 +21,21 @@ which lane a change sits in.
 
 | Lane | Owner | Files |
 |---|---|---|
-| **Panel Reader** | Sanvi | `PanelDetector.swift`, `ButtonDetector.swift`, `LiveSurfaceUnderstanding.swift` |
-| **Labels & Target Matching** | Srinivas | `LabelReader.swift`, `TargetMatcher.swift` |
-| **Eval & Test Set** *(officers)* | Neel, Aadarsh | `TestSet.swift` |
+| **Panel Detector** | Aarav | `PanelDetector.swift` |
+| **Button Detector** | Sanvi | `ButtonDetector.swift` |
+| **Labels** | Srinivas | `LabelReader.swift` |
+| **Target Matching** | Asav | `TargetMatcher.swift` |
+| **Eval & Test Set** | Vrishin | `TestSet.swift`, `TestSet/` |
+| *Officers* | Neel, Aadarsh | `LiveSurfaceUnderstanding.swift` (wiring the stages together) |
 
-The two build-out lanes meet in `LiveSurfaceUnderstanding`, which orchestrates
-the stages: Panel Reader owns the file, Labels & Target Matching owns what goes
-into the `label` field. Agree the hand-off before either of you starts, not
-after.
+The stages meet in `LiveSurfaceUnderstanding`. Panel Detector hands a quad to
+Button Detector; Button Detector hands regions to Labels; Labels fills the
+`label` field; Target Matching reads the finished map. Agree each hand-off with
+your neighbour before you start, not after.
+
+Every lane has a test in `Tests/SurfaceUnderstandingTests/LaneTests.swift`
+marked `.disabled(...)`. Delete that line when your lane works — that's your
+definition of done.
 
 ## Your contract
 
@@ -55,10 +62,10 @@ panel-level confidence.
 
 From the project timeline, your deliverables:
 
-- [ ] **Detect an appliance interface in a photo** → `PanelDetector` *(Panel Reader)*
-- [ ] **Identify basic buttons and labels** → `ButtonDetector` *(Panel Reader)*, `LabelReader` *(Labels & Target Matching)*
-- [ ] **Produce a basic `SurfaceMap`** → `LiveSurfaceUnderstanding` *(Panel Reader)*
-- [ ] **Match a spoken request to a control** → `TargetMatcher` *(Labels & Target Matching)*
+- [ ] **Detect an appliance interface in a photo** → `PanelDetector` *(Panel Detector)*
+- [ ] **Identify basic buttons and labels** → `ButtonDetector` *(Button Detector)*, `LabelReader` *(Labels)*
+- [ ] **Produce a basic `SurfaceMap`** → `LiveSurfaceUnderstanding` *(officers)*
+- [ ] **Match a spoken request to a control** → `TargetMatcher` *(Target Matching)*
 - [ ] **Hand-label the test set** → `TestSet` *(Eval & Test Set)*
 
 Every team member owes five photos of appliance panels they can get to. That is

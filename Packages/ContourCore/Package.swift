@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Contour — GT iOS Club
 //
 // ContourCore is THE CONTRACT. It depends on nothing, by design and forever.
@@ -13,7 +13,7 @@ import PackageDescription
 
 let package = Package(
     name: "ContourCore",
-    platforms: [.iOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v27), .macOS(.v27)],
     products: [
         .library(name: "ContourCore", targets: ["ContourCore"])
     ],
