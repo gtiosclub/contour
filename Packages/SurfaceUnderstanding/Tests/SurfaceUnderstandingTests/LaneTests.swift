@@ -97,10 +97,10 @@ func labelReaderReadsStart() async throws {
 
     let labels = try await LabelReader().readLabels(in: photo, panel: .fullFrame, regions: regions)
 
+    // Slot by slot: button i's label has to come back at index i. Checking that
+    // "start" shows up somewhere would pass even if every label were swapped.
     #expect(labels.count == regions.count)
-    let read = labels.compactMap { $0?.lowercased() }
-    #expect(read.contains("start"))
-    #expect(read.contains("popcorn"))
+    #expect(labels.map { $0?.lowercased() } == SyntheticPanel.expected.buttons.map { $0.label?.lowercased() })
 }
 
 // MARK: - Target Matching — Asav
