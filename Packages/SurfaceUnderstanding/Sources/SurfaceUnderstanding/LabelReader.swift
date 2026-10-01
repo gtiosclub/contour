@@ -42,26 +42,43 @@ public struct LabelReader: Sendable {
 
         let image = try photo.cgImage()
 
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        let observations: [VNRecognizedTextObservation]
         do {
-            try handler.perform([request])
+            observations = try recognizeText(in: image, level: .accurate)
         } catch {
-            throw SurfaceUnderstandingError.underlying(error.localizedDescription)
+            // On macOS/iOS 27 the neural model behind `.accurate` sometimes
+            // fails to load (e5rtError, "precompiled compute operation"), and
+            // once it fails it keeps failing for the rest of the process.
+            // `.fast` doesn't use that model. It can misread a letter on small
+            // text, but a label on the right button with a typo beats no
+            // labels at all.
+            do {
+                observations = try recognizeText(in: image, level: .fast)
+            } catch {
+                throw SurfaceUnderstandingError.underlying(error.localizedDescription)
+            }
         }
 
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
 
-        let words = locateWords(in: request.results ?? [], panel: panel)
+        let words = locateWords(in: observations, panel: panel)
 
         return regions.map { region in
             let inside = words.filter { region.contains($0.centre) }
             guard !inside.isEmpty else { return nil }
             return readingOrder(inside).map(\.text).joined(separator: " ")
         }
+    }
+
+    private func recognizeText(
+        in image: CGImage,
+        level: VNRequestTextRecognitionLevel
+    ) throws -> [VNRecognizedTextObservation] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = level
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+        return request.results ?? []
     }
 
     // MARK: - Words
