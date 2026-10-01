@@ -25,7 +25,7 @@ struct TrackingDebugView: View {
             }
             if let assessment = model.assessment {
                 LabeledContent("Tracking quality", value: assessment.qualityLabel)
-                Text(assessment.reason.message)
+                Text(assessment.reason == .tracking ? "Fingertip tracked" : assessment.reason.message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
