@@ -52,8 +52,7 @@ func garbageThrows() {
 
 // MARK: - Panel Detector — Aarav
 
-@Test("Panel Detector: finds a full-frame panel and rectifies its centre",
-      .disabled("Aarav — delete this line when PanelDetector works"))
+@Test("Panel Detector: finds a full-frame panel and rectifies its centre")
 func panelDetectorFindsThePanel() async throws {
     let photo = try SyntheticPanel.photo()
     let detector = PanelDetector()
