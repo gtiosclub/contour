@@ -87,18 +87,16 @@ func buttonDetectorFindsSixButtons() async throws {
     }
 }
 
-@Test("Button Detector: real photo")
-func buttonDetectorRealPhoto() async throws {
-    let url = Bundle.module.url(
-        forResource: "generated_buttons", // change name + extension as needed, also need to put in Package.swift
-        withExtension: "jpeg"
-    )!
-
+@Test("Button Detector: finds all 26 keys on a generated microwave keypad")
+func buttonDetectorGeneratedKeypad() async throws {
+    // A generated image, not a real photo: a 26-key microwave keypad filling
+    // the frame, with START in the right-hand column.
+    let url = try #require(Bundle.module.url(forResource: "generated_buttons", withExtension: "jpeg"))
     let data = try Data(contentsOf: url)
 
     let photo = PanelPhoto(
         data: data,
-        pixelSize: PixelSize(width: 2816, height: 1536), // change pixels as needed
+        pixelSize: PixelSize(width: 2816, height: 1536),
         timestamp: Date()
     )
 
@@ -107,13 +105,8 @@ func buttonDetectorRealPhoto() async throws {
         panel: .fullFrame
     )
 
-    print("Detected \(found.count) buttons")
-
-    for (i, button) in found.enumerated() {
-        print(
-            "\(i): bounds=\(button.bounds), confidence=\(button.confidence)"
-        )
-    }
+    #expect(found.count == 26)
+    #expect(found.contains { $0.bounds.contains(PanelPoint(x: 0.896, y: 0.524)) }, "no box covers START")
 }
 
 // MARK: - Labels — Srinivas
