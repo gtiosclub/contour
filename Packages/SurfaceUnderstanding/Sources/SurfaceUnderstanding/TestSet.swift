@@ -87,6 +87,67 @@ public enum TestSet {
         against expected: SurfaceMap,
         overlapThreshold: Double = 0.5
     ) -> SampleScore {
-        fatalError("unimplemented — owned by Surface / Eval & Test Set")
+        var candidates: [(expected: Int, detected: Int, overlap: Double)] = []
+
+        for (expectedIndex, expectedButton) in expected.buttons.enumerated() {
+            for (detectedIndex, detectedButton) in detected.buttons.enumerated() {
+                candidates.append((
+                    expected: expectedIndex,
+                    detected: detectedIndex,
+                    overlap: iou(expectedButton.bounds, detectedButton.bounds)
+                ))
+            }
+        }
+
+        candidates.sort { $0.overlap > $1.overlap }
+
+        var usedExpected = Set<Int>()
+        var usedDetected = Set<Int>()
+        var matches: [(expected: SurfaceMap.Button, detected: SurfaceMap.Button)] = []
+
+        for candidate in candidates where candidate.overlap >= overlapThreshold {
+            guard !usedExpected.contains(candidate.expected),
+                  !usedDetected.contains(candidate.detected) else {
+                continue
+            }
+
+            usedExpected.insert(candidate.expected)
+            usedDetected.insert(candidate.detected)
+            matches.append((
+                expected: expected.buttons[candidate.expected],
+                detected: detected.buttons[candidate.detected]
+            ))
+        }
+
+        let labelledMatches = matches.compactMap { match -> Bool? in
+            guard let expectedLabel = match.expected.label else { return nil }
+            guard let detectedLabel = match.detected.label else { return false }
+            return normalized(expectedLabel) == normalized(detectedLabel)
+        }
+
+        return SampleScore(
+            recall: fraction(matches.count, outOf: expected.buttons.count),
+            precision: fraction(matches.count, outOf: detected.buttons.count),
+            labelAccuracy: fraction(labelledMatches.count(where: { $0 }), outOf: labelledMatches.count)
+        )
+    }
+
+    /// Intersection over union for two normalized panel-space rectangles.
+    static func iou(_ a: PanelRect, _ b: PanelRect) -> Double {
+        let left = max(a.minX, b.minX)
+        let right = min(a.maxX, b.maxX)
+        let top = max(a.minY, b.minY)
+        let bottom = min(a.maxY, b.maxY)
+        let intersection = max(0, right - left) * max(0, bottom - top)
+        let union = a.width * a.height + b.width * b.height - intersection
+        return union > 0 ? intersection / union : 0
+    }
+
+    private static func normalized(_ label: String) -> String {
+        label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private static func fraction(_ numerator: Int, outOf denominator: Int) -> Double {
+        denominator == 0 ? 1 : Double(numerator) / Double(denominator)
     }
 }
