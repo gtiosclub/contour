@@ -37,6 +37,14 @@ struct ContentView: View {
                 }
                 #endif
 
+                
+                Section("Developing LiveCameraView") {
+                    NavigationLink("Enter LiveCameraView") {
+                        LiveCameraView()
+                    }
+                }
+                
+                
                 Section("Pipeline") {
                     ForEach(ContourPipeline.Component.allCases, id: \.self) { component in
                         LabeledContent(component.rawValue) {

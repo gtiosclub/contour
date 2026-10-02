@@ -42,56 +42,193 @@ enum SyntheticPanel {
         )
     }
 
+    /// The same panel, but smaller and sitting inside a larger dark photo, as if
+    /// shot from further back. The panel no longer fills the frame, so the
+    /// correct quad is `quad`, not `.fullFrame`. Button bounds are unchanged:
+    /// they are in panel space.
+    static func insetPhoto() throws -> (photo: PanelPhoto, quad: PanelQuad) {
+        let canvas = PixelSize(width: 1500, height: 1100)
+        let panelRect = CGRect(x: 330, y: 240, width: size.width, height: size.height)
+
+        let ctx = try context(canvas, background: CGColor(red: 0.03, green: 0.03, blue: 0.04, alpha: 1))
+        ctx.draw(try render(), in: panelRect)
+        let image = try makeImage(ctx)
+
+        // `panelRect` is in y-up canvas pixels; corners are y-down fractions.
+        func corner(_ x: CGFloat, _ yUp: CGFloat) -> ImagePoint {
+            ImagePoint(x: Double(x) / Double(canvas.width), y: 1 - Double(yUp) / Double(canvas.height))
+        }
+        let quad = PanelQuad(
+            topLeft: corner(panelRect.minX, panelRect.maxY),
+            topRight: corner(panelRect.maxX, panelRect.maxY),
+            bottomRight: corner(panelRect.maxX, panelRect.minY),
+            bottomLeft: corner(panelRect.minX, panelRect.minY)
+        )
+        return (try photo(image, size: canvas), quad)
+    }
+
+    /// Three labels on one continuous light strip, 20 px apart. Vision reads
+    /// them as a single line ("Popcorn Beverage Defrost"), which is what a
+    /// membrane keypad does too. The regions split the strip halfway between
+    /// neighbouring labels; the panel fills the frame.
+    static func tightRowPhoto() throws -> (photo: PanelPhoto, regions: [PanelRect], labels: [String]) {
+        let labels = ["Popcorn", "Beverage", "Defrost"]
+        let gap: CGFloat = 20
+        let widths = labels.map { CTLineGetBoundsWithOptions(line($0), []).width }
+        let total = widths.reduce(0, +) + gap * CGFloat(labels.count - 1)
+        let y: CGFloat = 270, h: CGFloat = 60
+
+        // Each label's own column, then widen to meet the neighbours halfway.
+        var x = (CGFloat(size.width) - total) / 2
+        var columns: [CGRect] = []
+        for width in widths {
+            columns.append(CGRect(x: x, y: y, width: width, height: h))
+            x += width + gap
+        }
+        let cells = columns.indices.map { i -> CGRect in
+            let left = i == 0 ? columns[i].minX - 40 : (columns[i - 1].maxX + columns[i].minX) / 2
+            let right = i == columns.count - 1 ? columns[i].maxX + 40 : (columns[i].maxX + columns[i + 1].minX) / 2
+            return CGRect(x: left, y: y, width: right - left, height: h)
+        }
+
+        let strip = cells.first!.union(cells.last!)
+        let image = try render(buttons: zip(cells, labels).map { ($0, $1) }, strip: strip)
+        let regions = cells.map {
+            PanelRect(
+                x: Double($0.minX) / Double(size.width), y: Double($0.minY) / Double(size.height),
+                width: Double($0.width) / Double(size.width), height: Double($0.height) / Double(size.height)
+            )
+        }
+        return (try photo(image, size: size), regions, labels)
+    }
+
+    /// Four keys sitting on a raised plate, plus two loose keys beside it.
+    /// Vision finds the plate as a rectangle too, with the same confidence as
+    /// the keys, so a "keep the bigger box" rule would return the plate and
+    /// lose the four keys on it. Returns the six keys in panel space; the panel
+    /// fills the frame.
+    static func groupedKeysPhoto() throws -> (photo: PanelPhoto, keys: [PanelRect]) {
+        let ctx = try context(size, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(size.width), h = CGFloat(size.height)
+        let plate = CGRect(x: 0.08 * w, y: 0.15 * h, width: 0.40 * w, height: 0.44 * h)
+        ctx.setFillColor(CGColor(gray: 0.45, alpha: 1))
+        ctx.fill(plate)
+
+        let gap: CGFloat = 18
+        let keyWidth = (plate.width - 3 * gap) / 2
+        let keyHeight = (plate.height - 3 * gap) / 2
+        var keys: [CGRect] = []
+        for row in 0..<2 {
+            for column in 0..<2 {
+                keys.append(CGRect(
+                    x: plate.minX + gap + CGFloat(column) * (keyWidth + gap),
+                    y: plate.minY + gap + CGFloat(row) * (keyHeight + gap),
+                    width: keyWidth, height: keyHeight
+                ))
+            }
+        }
+        for x in [0.60, 0.78] {
+            keys.append(CGRect(x: x * w, y: 0.30 * h, width: 0.14 * w, height: 0.16 * h))
+        }
+
+        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
+        keys.forEach { ctx.fill($0) }
+
+        let rects = keys.map {
+            PanelRect(
+                x: Double($0.minX / w), y: Double($0.minY / h),
+                width: Double($0.width / w), height: Double($0.height / h)
+            )
+        }
+        return (try photo(try makeImage(ctx), size: size), rects)
+    }
+
     // MARK: - Drawing
 
     private static func render() throws -> CGImage {
-        let w = size.width, h = size.height
+        let buttons = expected.buttons.map { button -> (CGRect, String?) in
+            let r = button.bounds
+            let rect = CGRect(
+                x: r.minX * Double(size.width), y: r.minY * Double(size.height),
+                width: r.width * Double(size.width), height: r.height * Double(size.height)
+            )
+            return (rect, button.label)
+        }
+        return try render(buttons: buttons, strip: nil)
+    }
+
+    /// Draws a panel at `size`. `buttons` and `strip` are in y-down panel
+    /// pixels. With a `strip`, the buttons share one continuous light surface
+    /// instead of each getting their own.
+    private static func render(buttons: [(CGRect, String?)], strip: CGRect?) throws -> CGImage {
+        let ctx = try context(size, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+
+        // CoreGraphics is y-UP. Flip once so we can draw in y-DOWN panel space
+        // and have it land where the mock says it lands.
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let light = CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1)
+        if let strip {
+            ctx.setFillColor(light)
+            ctx.fill(strip)
+        }
+        for (rect, label) in buttons {
+            if strip == nil {
+                ctx.setFillColor(light)
+                ctx.fill(rect)
+            }
+            if let label {
+                draw(label, centeredIn: rect, in: ctx)
+            }
+        }
+        return try makeImage(ctx)
+    }
+
+    private static func context(_ size: PixelSize, background: CGColor) throws -> CGContext {
         guard
             let space = CGColorSpace(name: CGColorSpace.sRGB),
             let ctx = CGContext(
-                data: nil, width: w, height: h,
+                data: nil, width: size.width, height: size.height,
                 bitsPerComponent: 8, bytesPerRow: 0, space: space,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )
         else { throw SurfaceUnderstandingError.underlying("no context") }
+        ctx.setFillColor(background)
+        ctx.fill(CGRect(x: 0, y: 0, width: size.width, height: size.height))
+        return ctx
+    }
 
-        // CoreGraphics is y-UP. Flip once so we can draw in y-DOWN panel space
-        // and have it land where the mock says it lands.
-        ctx.translateBy(x: 0, y: CGFloat(h))
-        ctx.scaleBy(x: 1, y: -1)
-
-        // Panel background.
-        ctx.setFillColor(CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
-        ctx.fill(CGRect(x: 0, y: 0, width: w, height: h))
-
-        for button in expected.buttons {
-            let r = button.bounds
-            let rect = CGRect(
-                x: r.minX * Double(w), y: r.minY * Double(h),
-                width: r.width * Double(w), height: r.height * Double(h)
-            )
-            ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
-            ctx.fill(rect)
-
-            if let label = button.label {
-                draw(label, centeredIn: rect, in: ctx)
-            }
-        }
-
+    private static func makeImage(_ ctx: CGContext) throws -> CGImage {
         guard let image = ctx.makeImage() else {
             throw SurfaceUnderstandingError.underlying("no image")
         }
         return image
     }
 
-    private static func draw(_ text: String, centeredIn rect: CGRect, in ctx: CGContext) {
+    private static func photo(_ image: CGImage, size: PixelSize) throws -> PanelPhoto {
+        PanelPhoto(
+            data: try encodeJPEG(image),
+            pixelSize: size,
+            timestamp: Date(timeIntervalSince1970: 0)
+        )
+    }
+
+    private static func line(_ text: String) -> CTLine {
         let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 26, nil)
         let attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
             NSAttributedString.Key(kCTForegroundColorAttributeName as String):
                 CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
         ]
-        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
+        return CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
+    }
+
+    private static func draw(_ text: String, centeredIn rect: CGRect, in ctx: CGContext) {
+        let line = line(text)
         let bounds = CTLineGetBoundsWithOptions(line, [])
 
         // Text is drawn y-up; undo the flip locally so glyphs are not mirrored.

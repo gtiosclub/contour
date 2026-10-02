@@ -43,6 +43,10 @@ struct CameraPreview: UIViewRepresentable {
             if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
+            // Diagnostics should show the latest measurement without visual lag.
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            defer { CATransaction.commit() }
             dot.isHidden = fingertip == nil
             guard let fingertip else { return }
             // Captured buffers are portrait. Convert to the native landscape

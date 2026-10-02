@@ -52,8 +52,7 @@ func garbageThrows() {
 
 // MARK: - Panel Detector — Aarav
 
-@Test("Panel Detector: finds a full-frame panel and rectifies its centre",
-      .disabled("Aarav — delete this line when PanelDetector works"))
+@Test("Panel Detector: finds a full-frame panel and rectifies its centre")
 func panelDetectorFindsThePanel() async throws {
     let photo = try SyntheticPanel.photo()
     let detector = PanelDetector()
@@ -73,8 +72,7 @@ func panelDetectorFindsThePanel() async throws {
 
 // MARK: - Button Detector — Sanvi
 
-@Test("Button Detector: finds six buttons roughly where the mock says they are",
-      .disabled("Sanvi — delete this line when ButtonDetector works"))
+@Test("Button Detector: finds six buttons roughly where the mock says they are")
 func buttonDetectorFindsSixButtons() async throws {
     let photo = try SyntheticPanel.photo()
     let found = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
@@ -88,20 +86,44 @@ func buttonDetectorFindsSixButtons() async throws {
     }
 }
 
+@Test("Button Detector: finds all 26 keys on a generated microwave keypad")
+func buttonDetectorGeneratedKeypad() async throws {
+    // A generated image, not a real photo: a 26-key microwave keypad filling
+    // the frame, with START in the right-hand column.
+    let url = try #require(Bundle.module.url(forResource: "generated_buttons", withExtension: "jpeg"))
+    let data = try Data(contentsOf: url)
+
+    let photo = PanelPhoto(
+        data: data,
+        pixelSize: PixelSize(width: 2816, height: 1536),
+        timestamp: Date()
+    )
+
+    let found = try await ButtonDetector().detectButtons(
+        in: photo,
+        panel: .fullFrame
+    )
+
+    #expect(found.count == 26)
+    #expect(found.contains { $0.bounds.contains(PanelPoint(x: 0.896, y: 0.524)) }, "no box covers START")
+}
+
 // MARK: - Labels — Srinivas
 
 @Test("Labels: reads the label on each button region",
-      .disabled("Srinivas — delete this line when LabelReader works"))
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func labelReaderReadsStart() async throws {
     let photo = try SyntheticPanel.photo()
     let regions = SyntheticPanel.expected.buttons.map(\.bounds)
 
     let labels = try await LabelReader().readLabels(in: photo, panel: .fullFrame, regions: regions)
 
+    // Slot by slot: button i's label has to come back at index i. Checking that
+    // "start" shows up somewhere would pass even if every label were swapped.
     #expect(labels.count == regions.count)
-    let read = labels.compactMap { $0?.lowercased() }
-    #expect(read.contains("start"))
-    #expect(read.contains("popcorn"))
+    let expected = SyntheticPanel.expected.buttons.map(\.label)
+    #expect(TextRecognitionCheck.labelsMatch(labels, expected), "read \(labels), expected \(expected)")
 }
 
 // MARK: - Target Matching — Asav

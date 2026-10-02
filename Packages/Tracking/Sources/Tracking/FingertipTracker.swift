@@ -1,33 +1,62 @@
-//
-//  FingertipTracker.swift
-//  Tracking — Tracking / Fingertip & Frame Math
-//
-//  Weeks 2–3 deliverable: "Track the index fingertip."
-//
-//  COORDINATES: you return normalized panel space — (0,0) top-left,
-//  (1,1) bottom-right, y DOWNWARD. Hand tracking gives you camera space;
-//  project onto the panel and normalize here, not downstream.
-//  See Packages/ContourCore/COORDINATES.md.
-//
-//  DO NOT CLAMP. A fingertip at y = -0.08 is above the panel, and that is real
-//  information guidance depends on. Clamping to 0 lies to the user.
-//
-
+// Tracking — Fingertip & Frame Math
 import ContourCore
 import Foundation
+import Vision
 
-/// Finds the user's index fingertip and places it on the panel.
+/// One frame's index fingertip in the full oriented image, not panel space.
+/// A missing fingertip never carries forward a position from an earlier frame.
+public struct FingertipObservation: Sendable {
+    public let timestamp: Date
+    public let fingertip: ImagePoint?
+    public let confidence: Double?
+}
+
+/// Vision's normalized, lower-left-origin index joint before validation.
+struct FingertipJoint: Sendable {
+    let x: Double
+    let y: Double
+    let confidence: Double
+}
+
+/// Detects one hand's index fingertip without owning a camera or requiring a panel.
+/// The integrated pipeline can pass the same CameraFrame to this and its panel detector.
 public struct FingertipTracker: Sendable {
+    private let detectJoint: @Sendable (CameraFrame) async throws -> FingertipJoint?
 
-    public init() {}
+    public init() {
+        detectJoint = Self.visionJoint
+    }
 
-    /// Locate the index fingertip for the current camera frame.
-    ///
-    /// - Parameter pose: where the panel is, so the fingertip can be projected
-    ///   onto it. Without a pose there is no panel space to report in.
-    /// - Returns: the fingertip in normalized panel space, or `nil` if no hand
-    ///   was observed this frame. `nil` means "not seen" — never `(0, 0)`.
-    public func fingertip(projectedOnto pose: PanelPose) async -> PanelPoint? {
-        fatalError("unimplemented — owned by Tracking / Fingertip & Frame Math")
+    // Keep the Vision boundary replaceable for deterministic recorded-result tests.
+    init(detectJoint: @escaping @Sendable (CameraFrame) async throws -> FingertipJoint?) {
+        self.detectJoint = detectJoint
+    }
+
+    /// Preserves capture time. Vision errors propagate; an absent or unusable joint
+    /// returns an observation with nil position and confidence.
+    public func detect(in frame: CameraFrame) async throws -> FingertipObservation {
+        try Task.checkCancellation()
+        let joint = try await detectJoint(frame)
+        try Task.checkCancellation()
+        guard let joint,
+              joint.confidence.isFinite, joint.confidence > 0.3, joint.confidence <= 1,
+              joint.x.isFinite, joint.y.isFinite,
+              (0...1).contains(joint.x), (0...1).contains(joint.y) else {
+            return FingertipObservation(timestamp: frame.timestamp, fingertip: nil, confidence: nil)
+        }
+        return FingertipObservation(timestamp: frame.timestamp,
+                                   fingertip: ImagePoint(x: joint.x, y: 1 - joint.y),
+                                   confidence: joint.confidence)
+    }
+
+    private static func visionJoint(in frame: CameraFrame) async throws -> FingertipJoint? {
+        // A request belongs to this invocation, so concurrent callers never share
+        // mutable Vision state. Pixels remain read-only throughout processing.
+        var request = DetectHumanHandPoseRequest()
+        request.maximumHandCount = 1
+        let hands = try await request.perform(on: frame.pixelBuffer, orientation: frame.orientation)
+        guard let tip = hands.first?.allJoints(in: .indexFinger)[.indexTip] else { return nil }
+        return FingertipJoint(x: Double(tip.location.x), y: Double(tip.location.y),
+                              confidence: Double(tip.confidence))
     }
 }
