@@ -10,69 +10,28 @@ import AVFoundation
 import Speech
 
 
-
-final class CameraPreviewView: UIView {
-    override class var layerClass: AnyClass {
-        AVCaptureVideoPreviewLayer.self
-    }
-
-    var previewLayer: AVCaptureVideoPreviewLayer {
-        layer as! AVCaptureVideoPreviewLayer
-    }
-
-}
-
-struct CameraView: UIViewRepresentable {
-    let session: AVCaptureSession
-    func makeUIView(context: Context) -> CameraPreviewView {
-        let view = CameraPreviewView()
-        view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspect
-        return view
-    }
-
-    func updateUIView(
-        _ uiView: CameraPreviewView,
-        context: Context
-    ) {
-        uiView.previewLayer.session = session
-    }
-}
-
-
-
-
-
-
-
-
-
-
-
 struct LiveCameraView: View {
-    @State private var session = AVCaptureSession()
+    // The app's shared camera setup: starts the session off the main thread
+    // and asks for camera permission first.
+    @State private var camera = CameraService()
     @State private var isStarted: Bool = false
     var body: some View {
         VStack {
             ZStack{
-                
-                Image("Apple Park")
-                    .resizable()
-                    .scaledToFill()
+
+                // Shows through when there's no camera (e.g. the simulator).
+                Color.black
                     .ignoresSafeArea()
-                    .offset(x: -300)
-                    
-                    
-                    
-                // This background image is a placeholder for live camera when testing using real iOS device
-                
-                
-                CameraView(session: session)
+
+                CameraPreview(session: camera.session)
                     .ignoresSafeArea()
-                    .onAppear {
-                        setupCamera()
+                    .task {
+                        try? await camera.start()
                     }
-                 
+                    .onDisappear {
+                        Task { await camera.stop() }
+                    }
+
                 
                 VStack{
                     Spacer()
@@ -128,28 +87,6 @@ struct LiveCameraView: View {
             try? await listenForStart()
         }
     }
-    private func setupCamera() {
-        guard session.inputs.isEmpty else {
-            return
-        }
-        guard let camera = AVCaptureDevice.default(
-            .builtInWideAngleCamera,
-            for: .video,
-            position: .back
-        ) else {
-            return
-        }
-        do {
-            let input = try AVCaptureDeviceInput(device: camera)
-            if session.canAddInput(input) {
-                session.addInput(input)
-            }
-            session.startRunning()
-        } catch {
-            print("Camera error:", error)
-        }
-    }
-    
     func listenForStart() async throws {
 
             // 1. Speech-to-text
@@ -206,18 +143,12 @@ struct LiveCameraView: View {
 
             }
 
-        }
-    
-            
-//            Text("Button")
-//                .buttonBorderShape(.circle)
-//                .frame(idealWidth: 10, idealHeight: 10)
-//                .accessibilityIdentifier("Button")
-    
-}
+            // Using the analyzer here keeps it alive while the loop above is
+            // listening; otherwise it can be released and stop transcribing.
+            await analyzer.cancelAndFinishNow()
 
-func start(){
-    
+        }
+
 }
 
 
