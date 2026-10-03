@@ -1,0 +1,40 @@
+{
+  "_note": "Synthetic 640x480 fixtures. Corners are the exact polygon vertices drawn, TL/TR/BR/BL, normalized upright image space (y down). Regenerate real-photo fixtures with hand-marked corners when the printed microwave fixture is photographed.",
+  "tolerance": 0.01,
+  "reference": [
+    {
+      "x": 0.25,
+      "y": 0.25
+    },
+    {
+      "x": 0.75,
+      "y": 0.25
+    },
+    {
+      "x": 0.75,
+      "y": 0.75
+    },
+    {
+      "x": 0.25,
+      "y": 0.75
+    }
+  ],
+  "moved": [
+    {
+      "x": 0.290625,
+      "y": 0.283333
+    },
+    {
+      "x": 0.78125,
+      "y": 0.270833
+    },
+    {
+      "x": 0.7875,
+      "y": 0.758333
+    },
+    {
+      "x": 0.284375,
+      "y": 0.775
+    }
+  ]
+}
