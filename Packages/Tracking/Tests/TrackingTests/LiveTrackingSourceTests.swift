@@ -102,6 +102,46 @@ struct LiveTrackingSourceTests {
         #expect(camera.released.value)
     }
 
+    @Test("A panel that can't be tracked is lost for good, until a new one is handed over")
+    func unusablePanelStaysLostUntilReplaced() async throws {
+        let attempts = Counter()
+        let tracker = PanelTracker { _ in
+            ScriptedRectangles { image in
+                // Registration (the still) fails the first time only.
+                if case .still = image, attempts.next() == 0 { return nil }
+                return up(square)
+            }
+        }
+        let source = LiveTrackingSource(camera: FakeCamera(count: 2), panelTracker: tracker,
+                                        fingertipTracker: scriptedFingertip())
+        await source.use(try reference())
+        #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .lost })
+
+        await source.use(try reference())
+        #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .good })
+    }
+
+    @Test("Each stream starts fresh from the panel")
+    func eachStreamStartsFresh() async throws {
+        let registrations = Counter()
+        let tracker = PanelTracker { _ in
+            ScriptedRectangles { image in
+                if case .still = image { _ = registrations.next() }
+                return up(square)
+            }
+        }
+        let source = LiveTrackingSource(camera: FakeCamera(count: 2), panelTracker: tracker,
+                                        fingertipTracker: scriptedFingertip())
+        await source.use(try reference())
+
+        _ = await collect(source.frames())
+        _ = await collect(source.frames())
+
+        // Each stream registers the panel again (registration, then the live
+        // sequence's priming, both see the reference still): 2 per stream.
+        #expect(registrations.next() == 4)
+    }
+
     @Test("A source with no camera finishes straight away")
     func noCameraFinishes() async {
         #expect(await collect(LiveTrackingSource().frames()).isEmpty)
