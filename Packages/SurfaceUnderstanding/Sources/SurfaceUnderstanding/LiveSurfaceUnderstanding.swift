@@ -76,14 +76,21 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             }
         }
 
-        let labels = try await readLabels(in: photo, panel: quad, regions: found.map(\.bounds))
+        let reading = try await readText(in: photo, panel: quad, regions: found.map(\.bounds))
 
-        let map = SurfaceMap(
-            buttons: zip(found, labels).map { button, label in
-                SurfaceMap.Button(label: label, bounds: button.bounds, confidence: button.confidence)
-            },
-            confidence: confidence
-        )
+        // A frame around several keys isn't a key; its labels come back as
+        // text buttons below.
+        let keys = zip(found, reading.labels).enumerated()
+            .filter { !reading.frames.contains($0.offset) }
+            .map { _, pair in
+                SurfaceMap.Button(label: pair.1, bounds: pair.0.bounds, confidence: pair.0.confidence)
+            }
+        // Labels with no key outline around them are keys too on a flat
+        // membrane panel. Less certain than an outlined key, so lower confidence.
+        let printedOnly = reading.textButtons.map {
+            SurfaceMap.Button(label: $0.label, bounds: $0.bounds, confidence: 0.5)
+        }
+        let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
 
@@ -99,31 +106,31 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         }
     }
 
-    /// One label per region, in order.
+    /// One label per region, in order, plus labels printed with no key around them.
     ///
-    /// Text recognition only runs when there is something to label. If it fails,
-    /// the buttons come back with `nil` labels rather than being thrown away: "there
-    /// is a button here and we cannot read it" is still useful to the app.
-    private func readLabels(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> [String?] {
+    /// Runs even when no keys were found, because a flat membrane panel has
+    /// none to find. If text recognition fails, the keys come back with `nil`
+    /// labels rather than being thrown away: "there is a button here and we
+    /// cannot read it" is still useful to the app.
+    private func readText(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> LabelReader.Reading {
         try checkCancellation()
-        guard !regions.isEmpty else { return [] }
 
-        let labels: [String?]
+        let reading: LabelReader.Reading
         do {
-            labels = try await LabelReader().readLabels(in: photo, panel: panel, regions: regions)
+            reading = try await LabelReader().read(in: photo, panel: panel, regions: regions)
         } catch {
             try checkCancellation()
-            return Array(repeating: nil, count: regions.count)
+            return LabelReader.Reading(labels: Array(repeating: nil, count: regions.count), textButtons: [])
         }
 
         // LabelReader promises one entry per region. If that ever breaks, fail
         // loudly instead of zipping labels onto the wrong buttons.
-        guard labels.count == regions.count else {
+        guard reading.labels.count == regions.count else {
             throw SurfaceUnderstandingError.underlying(
-                "LabelReader returned \(labels.count) labels for \(regions.count) buttons"
+                "LabelReader returned \(reading.labels.count) labels for \(regions.count) buttons"
             )
         }
-        return labels
+        return reading
     }
 
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
