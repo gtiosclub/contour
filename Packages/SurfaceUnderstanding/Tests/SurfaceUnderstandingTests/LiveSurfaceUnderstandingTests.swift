@@ -87,6 +87,7 @@ func blankImageThrowsNoPanelFound() async throws {
 }
 
 @Test("a plain panel returns the real quad, the photo's id, and no buttons",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
       TextRecognitionCheck.timeLimit)
 func panelShapedImageReturnsRealQuad() async throws {
     // A bright rectangle on a dark field: the simplest thing Vision will call a
@@ -109,9 +110,9 @@ func panelShapedImageReturnsRealQuad() async throws {
     #expect((try? PanelReference(photo: subject, detection: detection)) != nil,
             "the app must be able to build a PanelReference from this")
 
-    // Nothing on this panel looks like a button, and an empty map is a success,
-    // not a failure. It also means text recognition never runs, so this test is
-    // safe on CI.
+    // Nothing on this panel looks like a button or reads as a label, and an
+    // empty map is a success, not a failure. Text recognition still runs, in
+    // case it's a flat keypad, so this is skipped on CI.
     #expect(detection.map.buttons.isEmpty)
     #expect(detection.map.confidence > 0, "panel confidence should carry through")
 
@@ -149,5 +150,34 @@ func fullPipelineReadsTheMicrowave() async throws {
             #expect(TextRecognitionCheck.labelsMatch([hit.label], [key.label]),
                     "read \(hit.label ?? "nil") for \(key.label ?? "nil")")
         }
+    }
+}
+
+@Test("a label printed under its key goes to that key",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func labelUnderKeyGoesToTheKey() async throws {
+    let (subject, keys, labels) = try SyntheticPanel.labelsUnderKeysPhoto()
+
+    let detection = try await LiveSurfaceUnderstanding().detectPanel(from: subject)
+
+    for (key, label) in zip(keys, labels) {
+        let hit = detection.map.buttons.first { $0.bounds.contains(key.center) }
+        #expect(TextRecognitionCheck.labelsMatch([hit?.label], [label]),
+                "the key above \(label) read \(hit?.label ?? "nothing")")
+    }
+}
+
+@Test("a flat keypad with printed labels and no key outlines gets a button per label",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func printedLabelsBecomeButtons() async throws {
+    let (subject, labels) = try SyntheticPanel.printedKeypadPhoto()
+
+    let detection = try await LiveSurfaceUnderstanding().detectPanel(from: subject)
+
+    for label in labels {
+        let hits = detection.map.buttons.filter { TextRecognitionCheck.labelsMatch([$0.label], [label]) }
+        #expect(hits.count == 1, "\(label): \(hits.count) buttons, map was \(detection.map.buttons.map(\.label))")
     }
 }
