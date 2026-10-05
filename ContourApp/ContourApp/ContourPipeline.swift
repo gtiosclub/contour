@@ -133,9 +133,16 @@ final class ContourPipeline {
     /// `MockGuidance` — placeholder wiring that gets replaced once the real
     /// guidance policy has an owner. See MockGuidance.swift.
     func guide(to target: SurfaceMap.Button) async {
+        var endedOnOutcome = false
         for await frame in tracking.frames() {
-            if Task.isCancelled { return }
-            await feedback.present(MockGuidance.state(for: frame, target: target))
+            if Task.isCancelled { break }
+            let state = MockGuidance.state(for: frame, target: target)
+            await feedback.present(state)
+            endedOnOutcome = state.isTerminal
+        }
+        if !endedOnOutcome {
+            // Stopping must not leave the vibration running.
+            await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
     }
 }
