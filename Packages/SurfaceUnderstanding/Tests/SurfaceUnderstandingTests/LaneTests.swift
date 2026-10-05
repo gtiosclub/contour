@@ -128,8 +128,7 @@ func labelReaderReadsStart() async throws {
 
 // MARK: - Target Matching — Asav
 
-@Test("Target Matching: synonyms hit, missing buttons return nil",
-      .disabled("Asav — delete this line when TargetMatcher works"))
+@Test("Target Matching: synonyms hit, missing buttons return nil")
 func targetMatcherResolvesRequests() throws {
     let map = MockSurfaceMaps.microwave
     let matcher = TargetMatcher()
