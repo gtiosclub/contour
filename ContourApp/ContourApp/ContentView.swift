@@ -140,15 +140,26 @@ struct ContentView: View {
         return PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
     }
 
-    /// "Start" on its own or as part of a combined label like "Start/Pause",
-    /// which is how most real microwaves print it.
+    /// The Start button. A label that is "Start", or has it as one part of
+    /// "Start/Pause", wins. Otherwise the shortest label with "Start" as a word,
+    /// like "Start Pause" read off a key printed on two lines.
     /// TODO: use TargetMatcher once #30 lands.
     private func startButton(in map: SurfaceMap) -> SurfaceMap.Button? {
-        map.buttons.first { button in
-            (button.label ?? "").split(separator: "/").contains {
+        let labelled = map.buttons.compactMap { button in button.label.map { (button, $0) } }
+        func words(_ label: String) -> [Substring] {
+            label.lowercased().split { !$0.isLetter && !$0.isNumber }
+        }
+
+        let exact = labelled.first { _, label in
+            label.split(separator: "/").contains {
                 $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Start") == .orderedSame
             }
         }
+        if let exact { return exact.0 }
+
+        return labelled
+            .filter { words($0.1).contains("start") }
+            .min { words($0.1).count < words($1.1).count }?.0
     }
 
     private func toggleGuidance() {
