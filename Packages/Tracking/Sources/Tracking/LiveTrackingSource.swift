@@ -71,6 +71,7 @@ public struct LiveTrackingSource: TrackingSource {
         guard let engine else { return AsyncStream { $0.finish() } }
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
             let task = Task {
+                await engine.beginStream()
                 for await frame in await engine.cameraFrames() {
                     if Task.isCancelled { break }
                     continuation.yield(await engine.process(frame))
@@ -101,6 +102,11 @@ private actor Engine {
     private let evaluator: TrackingQualityEvaluator
 
     private var panel = Panel.none
+    /// The last panel handed over, so a new stream can start from it.
+    private var reference: PanelReference?
+    /// Bumped by every hand-over, so a registration that finishes after a
+    /// newer panel arrived doesn't take over.
+    private var generation = 0
     private var previous: TrackingObservation?
     private var smoothed: PanelPoint?
 
@@ -117,9 +123,17 @@ private actor Engine {
     }
 
     func use(_ reference: PanelReference) {
+        self.reference = reference
+        generation += 1
         panel = .waiting(reference)
         previous = nil
         smoothed = nil
+    }
+
+    /// Each guidance session starts fresh from the panel, not from wherever
+    /// the last session left off.
+    func beginStream() {
+        if let reference { use(reference) }
     }
 
     func process(_ frame: CameraFrame) async -> TrackingFrame {
@@ -127,11 +141,17 @@ private actor Engine {
         case .none, .unusable:
             return lost(frame)
         case .waiting(let reference):
+            let handOver = generation
             do {
                 try await panelTracker.startTracking(reference)
+                // A newer panel arrived while this one was registering.
+                guard generation == handOver else { return lost(frame) }
                 panel = .tracking
+            } catch let error as PanelTrackingError where error.meansUnusablePanel {
+                if generation == handOver { panel = .unusable }
+                return lost(frame)
             } catch {
-                panel = .unusable
+                // Cancelled or superseded: try again on the next frame.
                 return lost(frame)
             }
         case .tracking:
@@ -189,5 +209,15 @@ private actor Engine {
         let next = smoothed.map { PanelPoint(x: ($0.x + point.x) / 2, y: ($0.y + point.y) / 2) } ?? point
         smoothed = next
         return next
+    }
+}
+
+private extension PanelTrackingError {
+    /// The panel itself can't be tracked, so trying again won't help.
+    var meansUnusablePanel: Bool {
+        switch self {
+        case .invalidReferenceQuad, .unreadableReferencePhoto, .registrationFailed: true
+        case .superseded, .frameInFlight: false
+        }
     }
 }
