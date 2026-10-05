@@ -97,19 +97,12 @@ final class ContourPipeline {
         )
     }
 
-    /// Everything real.
-    ///
-    /// Do not call this yet — the live types are `fatalError` stubs and this
-    /// will crash on first use. It exists so the switchover is a one-line
-    /// change and so the live types stay compiled and linked from day one.
-    ///
-    /// Teams: as your package comes up, move your line from `mock()` into here
-    /// and add your `Component` to `liveComponents`. Mixed configurations are
-    /// expected and fine — that is the point of mocking per protocol.
-    static func live() -> ContourPipeline {
+    /// Everything real, on `camera`: Surface Understanding reads the panel,
+    /// Tracking follows it and the fingertip, and guidance vibrates.
+    static func live(camera: CameraService) -> ContourPipeline {
         ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: LiveTrackingSource(),
+            tracking: LiveTrackingSource(camera: camera),
             feedback: LiveFeedbackEngine(),
             liveComponents: Set(Component.allCases)
         )
@@ -121,7 +114,12 @@ final class ContourPipeline {
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
         panelReference = nil
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
-        panelReference = try PanelReference(photo: photo, detection: detection)
+        let reference = try PanelReference(photo: photo, detection: detection)
+        panelReference = reference
+        // Live tracking follows the panel just found.
+        if let live = tracking as? LiveTrackingSource {
+            await live.use(reference)
+        }
         return detection.map
     }
 
@@ -132,10 +130,19 @@ final class ContourPipeline {
     /// guidance, out to Experience. The composition step is
     /// `MockGuidance` — placeholder wiring that gets replaced once the real
     /// guidance policy has an owner. See MockGuidance.swift.
+    ///
+    /// An outcome is presented once, not on every frame it stays true: losing
+    /// the panel is announced, then guidance picks up again when it's back.
+    /// Arriving ends the session.
     func guide(to target: SurfaceMap.Button) async {
+        var lastOutcome: OutcomeSignal?
         for await frame in tracking.frames() {
             if Task.isCancelled { return }
-            await feedback.present(MockGuidance.state(for: frame, target: target))
+            let state = MockGuidance.state(for: frame, target: target)
+            if let outcome = state.outcome, outcome == lastOutcome { continue }
+            lastOutcome = state.outcome
+            await feedback.present(state)
+            if state.outcome == .arrived { return }
         }
     }
 }

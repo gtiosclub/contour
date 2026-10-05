@@ -17,7 +17,8 @@ import SwiftUI
 struct ContentView: View {
 
     let pipeline: ContourPipeline
-    @State private var camera = CameraService()
+    /// Shared with the pipeline, so live tracking follows the camera you aim.
+    let camera: CameraService
 
     @State private var map: SurfaceMap?
     @State private var lastError: String?
@@ -94,7 +95,10 @@ struct ContentView: View {
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
                         .disabled(map == nil)
-                    Text(pipeline.liveComponents.contains(.feedback)
+                    Text(pipeline.liveComponents.contains(.tracking)
+                         ? "Keep the panel in view and move your finger toward Start. "
+                           + "It vibrates faster as you get closer."
+                         : pipeline.liveComponents.contains(.feedback)
                          ? "Guidance vibrates. Tracking is still simulated, so the "
                            + "phone acts out a finger moving to Start."
                          : "Guidance output goes to the console. Experience's rig "
@@ -120,6 +124,11 @@ struct ContentView: View {
             do {
                 let photo = try await photoToScan()
                 map = try await pipeline.detectPanel(in: photo)
+                if pipeline.liveComponents.contains(.tracking),
+                   pipeline.panelReference?.detection.quad == .fullFrame {
+                    lastError = "Found the buttons but not the edges of the panel, so guidance "
+                        + "can't follow it. Step back so the whole panel is in view, then scan again."
+                }
             } catch {
                 lastError = String(describing: error)
             }
@@ -180,5 +189,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView(pipeline: .mock())
+    ContentView(pipeline: .mock(), camera: CameraService())
 }
