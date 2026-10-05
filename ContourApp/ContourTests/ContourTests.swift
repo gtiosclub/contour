@@ -59,4 +59,62 @@ struct PipelineWiringTests {
         #expect(received.count == 4)
         #expect(await engine.outcomes.last == .arrived)
     }
+
+    @Test("stopping guidance leaves the feedback engine with nothing to play")
+    func stoppingSilencesFeedback() async throws {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: MockTrackingSource(steps: 1_000, interval: .milliseconds(10)),
+            feedback: engine,
+            liveComponents: []
+        )
+
+        let session = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
+        try await Task.sleep(for: .milliseconds(100))
+        session.cancel()
+        await session.value
+
+        let last = try #require(await engine.received.last)
+        #expect(last.vector == nil && last.outcome == nil, "last state was \(last)")
+    }
+
+    @Test("a brief tracking loss isn't announced, a longer one is announced once")
+    func lossIsDebounced() async throws {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let start = Date(timeIntervalSince1970: 1_000)
+        let at = { (seconds: Double) in start.addingTimeInterval(seconds) }
+        let good = { (seconds: Double) in
+            TrackingFrame(timestamp: at(seconds), fingertip: PanelPoint(x: 0.1, y: 0.1),
+                          panel: PanelPose(column0: SIMD4(1, 0, 0, 0), column1: SIMD4(0, 1, 0, 0),
+                                           column2: SIMD4(0, 0, 1, 0), column3: SIMD4(0, 0, 0, 1),
+                                           confidence: 1),
+                          trackingQuality: .good)
+        }
+        // Lost for 0.1 s (a blur), back, then lost for 0.5 s.
+        let frames = [good(0), .lost(at: at(0.05)), .lost(at: at(0.15)), good(0.2),
+                      .lost(at: at(0.3)), .lost(at: at(0.5)), .lost(at: at(0.7)), .lost(at: at(0.8))]
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: frames),
+            feedback: engine,
+            liveComponents: []
+        )
+
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+
+        #expect(await engine.outcomes == [.lostTracking])
+    }
 }
+
+/// A tracking source that plays back fixed frames and finishes.
+private struct ScriptedFrames: TrackingSource {
+    let script: [TrackingFrame]
+    func frames() -> AsyncStream<TrackingFrame> {
+        AsyncStream { continuation in
+            script.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+    }
+}
+

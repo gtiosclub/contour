@@ -131,18 +131,40 @@ final class ContourPipeline {
     /// `MockGuidance` — placeholder wiring that gets replaced once the real
     /// guidance policy has an owner. See MockGuidance.swift.
     ///
-    /// An outcome is presented once, not on every frame it stays true: losing
-    /// the panel is announced, then guidance picks up again when it's back.
-    /// Arriving ends the session.
+    /// An outcome is presented once, not on every frame it stays true. Losing
+    /// the panel is announced once it has been gone for 0.3 s, then guidance
+    /// picks up again when it's back. Arriving ends the session, and any other
+    /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
-        var lastOutcome: OutcomeSignal?
+        var announced: OutcomeSignal?
+        var lostSince: Date?
+        var arrived = false
         for await frame in tracking.frames() {
-            if Task.isCancelled { return }
+            if Task.isCancelled { break }
             let state = MockGuidance.state(for: frame, target: target)
-            if let outcome = state.outcome, outcome == lastOutcome { continue }
-            lastOutcome = state.outcome
+
+            // A frame or two of blur isn't worth announcing: say the panel is
+            // lost only once it has been gone for a moment.
+            if state.outcome == .lostTracking {
+                let since = lostSince ?? frame.timestamp
+                lostSince = since
+                if frame.timestamp.timeIntervalSince(since) < 0.3 { continue }
+            } else {
+                lostSince = nil
+            }
+
+            if let outcome = state.outcome, outcome == announced { continue }
+            announced = state.outcome
             await feedback.present(state)
-            if state.outcome == .arrived { return }
+            if state.outcome == .arrived {
+                arrived = true
+                break
+            }
+        }
+        if !arrived {
+            // Stopping, or the camera going away, must not leave the vibration
+            // running.
+            await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
     }
 }
