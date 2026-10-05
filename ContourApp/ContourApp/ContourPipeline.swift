@@ -82,9 +82,9 @@ final class ContourPipeline {
         )
     }
 
-    /// Real Surface Understanding (panel, buttons and labels), mock tracking and
-    /// feedback. Use this to bring the real panel map into the app before the
-    /// other two are live.
+    /// Real Surface Understanding (panel, buttons and labels) and real feedback
+    /// (haptics), mock tracking. Use this to run everything that is live today
+    /// before tracking is.
     ///
     /// Unlike `mock()`, this can throw from `detectPanel(in:)`: a photo with no
     /// panel in it fails here, as it should.
@@ -92,8 +92,8 @@ final class ContourPipeline {
         ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
             tracking: MockTrackingSource(),
-            feedback: PrintingFeedbackEngine(),
-            liveComponents: [.surfaceUnderstanding]
+            feedback: LiveFeedbackEngine(),
+            liveComponents: [.surfaceUnderstanding, .feedback]
         )
     }
 

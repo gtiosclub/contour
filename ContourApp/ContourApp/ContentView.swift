@@ -94,8 +94,11 @@ struct ContentView: View {
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
                         .disabled(map == nil)
-                    Text("Guidance output goes to the console. Experience's rig "
-                         + "is the Harness scheme on macOS.")
+                    Text(pipeline.liveComponents.contains(.feedback)
+                         ? "Guidance vibrates. Tracking is still simulated, so the "
+                           + "phone acts out a finger moving to Start."
+                         : "Guidance output goes to the console. Experience's rig "
+                           + "is the Harness scheme on macOS.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
