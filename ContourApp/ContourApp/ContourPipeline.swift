@@ -27,34 +27,6 @@ import SurfaceUnderstanding
 import SwiftUI
 import Tracking
 
-/// Real panel quad from Surface Understanding, mock buttons over the top.
-///
-/// `LiveSurfaceUnderstanding` returns a real quad today but an empty button list,
-/// because `ButtonDetector` and `LabelReader` are still stubs. An empty map is
-/// correct for that package and useless for target selection, so this fills the
-/// gap in the only place allowed to know about both: the app target.
-///
-/// The quad is real, so Tracking can lock onto an actual appliance. The buttons
-/// are fiction at fixed positions, so **nothing about where a button is on the
-/// real panel is true here.** Do not chase a finger to one of these and expect to
-/// land on anything.
-///
-/// Delete this type when the two stubs land.
-private struct RealPanelMockButtons: ContourCore.SurfaceUnderstanding {
-
-    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
-        // Real detection, real failures: a bad frame throws from here exactly as
-        // it would in the all-real configuration.
-        let real = try await LiveSurfaceUnderstanding().detectPanel(from: photo)
-
-        return PanelDetection(
-            referencePhotoID: photo.id,
-            quad: real.quad,
-            map: MockSurfaceMaps.microwave
-        )
-    }
-}
-
 /// Holds one implementation of each protocol and runs a guidance session.
 @MainActor
 @Observable
@@ -110,20 +82,15 @@ final class ContourPipeline {
         )
     }
 
-    /// Real panel quad, mock buttons. Use this until ButtonDetector and
-    /// LabelReader land. Delete the mock half when they do.
+    /// Real Surface Understanding (panel, buttons and labels), mock tracking and
+    /// feedback. Use this to bring the real panel map into the app before the
+    /// other two are live.
     ///
-    /// This is what Tracking needs to lock onto a real appliance this week: the
-    /// quad and the reference photo are genuine, so `panelReference` after
-    /// `detectPanel(in:)` describes a panel that actually exists. The buttons are
-    /// the canned microwave, at positions that have nothing to do with the panel
-    /// in front of the camera.
-    ///
-    /// Unlike `mock()`, this can throw from `detectPanel(in:)` — a photo with no
+    /// Unlike `mock()`, this can throw from `detectPanel(in:)`: a photo with no
     /// panel in it fails here, as it should.
     static func realPanel() -> ContourPipeline {
         ContourPipeline(
-            surfaceUnderstanding: RealPanelMockButtons(),
+            surfaceUnderstanding: LiveSurfaceUnderstanding(),
             tracking: MockTrackingSource(),
             feedback: PrintingFeedbackEngine(),
             liveComponents: [.surfaceUnderstanding]
