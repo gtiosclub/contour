@@ -23,6 +23,8 @@ struct ContentView: View {
     @State private var map: SurfaceMap?
     @State private var lastError: String?
     @State private var guidanceTask: Task<Void, Never>?
+    @State private var listening = false
+    @State private var heard: String?
 
     var body: some View {
         NavigationStack {
@@ -95,6 +97,11 @@ struct ContentView: View {
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
                         .disabled(map == nil)
+                    Button(listening ? "Listening…" : "Say a button") { sayAButton() }
+                        .disabled(map == nil || listening || guidanceTask != nil)
+                    if let heard {
+                        Text(heard).foregroundStyle(.secondary)
+                    }
                     Text(pipeline.liveComponents.contains(.tracking)
                          ? "Keep the panel in view and move your finger toward Start. "
                            + "It vibrates faster as you get closer."
@@ -149,41 +156,50 @@ struct ContentView: View {
         return PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
     }
 
-    /// The Start button. A label that is "Start", or has it as one part of
-    /// "Start/Pause", wins. Otherwise the shortest label with "Start" as a word,
-    /// like "Start Pause" read off a key printed on two lines.
-    /// TODO: use TargetMatcher once #30 lands.
-    private func startButton(in map: SurfaceMap) -> SurfaceMap.Button? {
-        let labelled = map.buttons.compactMap { button in button.label.map { (button, $0) } }
-        func words(_ label: String) -> [Substring] {
-            label.lowercased().split { !$0.isLetter && !$0.isNumber }
-        }
-
-        let exact = labelled.first { _, label in
-            label.split(separator: "/").contains {
-                $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Start") == .orderedSame
-            }
-        }
-        if let exact { return exact.0 }
-
-        return labelled
-            .filter { words($0.1).contains("start") }
-            .min { words($0.1).count < words($1.1).count }?.0
-    }
-
     private func toggleGuidance() {
         if let guidanceTask {
             guidanceTask.cancel()
             self.guidanceTask = nil
             return
         }
-        guard let map, let target = startButton(in: map) else {
+        guard let map, let target = ButtonLookup.button(for: "start", in: map) else {
             lastError = "No Start button found on the panel."
             return
         }
+        startGuidance(to: target)
+    }
+
+    private func startGuidance(to target: SurfaceMap.Button) {
         guidanceTask = Task {
             await pipeline.guide(to: target)
             guidanceTask = nil
+        }
+    }
+
+    /// Listen for a button's name, then guide to it.
+    private func sayAButton() {
+        guard let map else { return }
+        lastError = nil
+        heard = nil
+        listening = true
+        Task {
+            defer { listening = false }
+            do {
+                let result = try await VoiceRequest().listen(for: map)
+                guard !result.text.isEmpty else {
+                    heard = "Didn't hear anything."
+                    return
+                }
+                heard = "Heard \u{201C}\(result.text)\u{201D}"
+                guard let button = result.button else {
+                    lastError = "No button matching \u{201C}\(result.text)\u{201D} on this panel."
+                    return
+                }
+                heard = "Heard \u{201C}\(result.text)\u{201D}: guiding to \(button.label ?? "it")"
+                startGuidance(to: button)
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
     }
 }
