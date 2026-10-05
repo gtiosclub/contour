@@ -3,36 +3,30 @@
 //  SurfaceUnderstanding — Surface / Officers (integration)
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  HALF REAL. This is the integration point, not an empty room.            │
+//  │  REAL. This is the integration point for the three Surface stages.       │
 //  │                                                                          │
-//  │  REAL      the panel quad and its confidence, from PanelDetector.        │
-//  │  PENDING   buttons (ButtonDetector) and labels (LabelReader) are still   │
-//  │            fatalError stubs, so the returned SurfaceMap has no buttons.  │
-//  │                                                                          │
-//  │  This does NOT call the two pending stubs — calling them would crash.    │
-//  │  The commented block in detectPanel(from:) shows exactly where they      │
-//  │  plug in once they land.                                                 │
+//  │  1. PanelDetector    finds the panel quad and how sure it is.            │
+//  │  2. ButtonDetector   finds the buttons on it.                            │
+//  │  3. LabelReader      reads the text on each button.                      │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
 //  WHAT THIS PACKAGE OWES THE APP
 //  A photo goes in; PanelDetection returns its quad, map, and photo ID — what the buttons
 //  are, where they sit, how sure we are.
 //
-//  WHAT IT CAN DELIVER TODAY
-//  A real quad on a real appliance, with an empty button list. That is enough for
-//  Tracking to lock onto a panel, which is what they are blocked on — they need
-//  the quad and the reference photo, not the buttons. An empty SurfaceMap is a
-//  successful return, not an error: "we found the panel and have not read it yet".
-//
-//  The app pairs this with mock buttons in ContourPipeline.realPanel() so that
-//  target selection still has something to point at. That pairing lives in the
-//  app target, not here — this package has no business knowing about mocks.
+//  WHEN THE PANEL HAS NO BUTTONS ON IT
+//  On real photos PanelDetector sometimes locks onto something smaller than the
+//  control panel, such as the display, and there are no buttons inside that quad.
+//  When that happens we look for buttons across the whole photo instead and
+//  return `.fullFrame` as the quad, so the bounds stay normalized against the quad
+//  we hand back. On the 18 test photos from #36 this took us from 11 to 17
+//  photos with buttons found.
 //
 //  COORDINATES
 //  The quad is in normalized coordinates of the upright REFERENCE IMAGE, not in
-//  panel space — see PanelReference.swift. Button bounds, when they arrive, are
-//  in normalized panel space: (0,0) top-left, (1,1) bottom-right, y DOWNWARD,
-//  normalized against this exact quad.
+//  panel space — see PanelReference.swift. Button bounds are in normalized panel
+//  space: (0,0) top-left, (1,1) bottom-right, y DOWNWARD, normalized against this
+//  exact quad.
 //  See Packages/ContourCore/COORDINATES.md.
 //
 //  NAMING WRINKLE
@@ -45,7 +39,7 @@
 import ContourCore
 import Foundation
 
-/// The real panel detector, wired as far as the stubs allow.
+/// The real Surface pipeline: panel, then buttons, then labels.
 ///
 /// Conforms to `ContourCore.SurfaceUnderstanding`. Fully qualified because the
 /// module shares the protocol's name — see the note above.
@@ -56,63 +50,64 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
     /// Detect controls using the returned quad for normalization. Echo photo.id.
     /// Quad corners use the full upright image before panel rectification.
     ///
-    /// Today this returns a real quad and an empty button list. The map's
-    /// confidence is the panel confidence from `PanelDetector`, so a caller can
-    /// already tell a crisp panel lock from a doubtful one.
+    /// The map's confidence is the panel confidence from `PanelDetector`, so a
+    /// caller can tell a crisp panel lock from a doubtful one. A panel with no
+    /// buttons found is still a successful return with an empty map.
     ///
-    /// - Returns: a `PanelDetection` whose `quad` is real and whose `map` has no
-    ///   buttons yet.
     /// - Throws: `SurfaceUnderstandingError`, propagated unchanged from
-    ///   `PanelDetector` — `.undecodableImage`, `.noPanelFound`, `.cancelled`,
-    ///   or `.underlying`.
+    ///   `PanelDetector` and `ButtonDetector` — `.undecodableImage`,
+    ///   `.noPanelFound`, `.cancelled`, or `.underlying`.
     public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
-        let (quad, confidence) = try await PanelDetector().detectPanel(in: photo)
+        var (quad, confidence) = try await PanelDetector().detectPanel(in: photo)
+        var found = try await ButtonDetector().detectButtons(in: photo, panel: quad)
 
-        // No buttons yet. Panel confidence carries through so the caller can
-        // distinguish a solid lock from a marginal one even with an empty map.
-        let map = SurfaceMap(buttons: [], confidence: confidence)
+        // No buttons inside the quad usually means the quad is wrong, not that
+        // the panel has no buttons. Look across the whole photo instead.
+        if found.isEmpty, quad != .fullFrame {
+            let wholePhoto = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
+            if !wholePhoto.isEmpty {
+                quad = .fullFrame
+                // The same confidence PanelDetector gives its own full-frame answer.
+                confidence = min(confidence, 0.6)
+                found = wholePhoto
+            }
+        }
 
-        // MARK: - Pending stages
-        //
-        // TODO(Sanvi): ButtonDetector — find the controls on the rectified panel.
-        // TODO(Srinivas): LabelReader — read the text on each control found.
-        //
-        // Both are fatalError stubs right now. Do NOT uncomment this until the
-        // stage you own actually returns. When both land, this replaces the
-        // empty `map` above and nothing else in the method changes:
-        //
-        //     let buttons = try await ButtonDetector()
-        //         .detectButtons(in: photo, panel: quad)
-        //
-        //     let labels = try await LabelReader()
-        //         .readLabels(in: photo, panel: quad,
-        //                     regions: buttons.map(\.bounds))
-        //
-        //     let map = SurfaceMap(
-        //         buttons: zip(buttons, labels).map { found, label in
-        //             SurfaceMap.Button(
-        //                 label: label,
-        //                 bounds: found.bounds,
-        //                 confidence: found.confidence
-        //             )
-        //         },
-        //         confidence: confidence
-        //     )
-        //
-        // Two things to get right when you do:
-        //
-        // 1. `readLabels` promises one entry per region, in the same order, so
-        //    `zip` is safe — but it is only safe because of that promise. If the
-        //    two counts can ever disagree, that is a bug in LabelReader, not
-        //    something to paper over here with a shorter zip.
-        // 2. A `nil` label is a good answer and must survive. "There is a button
-        //    here and we cannot read it" is shippable; Experience announces those
-        //    positionally. Do not substitute a placeholder string.
-        //
-        // Landing one stage without the other is fine. Buttons with all-`nil`
-        // labels are more useful than no buttons, so ButtonDetector can go live
-        // first by passing `labels` as `Array(repeating: nil, count: buttons.count)`.
+        let labels = try await readLabels(in: photo, panel: quad, regions: found.map(\.bounds))
 
+        let map = SurfaceMap(
+            buttons: zip(found, labels).map { button, label in
+                SurfaceMap.Button(label: label, bounds: button.bounds, confidence: button.confidence)
+            },
+            confidence: confidence
+        )
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
+    }
+
+    /// One label per region, in order.
+    ///
+    /// Text recognition only runs when there is something to label. If it fails,
+    /// the buttons come back with `nil` labels rather than being thrown away: "there
+    /// is a button here and we cannot read it" is still useful to the app.
+    private func readLabels(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> [String?] {
+        guard !regions.isEmpty else { return [] }
+
+        let labels: [String?]
+        do {
+            labels = try await LabelReader().readLabels(in: photo, panel: panel, regions: regions)
+        } catch SurfaceUnderstandingError.cancelled {
+            throw SurfaceUnderstandingError.cancelled
+        } catch {
+            return Array(repeating: nil, count: regions.count)
+        }
+
+        // LabelReader promises one entry per region. If that ever breaks, fail
+        // loudly instead of zipping labels onto the wrong buttons.
+        guard labels.count == regions.count else {
+            throw SurfaceUnderstandingError.underlying(
+                "LabelReader returned \(labels.count) labels for \(regions.count) buttons"
+            )
+        }
+        return labels
     }
 }
