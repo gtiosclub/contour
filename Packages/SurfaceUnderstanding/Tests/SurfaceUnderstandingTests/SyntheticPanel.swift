@@ -146,6 +146,52 @@ enum SyntheticPanel {
         return (try photo(try makeImage(ctx), size: size), rects)
     }
 
+    /// Three dark keys on a light panel with their labels printed UNDER them,
+    /// not on them, like a ▷ key with "START" below it. Returns the keys and
+    /// their labels in panel space; the panel fills the frame.
+    static func labelsUnderKeysPhoto() throws -> (photo: PanelPhoto, keys: [PanelRect], labels: [String]) {
+        let labels = ["START", "STOP", "CLEAR"]
+        let ctx = try context(size, background: CGColor(gray: 0.9, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(size.width), h = CGFloat(size.height)
+        var keys: [CGRect] = []
+        for (i, label) in labels.enumerated() {
+            let key = CGRect(x: (0.12 + 0.28 * CGFloat(i)) * w, y: 0.30 * h, width: 0.16 * w, height: 0.18 * h)
+            ctx.setFillColor(CGColor(gray: 0.35, alpha: 1))
+            ctx.fill(key)
+            draw(label, centeredIn: CGRect(x: key.minX, y: key.maxY + 8, width: key.width, height: 40), in: ctx)
+            keys.append(key)
+        }
+
+        let rects = keys.map {
+            PanelRect(x: Double($0.minX / w), y: Double($0.minY / h),
+                      width: Double($0.width / w), height: Double($0.height / h))
+        }
+        return (try photo(try makeImage(ctx), size: size), rects, labels)
+    }
+
+    /// A flat membrane keypad: labels printed in a 3 × 2 grid on a light panel,
+    /// with no key outlines at all. The panel sits on a darker appliance front,
+    /// so it has an edge to find, like the real ones.
+    static func printedKeypadPhoto() throws -> (photo: PanelPhoto, labels: [String]) {
+        let labels = ["Popcorn", "Pizza", "Defrost", "Start", "Stop", "Clear"]
+        let ctx = try context(size, background: CGColor(gray: 0.3, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(size.width), h = CGFloat(size.height)
+        ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        ctx.fill(CGRect(x: 0.06 * w, y: 0.08 * h, width: 0.88 * w, height: 0.84 * h))
+        for (i, label) in labels.enumerated() {
+            let cell = CGRect(x: (0.06 + 0.29 * CGFloat(i % 3)) * w, y: (0.2 + 0.35 * CGFloat(i / 3)) * h,
+                              width: 0.29 * w, height: 0.25 * h)
+            draw(label, centeredIn: cell, in: ctx)
+        }
+        return (try photo(try makeImage(ctx), size: size), labels)
+    }
+
     // MARK: - Drawing
 
     private static func render() throws -> CGImage {
