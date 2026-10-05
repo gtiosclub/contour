@@ -81,7 +81,13 @@ struct ContentView: View {
                     }
                 }
 
-                Section("Run the mock pipeline") {
+                Section("Run the pipeline") {
+                    if surfaceIsLive {
+                        // What the scan will capture, so you can aim at the panel.
+                        CameraPreview(session: camera.session)
+                            .frame(height: 260)
+                            .task { try? await camera.start() }
+                    }
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
                         .disabled(map == nil)
@@ -106,17 +112,35 @@ struct ContentView: View {
         lastError = nil
         Task {
             do {
-                // A zero-byte photo: MockSurfaceUnderstanding ignores it entirely.
-                // Experience replaces this with a real capture from CaptureFlow.
-                map = try await pipeline.detectPanel(
-                    in: PanelPhoto(
-                        data: Data(),
-                        pixelSize: PixelSize(width: 4032, height: 3024),
-                        timestamp: Date()
-                    )
-                )
+                let photo = try await photoToScan()
+                map = try await pipeline.detectPanel(in: photo)
             } catch {
                 lastError = String(describing: error)
+            }
+        }
+    }
+
+    private var surfaceIsLive: Bool {
+        pipeline.liveComponents.contains(.surfaceUnderstanding)
+    }
+
+    /// A frame from the camera when Surface Understanding is live. The mock
+    /// ignores the photo entirely, so it gets a zero-byte one. Experience
+    /// replaces this with a real capture from CaptureFlow.
+    private func photoToScan() async throws -> PanelPhoto {
+        if surfaceIsLive {
+            return try await camera.capturePanelPhoto()
+        }
+        return PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
+    }
+
+    /// "Start" on its own or as part of a combined label like "Start/Pause",
+    /// which is how most real microwaves print it.
+    /// TODO: use TargetMatcher once #30 lands.
+    private func startButton(in map: SurfaceMap) -> SurfaceMap.Button? {
+        map.buttons.first { button in
+            (button.label ?? "").split(separator: "/").contains {
+                $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Start") == .orderedSame
             }
         }
     }
@@ -127,7 +151,10 @@ struct ContentView: View {
             self.guidanceTask = nil
             return
         }
-        guard let target = map?.button(labelled: "Start") else { return }
+        guard let map, let target = startButton(in: map) else {
+            lastError = "No Start button found on the panel."
+            return
+        }
         guidanceTask = Task {
             await pipeline.guide(to: target)
             guidanceTask = nil
