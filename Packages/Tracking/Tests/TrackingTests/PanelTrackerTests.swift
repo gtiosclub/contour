@@ -62,6 +62,19 @@ struct PanelTrackerFixtureTests {
         #expect(maxCornerError(try #require(observation.quad), fixture.reference) <= fixture.tolerance)
     }
 
+    @Test("A panel that moved too far to follow is found again in the frame")
+    func refindsAPanelThatJumped() async throws {
+        let fixture = try Fixture.load()
+        let tracker = PanelTracker()
+        try await tracker.startTracking(try reference(image: "panel-reference", quad: fixture.reference))
+
+        // At twice the size the panel moves twice as many pixels, further than
+        // Vision's tracker searches between frames; it has to be detected.
+        let observation = try await tracker.track(try frame(image: "panel-moved", at: 4, scale: 2))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), fixture.moved) <= fixture.tolerance * 2)
+    }
+
     @Test("Losing the panel for a frame doesn't end tracking: it comes back on its own")
     func recoversAfterLoss() async throws {
         let fixture = try Fixture.load()
@@ -166,6 +179,50 @@ struct PanelTrackerTests {
         #expect(seen.values == ["0:still 640x480", "1:still 1280x960", "1:frame 1280", "1:frame 1280"])
     }
 
+    @Test("When the tracker can't find the panel, a rectangle of the same size elsewhere takes over")
+    func reacquiresByDetection() async throws {
+        let moved = PanelQuad(
+            topLeft: ImagePoint(x: 0.35, y: 0.30), topRight: ImagePoint(x: 0.85, y: 0.30),
+            bottomRight: ImagePoint(x: 0.85, y: 0.80), bottomLeft: ImagePoint(x: 0.35, y: 0.80))
+        let tiny = PanelQuad(
+            topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.30, y: 0.25),
+            bottomRight: ImagePoint(x: 0.30, y: 0.30), bottomLeft: ImagePoint(x: 0.25, y: 0.30))
+        let tracker = PanelTracker(detector: ScriptedDetector([vision(tiny), vision(moved)])) { start in
+            ScriptedTracker { image in
+                // Sequences seeded where the panel was can't find it; one seeded
+                // on the detected rectangle follows it.
+                if case .frame = image, start == square { throw ScriptedFailure.failed }
+                return vision(start)
+            }
+        }
+        try await tracker.startTracking(try scriptedReference())
+
+        let observation = try await tracker.track(try blankFrame(at: 1))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), moved) < 1e-9,
+                "the tiny rectangle is the wrong size to be the panel")
+        let next = try await tracker.track(try blankFrame(at: 2))
+        #expect(maxCornerError(try #require(next.quad), moved) < 1e-9)
+    }
+
+    @Test("Nothing panel-sized in the frame stays lost")
+    func noMatchStaysLost() async throws {
+        let tiny = PanelQuad(
+            topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.30, y: 0.25),
+            bottomRight: ImagePoint(x: 0.30, y: 0.30), bottomLeft: ImagePoint(x: 0.25, y: 0.30))
+        let tracker = PanelTracker(detector: ScriptedDetector([vision(tiny)])) { _ in
+            ScriptedTracker { image in
+                if case .frame = image { throw ScriptedFailure.failed }
+                return vision(square)
+            }
+        }
+        try await tracker.startTracking(try scriptedReference())
+
+        let observation = try await tracker.track(try blankFrame(at: 1))
+        #expect(observation.status == .lost(.trackerFailed))
+        #expect(observation.quad == nil)
+    }
+
     @Test("Corner identities survive the phone rolling past 45°")
     func cornerIdentity() {
         // Vision relabels by screen position: its "top left" is now our top right.
@@ -244,6 +301,12 @@ private func vision(_ quad: PanelQuad, confidence: Double = 1) -> VisionQuad {
 /// Camera frames carry their script step in the timestamp; the still is step 0.
 private func seconds(_ image: TrackerImage) -> TimeInterval {
     if case let .frame(frame) = image { frame.timestamp.timeIntervalSince1970 } else { 0 }
+}
+
+private struct ScriptedDetector: RectangleDetecting {
+    let found: [VisionQuad]
+    init(_ found: [VisionQuad]) { self.found = found }
+    func detect(in frame: CameraFrame) async throws -> [VisionQuad] { found }
 }
 
 private final class ScriptedTracker: RectangleTracking {
