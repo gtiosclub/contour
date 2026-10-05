@@ -51,20 +51,23 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
     /// Quad corners use the full upright image before panel rectification.
     ///
     /// The map's confidence is the panel confidence from `PanelDetector`, so a
-    /// caller can tell a crisp panel lock from a doubtful one. A panel with no
-    /// buttons found is still a successful return with an empty map.
+    /// caller can tell a crisp panel lock from a doubtful one. Once a panel is
+    /// found this always returns: if buttons or labels can't be read, the map is
+    /// empty or the labels are `nil`, but the panel still comes back.
     ///
     /// - Throws: `SurfaceUnderstandingError`, propagated unchanged from
-    ///   `PanelDetector` and `ButtonDetector` — `.undecodableImage`,
-    ///   `.noPanelFound`, `.cancelled`, or `.underlying`.
+    ///   `PanelDetector` — `.undecodableImage`, `.noPanelFound`, `.cancelled`, or
+    ///   `.underlying` — and `.cancelled` if the task is cancelled later on.
     public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
         var (quad, confidence) = try await PanelDetector().detectPanel(in: photo)
-        var found = try await ButtonDetector().detectButtons(in: photo, panel: quad)
+        try checkCancellation()
+        var found = try await detectButtons(in: photo, panel: quad)
 
         // No buttons inside the quad usually means the quad is wrong, not that
         // the panel has no buttons. Look across the whole photo instead.
         if found.isEmpty, quad != .fullFrame {
-            let wholePhoto = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
+            try checkCancellation()
+            let wholePhoto = try await detectButtons(in: photo, panel: .fullFrame)
             if !wholePhoto.isEmpty {
                 quad = .fullFrame
                 // The same confidence PanelDetector gives its own full-frame answer.
@@ -84,20 +87,32 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
 
+    /// Buttons inside `panel`. A failure here (Vision's own errors aren't
+    /// `SurfaceUnderstandingError`s) means no buttons found, not no answer:
+    /// the panel was already found.
+    private func detectButtons(in photo: PanelPhoto, panel: PanelQuad) async throws -> [(bounds: PanelRect, confidence: Double)] {
+        do {
+            return try await ButtonDetector().detectButtons(in: photo, panel: panel)
+        } catch {
+            try checkCancellation()
+            return []
+        }
+    }
+
     /// One label per region, in order.
     ///
     /// Text recognition only runs when there is something to label. If it fails,
     /// the buttons come back with `nil` labels rather than being thrown away: "there
     /// is a button here and we cannot read it" is still useful to the app.
     private func readLabels(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> [String?] {
+        try checkCancellation()
         guard !regions.isEmpty else { return [] }
 
         let labels: [String?]
         do {
             labels = try await LabelReader().readLabels(in: photo, panel: panel, regions: regions)
-        } catch SurfaceUnderstandingError.cancelled {
-            throw SurfaceUnderstandingError.cancelled
         } catch {
+            try checkCancellation()
             return Array(repeating: nil, count: regions.count)
         }
 
@@ -109,5 +124,11 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             )
         }
         return labels
+    }
+
+    /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
+    /// the contract, so throw ours instead.
+    private func checkCancellation() throws {
+        if Task.isCancelled { throw SurfaceUnderstandingError.cancelled }
     }
 }

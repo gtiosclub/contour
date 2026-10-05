@@ -86,7 +86,8 @@ func blankImageThrowsNoPanelFound() async throws {
     }
 }
 
-@Test("a plain panel returns the real quad, the photo's id, and no buttons")
+@Test("a plain panel returns the real quad, the photo's id, and no buttons",
+      TextRecognitionCheck.timeLimit)
 func panelShapedImageReturnsRealQuad() async throws {
     // A bright rectangle on a dark field: the simplest thing Vision will call a
     // panel. Inset so the quad has to come back as something other than
