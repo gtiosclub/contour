@@ -34,6 +34,9 @@ struct ContentView: View {
                     NavigationLink("Model image spike (Surface)") {
                         ModelImageSpikeView()
                     }
+                    NavigationLink("Debug Menu") {
+                        DebugMenu()
+                    }
                 }
                 #endif
 

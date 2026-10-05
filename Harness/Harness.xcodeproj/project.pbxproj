@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A05800010000000000000001 /* HarnessConnectivity in Frameworks */ = {isa = PBXBuildFile; productRef = A05800010000000000000003 /* HarnessConnectivity */; };
 		C04700010000000000000028 /* ContourCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0470001000000000000001E /* ContourCore */; };
 		C04700010000000000000029 /* ContourMocks in Frameworks */ = {isa = PBXBuildFile; productRef = C0470001000000000000001F /* ContourMocks */; };
 		C0470001000000000000002A /* ContourFeedback in Frameworks */ = {isa = PBXBuildFile; productRef = C04700010000000000000020 /* ContourFeedback */; };
@@ -29,6 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A05800010000000000000001 /* HarnessConnectivity in Frameworks */,
 				C04700010000000000000028 /* ContourCore in Frameworks */,
 				C04700010000000000000029 /* ContourMocks in Frameworks */,
 				C0470001000000000000002A /* ContourFeedback in Frameworks */,
@@ -74,6 +76,7 @@
 			);
 			name = Harness;
 			packageProductDependencies = (
+				A05800010000000000000003 /* HarnessConnectivity */,
 				C0470001000000000000001E /* ContourCore */,
 				C0470001000000000000001F /* ContourMocks */,
 				C04700010000000000000020 /* ContourFeedback */,
@@ -107,6 +110,7 @@
 			mainGroup = C04700010000000000000002;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A05800010000000000000002 /* XCLocalSwiftPackageReference "../Packages/HarnessConnectivity" */,
 				C04700010000000000000014 /* XCLocalSwiftPackageReference "../Packages/ContourCore" */,
 				C04700010000000000000015 /* XCLocalSwiftPackageReference "../Packages/ContourMocks" */,
 				C04700010000000000000016 /* XCLocalSwiftPackageReference "../Packages/ContourFeedback" */,
@@ -158,27 +162,27 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
-				SDKROOT = macosx;
-				SUPPORTED_PLATFORMS = macosx;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 6.0;
-				DEBUG_INFORMATION_FORMAT = dwarf;
-				ENABLE_TESTABILITY = YES;
-				GCC_OPTIMIZATION_LEVEL = 0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 6.0;
 			};
 			name = Debug;
 		};
@@ -198,6 +202,8 @@
 				CLANG_WARN_SUSPICIOUS_MOVE = YES;
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_UNDECLARED_SELECTOR = YES;
@@ -206,16 +212,14 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
 				SDKROOT = macosx;
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
-				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				ENABLE_NS_ASSERTIONS = NO;
-				MTL_ENABLE_DEBUG_INFO = NO;
-				SWIFT_COMPILATION_MODE = wholemodule;
 			};
 			name = Release;
 		};
@@ -229,6 +233,9 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Harness-Info.plist;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -251,6 +258,9 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Harness-Info.plist;
+				ENABLE_INCOMING_NETWORK_CONNECTIONS = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -287,6 +297,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		A05800010000000000000002 /* XCLocalSwiftPackageReference "../Packages/HarnessConnectivity" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/HarnessConnectivity;
+		};
 		C04700010000000000000014 /* XCLocalSwiftPackageReference "../Packages/ContourCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/ContourCore;
@@ -302,6 +316,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A05800010000000000000003 /* HarnessConnectivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarnessConnectivity;
+		};
 		C0470001000000000000001E /* ContourCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ContourCore;
@@ -315,7 +333,6 @@
 			productName = ContourFeedback;
 		};
 /* End XCSwiftPackageProductDependency section */
-
 	};
 	rootObject = C04700010000000000000001 /* Project object */;
 }

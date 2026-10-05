@@ -69,6 +69,21 @@ final class HarnessModel {
 
     // MARK: Emitting
 
+    /// UI drag entry point. Update both axes atomically to avoid sending a frame
+    /// containing the new x and the previous y. Panel-space y increases downward.
+    func moveFingertip(to point: PanelPoint) {
+        guard point.x.isFinite, point.y.isFinite else { return }
+        if let walk {
+            walk.cancel()
+            self.walk = nil
+        }
+        isSuppressingEmit = true
+        fingertipX = point.x
+        fingertipY = point.y
+        isSuppressingEmit = false
+        emit()
+    }
+
     /// Build a frame from the current slider state and send it through.
     func emit() {
         guard !isSuppressingEmit else { return }
