@@ -47,6 +47,32 @@ struct PanelTrackerFixtureTests {
         #expect(observation.status == .tracked)
         #expect(maxCornerError(try #require(observation.quad), fixture.moved) <= fixture.tolerance)
     }
+
+    @Test("Camera frames a different size from the reference still track")
+    func tracksFramesOfAnotherSize() async throws {
+        let fixture = try Fixture.load()
+        let tracker = PanelTracker()
+        try await tracker.startTracking(try reference(image: "panel-reference", quad: fixture.reference))
+
+        // The reference is 640x480; the same view at 1280x960, like a camera
+        // whose resolution doesn't match the photo the panel was found in. A
+        // sequence that had seen the 640x480 still lost the panel here.
+        let observation = try await tracker.track(try frame(image: "panel-reference", at: 3, scale: 2))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), fixture.reference) <= fixture.tolerance)
+    }
+
+    @Test("Losing the panel for a frame doesn't end tracking: it comes back on its own")
+    func recoversAfterLoss() async throws {
+        let fixture = try Fixture.load()
+        let tracker = PanelTracker()
+        try await tracker.startTracking(try reference(image: "panel-reference", quad: fixture.reference))
+
+        #expect(try await tracker.track(try blankFrame(at: 1)).status != .tracked)
+        let observation = try await tracker.track(try frame(image: "panel-moved", at: 2))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), fixture.moved) <= fixture.tolerance)
+    }
 }
 
 @Suite("Panel tracking state and coordinates (scripted Vision)")
@@ -96,19 +122,48 @@ struct PanelTrackerTests {
         #expect(try await tracker.track(try blankFrame(at: 5)).quad == square)
     }
 
-    @Test("A Vision error stays lost until a new reference restarts tracking")
-    func trackerFailureIsSticky() async throws {
-        let tracker = PanelTracker { _ in
-            ScriptedTracker { image in
+    @Test("After a Vision error, the next frame starts again from the last good position")
+    func recoversFromTrackerFailure() async throws {
+        let starts = Recorder<PanelQuad>()
+        let tracker = PanelTracker { start in
+            starts.append(start)
+            return ScriptedTracker { image in
                 if seconds(image) == 1 { throw ScriptedFailure.failed }
                 return vision(square)
             }
         }
         try await tracker.startTracking(try scriptedReference())
         #expect(try await tracker.track(try blankFrame(at: 1)).status == .lost(.trackerFailed))
-        #expect(try await tracker.track(try blankFrame(at: 2)).status == .lost(.trackerFailed))
+
+        let next = try await tracker.track(try blankFrame(at: 2))
+        #expect(next.status == .tracked)
+        #expect(next.quad == square)
+        // Registration, the live sequence, and a fresh one after the error,
+        // seeded from the last good quad.
+        #expect(starts.values == [square, square, square])
+    }
+
+    @Test("Camera frames get their own sequence, shown the reference at the frame's size first")
+    func referenceUsesAThrowawaySequence() async throws {
+        let seen = Recorder<String>()
+        let made = Recorder<Int>()
+        let tracker = PanelTracker { _ in
+            let index = made.values.count
+            made.append(index)
+            return ScriptedTracker { image in
+                switch image {
+                case let .still(still, _): seen.append("\(index):still \(still.width)x\(still.height)")
+                case let .frame(frame): seen.append("\(index):frame \(CVPixelBufferGetWidth(frame.pixelBuffer))")
+                }
+                return vision(square)
+            }
+        }
         try await tracker.startTracking(try scriptedReference())
-        #expect(try await tracker.track(try blankFrame(at: 3)).status == .tracked)
+        let large = { (at: TimeInterval) in try frame(width: 1280, height: 960, at: at) { _ in } }
+        _ = try await tracker.track(try large(1))
+        _ = try await tracker.track(try large(2))
+
+        #expect(seen.values == ["0:still 640x480", "1:still 1280x960", "1:frame 1280", "1:frame 1280"])
     }
 
     @Test("Corner identities survive the phone rolling past 45°")
@@ -267,12 +322,21 @@ private func reference(data: Data, quad: PanelQuad) throws -> PanelReference {
         referencePhotoID: photo.id, quad: quad, map: MockSurfaceMaps.microwave))
 }
 
-private func frame(image name: String, at seconds: TimeInterval) throws -> CameraFrame {
+private func frame(image name: String, at seconds: TimeInterval, scale: Int = 1) throws -> CameraFrame {
     let source = try #require(CGImageSourceCreateWithData(try fixtureData(name) as CFData, nil))
     let image = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
-    return try frame(width: image.width, height: image.height, at: seconds) { context in
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    let width = image.width * scale, height = image.height * scale
+    return try frame(width: width, height: height, at: seconds) { context in
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
     }
+}
+
+/// Collects values from the scripted tracker's closures, which run off the test.
+private final class Recorder<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Value] = []
+    func append(_ value: Value) { lock.withLock { stored.append(value) } }
+    var values: [Value] { lock.withLock { stored } }
 }
 
 private func blankFrame(at seconds: TimeInterval) throws -> CameraFrame {

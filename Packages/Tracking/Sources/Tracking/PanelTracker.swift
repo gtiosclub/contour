@@ -16,6 +16,8 @@
 
 import ContourCore
 import CoreGraphics
+import CoreImage
+import CoreVideo
 import Foundation
 import ImageIO
 
@@ -36,7 +38,9 @@ public struct PanelObservation: Hashable, Sendable {
         case lowConfidence
         /// The corners don't form a usable panel (folded, collinear, tiny).
         case invalidGeometry
-        /// Vision's tracking sequence errored. Stays lost until restarted.
+        /// Vision's tracking sequence errored on this frame, which is what it
+        /// does when something covers a corner. The next frame starts a fresh
+        /// sequence from the last good position.
         case trackerFailed
     }
 
@@ -48,11 +52,11 @@ public struct PanelObservation: Hashable, Sendable {
     public let confidence: Double
     public let status: Status
 
-    static func tracked(_ quad: PanelQuad, confidence: Double, at timestamp: Date) -> Self {
+    public static func tracked(_ quad: PanelQuad, confidence: Double, at timestamp: Date) -> Self {
         Self(timestamp: timestamp, quad: quad, confidence: confidence, status: .tracked)
     }
 
-    static func lost(_ reason: LossReason, at timestamp: Date) -> Self {
+    public static func lost(_ reason: LossReason, at timestamp: Date) -> Self {
         Self(timestamp: timestamp, quad: nil, confidence: 0, status: .lost(reason))
     }
 }
@@ -80,12 +84,16 @@ public actor PanelTracker {
 
     private struct Session {
         let id: UInt64
-        let tracker: any RectangleTracking
-        /// Last tracked quad, used to keep corner identities stable.
+        /// The sequence following the camera. `nil` until the first frame,
+        /// and again after a loss: Vision's sequence doesn't recover by itself.
+        var tracker: (any RectangleTracking)?
+        /// Last tracked quad, used to keep corner identities stable and to
+        /// start again from after a loss.
         var previous: PanelQuad
+        /// An image showing the panel at `previous`: the reference photo until
+        /// the first tracked frame, then the last tracked frame.
+        var lastSeen: TrackerImage
         var updating = false
-        /// Set once Vision's sequence errors; no automatic reacquisition.
-        var failure: PanelObservation.LossReason?
     }
 
     private let makeTracker: @Sendable (PanelQuad) -> any RectangleTracking
@@ -120,12 +128,17 @@ public actor PanelTracker {
 
         stopTracking()
         let id = generation
-        let tracker = makeTracker(quad)
+        // Register on a throwaway sequence: it proves Vision can hold the panel
+        // in the reference itself. The camera frames get their own sequence,
+        // started on the first frame (see `track`), because Vision's tracker
+        // fails outright when the image size changes and the reference photo
+        // is rarely the camera's size.
+        let registration = makeTracker(quad)
+        let still = TrackerImage.still(image, Self.orientation(reference.photo.orientation))
 
         let registered: VisionQuad?
         do {
-            registered = try await tracker.update(
-                .still(image, Self.orientation(reference.photo.orientation)))
+            registered = try await registration.update(still)
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -137,7 +150,7 @@ public actor PanelTracker {
         guard case let .tracked(start, _) = evaluate(registered, previous: quad) else {
             throw PanelTrackingError.registrationFailed
         }
-        session = Session(id: id, tracker: tracker, previous: start)
+        session = Session(id: id, tracker: nil, previous: start, lastSeen: still)
     }
 
     /// Advance tracking by one camera frame. Call sequentially, in capture order.
@@ -147,13 +160,23 @@ public actor PanelTracker {
     /// for results that no longer belong to the current session.
     public func track(_ frame: CameraFrame) async throws -> PanelObservation {
         guard let current = session else { return .lost(.notStarted, at: frame.timestamp) }
-        if let failure = current.failure { return .lost(failure, at: frame.timestamp) }
         guard !current.updating else { throw PanelTrackingError.frameInFlight }
 
         session?.updating = true
         let result: Result<VisionQuad?, any Error>
         do {
-            result = .success(try await current.tracker.update(.frame(frame)))
+            let tracker: any RectangleTracking
+            if let running = current.tracker {
+                tracker = running
+            } else {
+                // A new sequence learns the panel from the first image it sees,
+                // so show it the panel where we last saw it, at this frame's
+                // size, before asking it to find the panel in this frame.
+                tracker = makeTracker(current.previous)
+                _ = try await tracker.update(try Self.resized(current.lastSeen, like: frame))
+                if session?.id == current.id { session?.tracker = tracker }
+            }
+            result = .success(try await tracker.update(.frame(frame)))
         } catch {
             result = .failure(error)
         }
@@ -165,14 +188,16 @@ public actor PanelTracker {
         case .failure(let error as CancellationError):
             throw error
         case .failure:
-            session?.failure = .trackerFailed
+            session?.tracker = nil
             return .lost(.trackerFailed, at: frame.timestamp)
         case .success(let raw):
             switch evaluate(raw, previous: current.previous) {
             case let .tracked(quad, confidence):
                 session?.previous = quad
+                session?.lastSeen = .frame(frame)
                 return .tracked(quad, confidence: confidence, at: frame.timestamp)
             case let .lost(reason):
+                session?.tracker = nil
                 return .lost(reason, at: frame.timestamp)
             }
         }
@@ -237,6 +262,28 @@ public actor PanelTracker {
             let p = corners[(i + shift) % 4], q = before[i]
             return sum + (p.x - q.x) * (p.x - q.x) + (p.y - q.y) * (p.y - q.y)
         }
+    }
+
+    /// `image` drawn upright at `frame`'s upright size. A frame is already that
+    /// size; the reference photo is redrawn, since its normalized corners are
+    /// relative to the upright image and stay valid when it's scaled.
+    static func resized(_ image: TrackerImage, like frame: CameraFrame) throws -> TrackerImage {
+        guard case let .still(cgImage, orientation) = image else { return image }
+
+        var width = CVPixelBufferGetWidth(frame.pixelBuffer)
+        var height = CVPixelBufferGetHeight(frame.pixelBuffer)
+        if [.left, .right, .leftMirrored, .rightMirrored].contains(frame.orientation) {
+            swap(&width, &height)
+        }
+
+        let upright = CIImage(cgImage: cgImage).oriented(orientation)
+        let scaled = upright
+            .transformed(by: CGAffineTransform(translationX: -upright.extent.minX, y: -upright.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: CGFloat(width) / upright.extent.width,
+                                               y: CGFloat(height) / upright.extent.height))
+        guard let resized = CIContext().createCGImage(scaled, from: CGRect(x: 0, y: 0, width: width, height: height))
+        else { throw PanelTrackingError.unreadableReferencePhoto }
+        return .still(resized, .up)
     }
 
     private static func orientation(_ orientation: PhotoOrientation) -> CGImagePropertyOrientation {
