@@ -55,3 +55,31 @@ final class VisionRectangleTracker: RectangleTracking {
                           confidence: Double(result.confidence))
     }
 }
+
+/// Finds panel-sized rectangles anywhere in one frame. Used to find the panel
+/// again when tracking has lost it and it has moved too far to follow.
+protocol RectangleDetecting: Sendable {
+    func detect(in frame: CameraFrame) async throws -> [VisionQuad]
+}
+
+struct VisionRectangleDetector: RectangleDetecting {
+    func detect(in frame: CameraFrame) async throws -> [VisionQuad] {
+        var request = DetectRectanglesRequest()
+        request.maximumObservations = 8
+        request.minimumConfidence = 0.5
+        request.minimumSize = 0.15
+        request.minimumAspectRatio = 0.2
+        let results = try await request.perform(on: frame.pixelBuffer, orientation: frame.orientation)
+        func point(_ p: NormalizedPoint) -> SIMD2<Double> { SIMD2(Double(p.x), Double(p.y)) }
+        return results.map {
+            VisionQuad(topLeft: point($0.topLeft), topRight: point($0.topRight),
+                       bottomRight: point($0.bottomRight), bottomLeft: point($0.bottomLeft),
+                       confidence: Double($0.confidence))
+        }
+    }
+}
+
+/// Finds nothing. The default for tests that don't exercise re-finding.
+struct NoRectangles: RectangleDetecting {
+    func detect(in frame: CameraFrame) async throws -> [VisionQuad] { [] }
+}

@@ -97,18 +97,23 @@ public actor PanelTracker {
     }
 
     private let makeTracker: @Sendable (PanelQuad) -> any RectangleTracking
+    private let detector: any RectangleDetecting
     private let minimumConfidence: Double
     private var session: Session?
     /// Bumped by every start and stop, so in-flight work can tell it's stale.
     private var generation: UInt64 = 0
 
     public init(minimumConfidence: Double = TrackingQualityThresholds().panelFloor) {
-        self.init(minimumConfidence: minimumConfidence) { VisionRectangleTracker(start: $0) }
+        self.init(minimumConfidence: minimumConfidence, detector: VisionRectangleDetector()) {
+            VisionRectangleTracker(start: $0)
+        }
     }
 
     // Keep the Vision boundary replaceable for deterministic tests.
     init(minimumConfidence: Double = TrackingQualityThresholds().panelFloor,
+         detector: any RectangleDetecting = NoRectangles(),
          makeTracker: @escaping @Sendable (PanelQuad) -> any RectangleTracking) {
+        self.detector = detector
         self.minimumConfidence = minimumConfidence
         self.makeTracker = makeTracker
     }
@@ -182,25 +187,70 @@ public actor PanelTracker {
         }
         // Actor reentrancy: start/stop may have run during the await above.
         guard session?.id == current.id else { throw PanelTrackingError.superseded }
-        session?.updating = false
+        defer { if session?.id == current.id { session?.updating = false } }
 
+        let reason: PanelObservation.LossReason
         switch result {
         case .failure(let error as CancellationError):
             throw error
         case .failure:
-            session?.tracker = nil
-            return .lost(.trackerFailed, at: frame.timestamp)
+            reason = .trackerFailed
         case .success(let raw):
             switch evaluate(raw, previous: current.previous) {
             case let .tracked(quad, confidence):
                 session?.previous = quad
                 session?.lastSeen = .frame(frame)
                 return .tracked(quad, confidence: confidence, at: frame.timestamp)
-            case let .lost(reason):
-                session?.tracker = nil
-                return .lost(reason, at: frame.timestamp)
+            case let .lost(lossReason):
+                reason = lossReason
             }
         }
+        session?.tracker = nil
+
+        // A fresh sequence couldn't find the panel near where we last saw it:
+        // the phone moved too far while we weren't following it. Look for it
+        // anywhere in this frame and start following it from there.
+        if current.tracker == nil, let found = await reacquire(in: frame, near: current.previous, session: current.id) {
+            return found
+        }
+        return .lost(reason, at: frame.timestamp)
+    }
+
+    /// The rectangle in `frame` most like the panel we lost: about the same
+    /// size, nearest to where it was. Starts a new sequence on it.
+    private func reacquire(in frame: CameraFrame, near previous: PanelQuad, session id: UInt64) async -> PanelObservation? {
+        guard let candidates = try? await detector.detect(in: frame) else { return nil }
+        let size = Self.area(previous)
+        let best = candidates
+            .compactMap { raw -> (quad: PanelQuad, confidence: Double)? in
+                guard raw.confidence.isFinite, raw.confidence >= minimumConfidence else { return nil }
+                let quad = Self.aligned(Self.imageQuad(raw), to: previous)
+                guard PanelHomography.isValid(quad), (size * 0.4...size * 2.5).contains(Self.area(quad)) else { return nil }
+                return (quad, min(raw.confidence, 1))
+            }
+            .min { Self.cost(corners($0.quad), corners(previous), 0) < Self.cost(corners($1.quad), corners(previous), 0) }
+        guard let best else { return nil }
+
+        // The new sequence learns the panel from this frame.
+        let tracker = makeTracker(best.quad)
+        guard (try? await tracker.update(.frame(frame))) != nil, session?.id == id else { return nil }
+        session?.tracker = tracker
+        session?.previous = best.quad
+        session?.lastSeen = .frame(frame)
+        return .tracked(best.quad, confidence: best.confidence, at: frame.timestamp)
+    }
+
+    private func corners(_ quad: PanelQuad) -> [ImagePoint] {
+        [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+    }
+
+    /// Shoelace area of the quad, in image space.
+    static func area(_ quad: PanelQuad) -> Double {
+        let p = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+        return abs((0..<4).reduce(0) { sum, i in
+            let a = p[i], b = p[(i + 1) % 4]
+            return sum + a.x * b.y - b.x * a.y
+        }) / 2
     }
 
     /// The panel's pose for the current frame.
