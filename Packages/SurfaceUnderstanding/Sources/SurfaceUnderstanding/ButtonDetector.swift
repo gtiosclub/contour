@@ -40,6 +40,27 @@ public struct ButtonDetector: Sendable {
         request.minimumAspectRatio = 0.3
         request.maximumAspectRatio = 1.0
 
+        let panelCorners = [
+            panel.topLeft,
+            panel.topRight,
+            panel.bottomRight,
+            panel.bottomLeft
+        ]
+
+        let minX = panelCorners.map(\.x).min()!
+        let maxX = panelCorners.map(\.x).max()!
+        let minY = panelCorners.map(\.y).min()!
+        let maxY = panelCorners.map(\.y).max()!
+
+        let region = CGRect(
+            x: minX,
+            y: 1.0 - maxY,
+            width: maxX - minX,
+            height: maxY - minY
+        ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+
+        request.regionOfInterest = region
+
         try VNImageRequestHandler(
             cgImage: image,
             options: [:]
@@ -57,8 +78,11 @@ public struct ButtonDetector: Sendable {
                 observation.bottomRight,
                 observation.bottomLeft
             ].map {
-                detector.rectify(
-                    ImagePoint(x: Double($0.x), y: 1.0 - Double($0.y)),
+                return detector.rectify(
+                    ImagePoint(
+                        x: Double($0.x),
+                        y: 1.0 - Double($0.y)
+                    ),
                     within: panel
                 )
             }
@@ -77,6 +101,11 @@ public struct ButtonDetector: Sendable {
 
             // ignore if rectangles are too large (more than half of panel)
             if bounds.width > 0.5 || bounds.height > 0.5 {
+                continue
+            }
+            
+            // ignore tiny rectangles unlikely to be buttons
+            if bounds.width < 0.05 || bounds.height < 0.05 {
                 continue
             }
             
@@ -123,14 +152,26 @@ private func removeOverlappingBoxes(
     // Box `j` sits inside box `i`. The index breaks exact ties, so two copies
     // of the same rectangle collapse to one.
     func isInside(_ j: Int, _ i: Int) -> Bool {
-        j != i
-            && (area(j) < area(i) || (area(j) == area(i) && j > i))
-            && overlapRatio(results[j].bounds, results[i].bounds) >= 0.5
+        guard j != i else { return false }
+
+        guard area(j) < area(i) || (area(j) == area(i) && j > i) else { return false }
+
+        guard overlapRatio(results[j].bounds, results[i].bounds) >= 0.5 else { return false }
+
+        let center = results[j].bounds.center
+
+        let iBounds = results[i].bounds
+        let centerIsInside =
+            center.x >= iBounds.origin.x &&
+            center.x <= iBounds.origin.x + iBounds.width &&
+            center.y >= iBounds.origin.y &&
+            center.y <= iBounds.origin.y + iBounds.height
+
+        return centerIsInside
     }
 
     var dropped = Set<Int>()
 
-    // The more confident of two nested boxes wins outright.
     for i in results.indices {
         for j in results.indices where isInside(j, i) {
             if results[j].confidence > results[i].confidence {
@@ -141,7 +182,6 @@ private func removeOverlappingBoxes(
         }
     }
 
-    // Equal confidence: decide by how much of the outer box the inner ones fill.
     var frames = Set<Int>()
     var details = Set<Int>()
     for i in results.indices where !dropped.contains(i) {
@@ -151,7 +191,14 @@ private func removeOverlappingBoxes(
         }
         if inner.isEmpty { continue }
 
-        let filled = inner.map(area).reduce(0, +)
+        let nonNestedInner = inner.filter { j in
+            !inner.contains { k in
+                k != j && isInside(j, k)
+            }
+        }
+
+        let filled = nonNestedInner.map(area).reduce(0, +)
+
         if filled >= 0.5 * area(i) {
             frames.insert(i)
         } else {
