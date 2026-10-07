@@ -6,6 +6,7 @@ import Tracking
 import UIKit
 @testable import ContourApp
 
+@MainActor
 @Suite("Manual reference setup")
 struct ManualPanelReferenceTests {
     private func photo() -> PanelPhoto {
@@ -65,7 +66,6 @@ struct ManualPanelReferenceTests {
         #expect(state.selectedTarget?.id == newButton.id)
     }
 
-    @MainActor
     @Test("a delayed old diagnostic result stays cleared after replacement")
     func delayedOldResultIsIgnored() {
         let model = TrackingDebugModel()
