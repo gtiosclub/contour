@@ -36,8 +36,16 @@ final class ContourPipeline {
     let tracking: any TrackingSource
     let feedback: any FeedbackEngine
 
-    /// Retained for future live tracker initialization; live tracking is still a stub.
+    /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
+    private var generation: UInt64 = 0
+    private var guidanceTask: Task<Void, Never>?
+    private var guidanceGeneration: UInt64?
+
+    var canGuide: Bool {
+        guard let reference = panelReference else { return false }
+        return !liveComponents.contains(.tracking) || reference.detection.quad != .fullFrame
+    }
 
     /// Which of the three are real implementations rather than mocks. Rendered
     /// on the placeholder screen so the state of the project is visible at a
@@ -112,15 +120,48 @@ final class ContourPipeline {
 
     /// Detect the panel in `photo`.
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
+        generation &+= 1
+        let scan = generation
         panelReference = nil
+        await cancelGuidance()
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let reference = try PanelReference(photo: photo, detection: detection)
+        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         panelReference = reference
-        // Live tracking follows the panel just found.
-        if let live = tracking as? LiveTrackingSource {
-            await live.use(reference)
-        }
         return detection.map
+    }
+
+    /// Shared handoff for manual setup and replacement. Previous guidance ends
+    /// before a different reference or target can be used.
+    func replaceReference(with reference: PanelReference) async {
+        generation &+= 1
+        let replacement = generation
+        panelReference = nil
+        await cancelGuidance()
+        guard generation == replacement, !Task.isCancelled else { return }
+        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        guard generation == replacement, !Task.isCancelled else { return }
+        panelReference = reference
+    }
+
+    /// Stop guidance without discarding the reference, so it can be retried.
+    func stopGuidance() async {
+        generation &+= 1
+        await cancelGuidance()
+    }
+
+    private func cancelGuidance() async {
+        let old = guidanceTask
+        let oldGeneration = guidanceGeneration
+        old?.cancel()
+        await old?.value
+        if guidanceGeneration == oldGeneration {
+            guidanceTask = nil
+            guidanceGeneration = nil
+        }
     }
 
     /// Guide the user's finger to `target` until the stream ends or the task is
@@ -136,11 +177,35 @@ final class ContourPipeline {
     /// picks up again when it's back. Arriving ends the session, and any other
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
+        generation &+= 1
+        let session = generation
+        await cancelGuidance()
+        guard generation == session, !Task.isCancelled else { return }
+        if let reference = panelReference {
+            guard canGuide, reference.detection.map.buttons.contains(where: { $0.id == target.id }) else { return }
+        } else if liveComponents.contains(.tracking) {
+            return
+        }
+        let task = Task { await self.runGuidance(to: target, session: session) }
+        guidanceTask = task
+        guidanceGeneration = session
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if guidanceGeneration == session {
+            guidanceTask = nil
+            guidanceGeneration = nil
+        }
+    }
+
+    private func runGuidance(to target: SurfaceMap.Button, session: UInt64) async {
         var announced: OutcomeSignal?
         var lostSince: Date?
         var arrived = false
         for await frame in tracking.frames() {
-            if Task.isCancelled { break }
+            if Task.isCancelled || generation != session { break }
             let state = MockGuidance.state(for: frame, target: target)
 
             // A frame or two of blur isn't worth announcing: say the panel is

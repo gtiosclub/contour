@@ -137,6 +137,7 @@ private actor Engine {
     }
 
     func process(_ frame: CameraFrame) async -> TrackingFrame {
+        let frameGeneration = generation
         switch panel {
         case .none, .unusable:
             return lost(frame)
@@ -164,12 +165,14 @@ private actor Engine {
         } catch {
             return lost(frame)
         }
+        guard generation == frameGeneration, !Task.isCancelled else { return .lost(at: frame.timestamp) }
         guard observation.status == .tracked, let quad = observation.quad,
               let homography = try? PanelHomography(quad: quad) else {
             return lost(frame)
         }
 
         let tip = try? await fingertipTracker.detect(in: frame)
+        guard generation == frameGeneration, !Task.isCancelled else { return .lost(at: frame.timestamp) }
         let fingertip = smooth(tip?.fingertip.flatMap { homography.panelPoint(for: $0) })
 
         let rated = TrackingObservation(

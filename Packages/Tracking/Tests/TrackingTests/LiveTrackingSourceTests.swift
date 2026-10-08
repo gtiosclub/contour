@@ -142,6 +142,25 @@ struct LiveTrackingSourceTests {
         #expect(registrations.next() == 4)
     }
 
+    @Test("Replacing the reference while fingertip detection runs discards the old point")
+    func replacementDiscardsInFlightFingertip() async throws {
+        let gate = DetectionGate()
+        let source = LiveTrackingSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
+            fingertipTracker: FingertipTracker { _ in
+                await gate.pause()
+                return FingertipJoint(x: 0.5, y: 0.5, confidence: 0.9)
+            })
+        await source.use(try reference())
+        let consumer = Task { await collect(source.frames()) }
+        await gate.waitUntilPaused()
+        await source.use(try reference())
+        await gate.resume()
+        let frames = await consumer.value
+        #expect(frames.count == 1)
+        #expect(frames.first?.fingertip == nil)
+        #expect(frames.first?.trackingQuality == .lost)
+    }
+
     @Test("A source with no camera finishes straight away")
     func noCameraFinishes() async {
         #expect(await collect(LiveTrackingSource().frames()).isEmpty)
@@ -250,4 +269,24 @@ private func reference() throws -> PanelReference {
                            timestamp: Date(timeIntervalSince1970: 0))
     return try PanelReference(photo: photo, detection: PanelDetection(
         referencePhotoID: photo.id, quad: square, map: MockSurfaceMaps.microwave))
+}
+
+private actor DetectionGate {
+    private var paused = false
+    private var entered: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
+    func pause() async {
+        paused = true
+        entered?.resume()
+        entered = nil
+        await withCheckedContinuation { release = $0 }
+    }
+    func waitUntilPaused() async {
+        if paused { return }
+        await withCheckedContinuation { entered = $0 }
+    }
+    func resume() {
+        release?.resume()
+        release = nil
+    }
 }

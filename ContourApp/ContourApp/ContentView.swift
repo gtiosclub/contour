@@ -23,6 +23,10 @@ struct ContentView: View {
     @State private var map: SurfaceMap?
     @State private var lastError: String?
     @State private var guidanceTask: Task<Void, Never>?
+    @State private var guidanceID: UUID?
+    @State private var scanTask: Task<Void, Never>?
+    @State private var scanID: UUID?
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -94,7 +98,7 @@ struct ContentView: View {
                     }
                     Button("Scan panel") { scan() }
                     Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
-                        .disabled(map == nil)
+                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil)
                     Text(pipeline.liveComponents.contains(.tracking)
                          ? "Keep the panel in view and move your finger toward Start. "
                            + "It vibrates faster as you get closer."
@@ -116,23 +120,57 @@ struct ContentView: View {
             }
             .navigationTitle("Contour")
         }
+        .onChange(of: pipeline.panelReference?.photo.id) { _, _ in
+            map = pipeline.panelReference?.detection.map
+        }
+        .onDisappear { stopWork() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active {
+                stopWork()
+                Task { await camera.stop() }
+            } else if surfaceIsLive {
+                Task { try? await camera.start() }
+            }
+        }
     }
 
     private func scan() {
+        scanTask?.cancel()
+        guidanceTask?.cancel()
+        guidanceTask = nil
+        guidanceID = nil
+        map = nil
         lastError = nil
-        Task {
+        let id = UUID()
+        scanID = id
+        scanTask = Task {
+            defer { if scanID == id { scanTask = nil } }
             do {
+                await pipeline.stopGuidance()
+                try Task.checkCancellation()
                 let photo = try await photoToScan()
-                map = try await pipeline.detectPanel(in: photo)
-                if pipeline.liveComponents.contains(.tracking),
-                   pipeline.panelReference?.detection.quad == .fullFrame {
-                    lastError = "Found the buttons but not the edges of the panel, so guidance "
-                        + "can't follow it. Step back so the whole panel is in view, then scan again."
+                let detected = try await pipeline.detectPanel(in: photo)
+                guard scanID == id, !Task.isCancelled else { return }
+                map = detected
+                if !pipeline.canGuide {
+                    lastError = "Found the buttons but not the edges of the panel. Step back so the whole panel is in view, then scan again."
                 }
+            } catch is CancellationError {
+                // A replacement scan or navigation ended this request.
             } catch {
-                lastError = String(describing: error)
+                if scanID == id { lastError = String(describing: error) }
             }
         }
+    }
+
+    private func stopWork() {
+        scanTask?.cancel()
+        scanTask = nil
+        scanID = nil
+        guidanceTask?.cancel()
+        guidanceTask = nil
+        guidanceID = nil
+        Task { await pipeline.stopGuidance() }
     }
 
     private var surfaceIsLive: Bool {
@@ -175,15 +213,21 @@ struct ContentView: View {
         if let guidanceTask {
             guidanceTask.cancel()
             self.guidanceTask = nil
+            guidanceID = nil
             return
         }
-        guard let map, let target = startButton(in: map) else {
+        guard pipeline.canGuide, let map, let target = startButton(in: map) else {
             lastError = "No Start button found on the panel."
             return
         }
+        let id = UUID()
+        guidanceID = id
         guidanceTask = Task {
             await pipeline.guide(to: target)
-            guidanceTask = nil
+            if guidanceID == id {
+                guidanceTask = nil
+                guidanceID = nil
+            }
         }
     }
 }
