@@ -32,6 +32,9 @@ public struct LabelledSample: Identifiable, Hashable, Sendable, Codable {
     /// across at least two lighting conditions, so record it now.
     public var lighting: String
 
+    /// The image-space outline used when the button boxes were labelled.
+    public var panel: PanelQuad
+
     /// The truth: what a human says is on this panel, in panel space.
     public var expected: SurfaceMap
 
@@ -39,13 +42,24 @@ public struct LabelledSample: Identifiable, Hashable, Sendable, Codable {
         id: String,
         appliance: String,
         lighting: String,
+        panel: PanelQuad,
         expected: SurfaceMap
     ) {
         self.id = id
         self.appliance = appliance
         self.lighting = lighting
+        self.panel = panel
         self.expected = expected
     }
+}
+
+public enum TestSetError: Error, Equatable, Sendable {
+    case missingLabelsDirectory
+    case unreadableLabelsDirectory(String)
+    case malformedPanel(photo: String)
+    case outOfRangePanel(photo: String)
+    case malformedBounds(photo: String, buttonIndex: Int)
+    case outOfRangeBounds(photo: String, buttonIndex: Int)
 }
 
 /// How well a detected map matched the ground truth for one sample.
@@ -70,12 +84,40 @@ public struct SampleScore: Hashable, Sendable {
 /// The hand-labelled corpus and the scoring that runs against it.
 public enum TestSet {
 
-    /// The labelled samples.
+    /// Load the checked-in answer keys from a Swift Package test bundle.
     ///
-    /// Empty until Week 2. Add one entry per photo as it is labelled — keep
-    /// them in source rather than in a JSON blob while the set is small, so
-    /// that a bad label shows up in a diff.
-    public static let samples: [LabelledSample] = []
+    /// The caller supplies `Bundle.module`, keeping the corpus out of the app
+    /// bundle and avoiding source-tree paths that do not exist on a device.
+    public static func loadSamples(from bundle: Bundle) throws -> [LabelledSample] {
+        guard let directory = bundle.url(
+            forResource: "labels",
+            withExtension: nil,
+            subdirectory: "TestSet"
+        ) else {
+            throw TestSetError.missingLabelsDirectory
+        }
+        return try loadSamples(from: directory)
+    }
+
+    /// Load every JSON answer key in a directory, sorted by photo filename.
+    public static func loadSamples(from directory: URL) throws -> [LabelledSample] {
+        let fileManager = FileManager.default
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        ) else {
+            throw TestSetError.unreadableLabelsDirectory(directory.path)
+        }
+
+        return try files
+            .filter { $0.pathExtension.lowercased() == "json" }
+            .sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { url in
+                let data = try Data(contentsOf: url)
+                return try JSONDecoder().decode(AnswerKey.self, from: data).sample()
+            }
+    }
 
     /// Score one detection against its ground truth.
     ///
@@ -149,5 +191,59 @@ public enum TestSet {
 
     private static func fraction(_ numerator: Int, outOf denominator: Int) -> Double {
         denominator == 0 ? 1 : Double(numerator) / Double(denominator)
+    }
+}
+
+private struct AnswerKey: Decodable {
+    var photo: String
+    var panel: [[Double]]
+    var buttons: [AnswerKeyButton]
+
+    func sample() throws -> LabelledSample {
+        let panel = try panelQuad()
+        let mappedButtons = try buttons.enumerated().map { index, button in
+            try button.surfaceMapButton(photo: photo, index: index)
+        }
+        let appliance = photo.split(separator: "-").first.map(String.init) ?? "unknown"
+        return LabelledSample(
+            id: photo,
+            appliance: appliance,
+            lighting: "unspecified",
+            panel: panel,
+            expected: SurfaceMap(buttons: mappedButtons, confidence: 1)
+        )
+    }
+
+    private func panelQuad() throws -> PanelQuad {
+        guard panel.count == 4, panel.allSatisfy({ $0.count == 2 }) else {
+            throw TestSetError.malformedPanel(photo: photo)
+        }
+        let points = panel.map { ImagePoint(x: $0[0], y: $0[1]) }
+        guard points.allSatisfy({ (0...1).contains($0.x) && (0...1).contains($0.y) }) else {
+            throw TestSetError.outOfRangePanel(photo: photo)
+        }
+        return PanelQuad(
+            topLeft: points[0],
+            topRight: points[1],
+            bottomRight: points[2],
+            bottomLeft: points[3]
+        )
+    }
+}
+
+private struct AnswerKeyButton: Decodable {
+    var label: String
+    var bounds: [Double]
+
+    func surfaceMapButton(photo: String, index: Int) throws -> SurfaceMap.Button {
+        guard bounds.count == 4 else {
+            throw TestSetError.malformedBounds(photo: photo, buttonIndex: index)
+        }
+        let rect = PanelRect(x: bounds[0], y: bounds[1], width: bounds[2], height: bounds[3])
+        guard rect.minX >= 0, rect.minY >= 0, rect.width >= 0, rect.height >= 0,
+              rect.maxX <= 1, rect.maxY <= 1 else {
+            throw TestSetError.outOfRangeBounds(photo: photo, buttonIndex: index)
+        }
+        return SurfaceMap.Button(label: label, bounds: rect, confidence: 1)
     }
 }

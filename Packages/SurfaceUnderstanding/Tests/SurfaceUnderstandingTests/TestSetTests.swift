@@ -7,8 +7,41 @@
 
 import ContourCore
 import ContourMocks
+import Foundation
 import Testing
 @testable import SurfaceUnderstanding
+
+@Test("the bundled corpus loads labels, panel outlines, and photos")
+func bundledCorpusLoads() throws {
+    let samples = try TestSet.loadSamples(from: Bundle.module)
+    let photosDirectory = try #require(Bundle.module.url(
+        forResource: "photos",
+        withExtension: nil,
+        subdirectory: "TestSet"
+    ))
+    let photos = try FileManager.default.contentsOfDirectory(
+        at: photosDirectory,
+        includingPropertiesForKeys: nil,
+        options: [.skipsHiddenFiles]
+    )
+
+    #expect(samples.count == 10)
+    #expect(photos.count == 18)
+    #expect(samples.first?.id == "microwave-01.jpg")
+    #expect(samples.last?.id == "microwave-10.jpg")
+    #expect(samples.allSatisfy { !$0.expected.buttons.isEmpty })
+    #expect(samples.allSatisfy { $0.panel != .fullFrame })
+
+    for sample in samples {
+        let photo = URL(fileURLWithPath: sample.id)
+        let resourceURL = Bundle.module.url(
+            forResource: photo.deletingPathExtension().lastPathComponent,
+            withExtension: photo.pathExtension,
+            subdirectory: "TestSet/photos"
+        )
+        #expect(resourceURL != nil, "Missing bundled photo for \(sample.id)")
+    }
+}
 
 @Test("a slightly shifted box still matches")
 func shiftedBoxMatches() {
