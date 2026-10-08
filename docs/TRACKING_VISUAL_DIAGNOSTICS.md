@@ -16,6 +16,11 @@ To bypass the Surface detector:
    physical panel. Point near the target and watch normalized finger coordinates
    approach its location. Quality/confidence and capture-to-display age help
    distinguish a usable lock from stale or unreliable results.
+   **2D distance to target center** reports the smoothed production fingertip's
+   straight-line distance to the selected target center in normalized panel
+   coordinates. Zero means the center; one unit spans the panel width horizontally
+   or height vertically. It is not physical depth or a distance in centimetres.
+   Without a selected target or usable panel/finger result it shows **Unavailable**.
 5. Remove the hand or hide the panel. Unusable results should disappear; an old
    dot or outline must not remain frozen. Leave/reopen Diagnostics and background/
    foreground the app to check responsiveness and subscription recovery.

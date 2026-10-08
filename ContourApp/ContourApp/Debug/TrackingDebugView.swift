@@ -23,6 +23,16 @@ struct TrackingDebugView: View {
         RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active)
     }
 
+    private var distanceToTarget: Double? {
+        guard let frame = model.trackingFrame, frame.trackingQuality != .lost,
+              let finger = frame.fingertip,
+              let targetID = manualReference.selectedTargetID,
+              let target = manualReference.reference?.detection.map.buttons.first(where: { $0.id == targetID })
+        else { return nil }
+        let distance = finger.distance(to: target.bounds.center)
+        return distance.isFinite ? distance : nil
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -60,6 +70,16 @@ struct TrackingDebugView: View {
                     Text("Fingertip-only mode. Prepare a panel reference above to verify panel tracking and finger-to-panel mapping.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                LabeledContent("2D distance to target center") {
+                    if let distance = distanceToTarget {
+                        Text("\(distance.formatted(.number.precision(.fractionLength(3)))) panel units")
+                            .monospacedDigit()
+                    } else {
+                        Text("Unavailable").foregroundStyle(.secondary)
+                    }
+                }
+                Text("0 means the target center. Each panel axis runs from 0 to 1. Requires a selected target and usable panel/finger tracking.")
+                    .font(.caption).foregroundStyle(.secondary)
                 LabeledContent("Visual samples", value: "\(model.framesProcessed)")
                 Text(model.latest?.status.rawValue ?? (model.running ? "Waiting for frames" : "Camera stopped"))
                 if let frame = model.trackingFrame {
