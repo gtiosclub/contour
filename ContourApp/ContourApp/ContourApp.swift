@@ -16,10 +16,21 @@ import SwiftUI
 struct ContourApp: App {
 
     @State private var pipeline = ContourPipeline.mock()
+    #if DEBUG
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var harnessConnection = HarnessConnection()
+    #endif
 
     var body: some Scene {
         WindowGroup {
             ContentView(pipeline: pipeline)
+                #if DEBUG
+                .environment(harnessConnection)
+                .onChange(of: scenePhase, initial: true) { _, phase in
+                    if phase == .background { harnessConnection.stop() }
+                    else if phase == .active { harnessConnection.start() }
+                }
+                #endif
         }
     }
 }

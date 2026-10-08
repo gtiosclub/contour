@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A05800020000000000000001 /* HarnessConnectivity in Frameworks */ = {isa = PBXBuildFile; productRef = A05800020000000000000003 /* HarnessConnectivity */; };
 		C04700020000000000000028 /* ContourCore in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000014 /* ContourCore */; };
 		C04700020000000000000029 /* SurfaceUnderstanding in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000015 /* SurfaceUnderstanding */; };
 		C0470002000000000000002A /* Tracking in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000016 /* Tracking */; };
@@ -51,6 +52,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A05800020000000000000001 /* HarnessConnectivity in Frameworks */,
 				C04700020000000000000028 /* ContourCore in Frameworks */,
 				C04700020000000000000029 /* SurfaceUnderstanding in Frameworks */,
 				C0470002000000000000002A /* Tracking in Frameworks */,
@@ -111,6 +113,7 @@
 			);
 			name = ContourApp;
 			packageProductDependencies = (
+				A05800020000000000000003 /* HarnessConnectivity */,
 				C04700020000000000000014 /* ContourCore */,
 				C04700020000000000000015 /* SurfaceUnderstanding */,
 				C04700020000000000000016 /* Tracking */,
@@ -176,6 +179,7 @@
 			mainGroup = 14A1804D30536BAC00FEEF08;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
+				A05800020000000000000002 /* XCLocalSwiftPackageReference "../Packages/HarnessConnectivity" */,
 				C04700020000000000000000 /* XCLocalSwiftPackageReference "../Packages/ContourCore" */,
 				C04700020000000000000001 /* XCLocalSwiftPackageReference "../Packages/SurfaceUnderstanding" */,
 				C04700020000000000000002 /* XCLocalSwiftPackageReference "../Packages/Tracking" */,
@@ -365,11 +369,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3CYT7QDB42;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Harness-Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Contour uses the camera to read the appliance panel in front of you and to follow your finger as you reach for a button.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Contour uses the microphone so you can say which control you want.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Contour turns what you say into the name of a button on the panel. Speech is recognised on device.";
@@ -410,11 +416,13 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3CYT7QDB42;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Harness-Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Contour uses the camera to read the appliance panel in front of you and to follow your finger as you reach for a button.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Contour uses the microphone so you can say which control you want.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Contour turns what you say into the name of a button on the panel. Speech is recognised on device.";
@@ -528,6 +536,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		A05800020000000000000002 /* XCLocalSwiftPackageReference "../Packages/HarnessConnectivity" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/HarnessConnectivity;
+		};
 		C04700020000000000000000 /* XCLocalSwiftPackageReference "../Packages/ContourCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Packages/ContourCore;
@@ -555,6 +567,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		A05800020000000000000003 /* HarnessConnectivity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = HarnessConnectivity;
+		};
 		C04700020000000000000014 /* ContourCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ContourCore;

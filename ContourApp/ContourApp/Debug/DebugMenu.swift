@@ -20,12 +20,24 @@ public struct DebugMenu: View {
     public init() {}
     public var body: some View {
         List {
-            // Add your debug screens here:
-            NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
+            Section("Anushka's Debug Tool") {
+                // Add your debug screens here:
+                NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
+            }
             //NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: CameraService()) }
             // Example: NavigationLink("My Debug Tool") { MyDebugToolView() }
+
+            Section("Evan's Debug Tool"){
+                NavigationLink("Harness Connect") { HarnessReceiverView() }
+            }
         }
         .navigationTitle("Debug Menu")
     }
+}
+
+#Preview {
+    DebugMenu()
+        // Supply the environment dependency without starting networking or haptics.
+        .environment(HarnessConnection(feedback: HarnessConsoleFeedback()))
 }
 #endif

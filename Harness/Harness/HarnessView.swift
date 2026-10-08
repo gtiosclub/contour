@@ -3,7 +3,7 @@
 //  Harness
 //
 //  Sliders, a quality picker, a target picker, and four outcome buttons.
-//  That is the whole rig. No camera, no phone, no ARKit.
+//  Sends synthetic guidance to a nearby iPhone without a camera or ARKit.
 //
 //  COORDINATES: y increases DOWNWARD, so dragging the y slider right moves the
 //  fingertip toward the BOTTOM of the panel. The preview square below is drawn
@@ -13,15 +13,18 @@
 import ContourCore
 import ContourMocks
 import SwiftUI
+import HarnessConnectivity
 
 struct HarnessView: View {
 
+    @Environment(HarnessConnection.self) private var connection
     @Bindable var model: HarnessModel
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                connectionControls
                 Divider()
                 panelPreview
                 fingertipControls
@@ -42,10 +45,94 @@ struct HarnessView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("Contour Harness").font(.largeTitle.bold())
-            Text("Synthetic TrackingFrames for feedback development. "
-                 + "No iPhone, no camera, no tracking.")
+            Text("Send synthetic guidance to a nearby iPhone. "
+                 + "No camera or tracking required.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var connectionControls: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                LabeledContent("Connection Status") {
+                    Label(connectionTitle, systemImage: connectionSymbol)
+                        .labelStyle(.titleAndIcon)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .foregroundStyle(connectionColor)
+                }
+                LabeledContent("iPhone") {
+                    Text(connection.peer.peerName ?? "None connected")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(connection.peer.peerName ?? "None connected")
+                }
+//                LabeledContent("Packets Sent") {
+//                    Text(connection.peer.sentCount, format: .number)
+//                        .monospacedDigit()
+//                }
+                Text("Includes periodic position updates while connected.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                if let error = connection.peer.lastError {
+                    Label(error, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+
+                HStack {
+                    Button("Start") {
+                        connection.start()
+                        model.emit()
+                    }
+                    .disabled(connection.peer.status != .stopped)
+                    Button("Stop") { connection.stop() }
+                        .disabled(connection.peer.status == .stopped)
+                    Button("Reconnect") {
+                        connection.reconnect()
+                        model.emit()
+                    }
+                    .disabled(connection.peer.status == .stopped)
+                }
+
+                Text("Open Harness Receiver on the iPhone. Reconnection is automatic while running.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } label: {
+            Text("iPhone Connection").font(.headline)
+        }
+    }
+
+    private var connectionTitle: String {
+        switch connection.peer.status {
+        case .stopped: "Stopped"
+        case .searching: "Searching for iPhone"
+        case .connecting: "Connecting"
+        case .connected: "Connected"
+        }
+    }
+
+    private var connectionSymbol: String {
+        switch connection.peer.status {
+        case .stopped: "pause.circle"
+        case .searching: "magnifyingglass"
+        case .connecting: "arrow.triangle.2.circlepath"
+        case .connected: "checkmark.circle.fill"
+        }
+    }
+
+    private var connectionColor: Color {
+        switch connection.peer.status {
+        case .stopped: .secondary
+        case .searching, .connecting: .orange
+        case .connected: .green
         }
     }
 
