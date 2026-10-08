@@ -15,11 +15,25 @@ import SwiftUI
 @main
 struct ContourApp: App {
 
-    @State private var pipeline = ContourPipeline.mock()
+    /// One camera for the scan, the preview and live tracking.
+    @State private var camera: CameraService
+    @State private var pipeline: ContourPipeline
+
+    init() {
+        let camera = CameraService()
+        _camera = State(initialValue: camera)
+        // On a phone everything runs for real on the camera. The simulator has
+        // no camera, so it stays fully mocked.
+        #if targetEnvironment(simulator)
+        _pipeline = State(initialValue: .mock())
+        #else
+        _pipeline = State(initialValue: .live(camera: camera))
+        #endif
+    }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(pipeline: pipeline)
+            ContentView(pipeline: pipeline, camera: camera)
         }
     }
 }
