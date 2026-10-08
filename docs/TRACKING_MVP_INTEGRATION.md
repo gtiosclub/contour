@@ -1,8 +1,9 @@
 # Tracking MVP integration — first pass
 
-This work is isolated on `codex/tracking-mvp-integration`. No teammate branch or
-GitHub PR is changed. The original checkout's local signing/project edit is not
-included. Original authors and commit history are preserved through merges.
+This work was developed in an isolated worktree and is now available in the
+main local checkout on `tracking-mvp-integration`. No teammate branch or GitHub
+PR is changed. The original checkout's local project edit is backed up in a Git
+stash. Original authors and commit history are preserved through merges.
 
 ## Included work
 
