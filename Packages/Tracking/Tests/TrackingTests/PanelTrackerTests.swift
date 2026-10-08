@@ -75,6 +75,44 @@ struct PanelTrackerFixtureTests {
         #expect(maxCornerError(try #require(observation.quad), fixture.moved) <= fixture.tolerance * 2)
     }
 
+    @Test("A panel-shaped rectangle without the panel's buttons isn't taken for it")
+    func ignoresALookalikeRectangle() async throws {
+        let fixture = try Fixture.load()
+        let tracker = PanelTracker()
+        try await tracker.startTracking(try reference(image: "panel-reference", quad: fixture.reference))
+
+        // A plain dark rectangle inside where the panel was: too far from its
+        // corners to follow, so it has to be detected. At half the panel's
+        // area and the only candidate, size and distance alone would take it.
+        let observation = try await tracker.track(try frame(width: 1280, height: 960, at: 5) { context in
+            context.setFillColor(gray: 0.8, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: 1280, height: 960))
+            context.setFillColor(gray: 0.13, alpha: 1)
+            context.fill(CGRect(x: 410, y: 307, width: 461, height: 346))
+        })
+        #expect(observation.status != .tracked)
+        #expect(observation.quad == nil)
+    }
+
+    @Test("A sequence restarted from the last position doesn't take a lookalike for the panel")
+    func restartIgnoresALookalikeRectangle() async throws {
+        let fixture = try Fixture.load()
+        let tracker = PanelTracker()
+        try await tracker.startTracking(try reference(image: "panel-reference", quad: fixture.reference))
+
+        // A plain dark rectangle with the panel's shape and place in
+        // `panel-moved`: close enough that a sequence seeded where the panel
+        // was follows it without any detection.
+        let observation = try await tracker.track(try frame(width: 1280, height: 960, at: 6) { context in
+            context.setFillColor(gray: 0.8, alpha: 1)
+            context.fill(CGRect(x: 0, y: 0, width: 1280, height: 960))
+            context.setFillColor(gray: 0.13, alpha: 1)
+            context.fill(CGRect(x: 372, y: 216, width: 627, height: 482))
+        })
+        #expect(observation.status != .tracked)
+        #expect(observation.quad == nil)
+    }
+
     @Test("Losing the panel for a frame doesn't end tracking: it comes back on its own")
     func recoversAfterLoss() async throws {
         let fixture = try Fixture.load()
@@ -179,15 +217,12 @@ struct PanelTrackerTests {
         #expect(seen.values == ["0:still 640x480", "1:still 1280x960", "1:frame 1280", "1:frame 1280"])
     }
 
-    @Test("When the tracker can't find the panel, a rectangle of the same size elsewhere takes over")
-    func reacquiresByDetection() async throws {
-        let moved = PanelQuad(
-            topLeft: ImagePoint(x: 0.35, y: 0.30), topRight: ImagePoint(x: 0.85, y: 0.30),
-            bottomRight: ImagePoint(x: 0.85, y: 0.80), bottomLeft: ImagePoint(x: 0.35, y: 0.80))
-        let tiny = PanelQuad(
-            topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.30, y: 0.25),
-            bottomRight: ImagePoint(x: 0.30, y: 0.30), bottomLeft: ImagePoint(x: 0.25, y: 0.30))
-        let tracker = PanelTracker(detector: ScriptedDetector([vision(tiny), vision(moved)])) { start in
+    @Test("When the tracker can't find the panel, the detected rectangle that looks like it takes over")
+    func reacquiresByAppearance() async throws {
+        // The cabinet is nearer where the panel was and the same size; only
+        // what's inside tells them apart.
+        let tracker = PanelTracker(detector: ScriptedDetector([vision(cabinet), vision(moved)]),
+                                   learnAppearance: looksLike(moved)) { start in
             ScriptedTracker { image in
                 // Sequences seeded where the panel was can't find it; one seeded
                 // on the detected rectangle follows it.
@@ -200,17 +235,25 @@ struct PanelTrackerTests {
         let observation = try await tracker.track(try blankFrame(at: 1))
         #expect(observation.status == .tracked)
         #expect(maxCornerError(try #require(observation.quad), moved) < 1e-9,
-                "the tiny rectangle is the wrong size to be the panel")
+                "the cabinet is the right size and nearer, but doesn't look like the panel")
         let next = try await tracker.track(try blankFrame(at: 2))
         #expect(maxCornerError(try #require(next.quad), moved) < 1e-9)
     }
 
-    @Test("Nothing panel-sized in the frame stays lost")
-    func noMatchStaysLost() async throws {
-        let tiny = PanelQuad(
-            topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.30, y: 0.25),
-            bottomRight: ImagePoint(x: 0.30, y: 0.30), bottomLeft: ImagePoint(x: 0.25, y: 0.30))
-        let tracker = PanelTracker(detector: ScriptedDetector([vision(tiny)])) { _ in
+    @Test("Nothing that looks like the panel stays lost", arguments: [
+        // Only the cabinet: alike in shape, not in content.
+        [cabinet],
+        // Two rectangles that both look like the panel: which one is a guess.
+        [moved, cabinet],
+    ])
+    func noClearMatchStaysLost(found: [PanelQuad]) async throws {
+        let alike = found.count > 1 ? found : []
+        let tracker = PanelTracker(detector: ScriptedDetector(found.map { vision($0) }),
+                                   learnAppearance: { _, _, _ in
+                                       ScriptedAppearance { quad in
+                                           alike.contains { maxCornerError(quad, $0) < 1e-9 } ? 0.05 : 0.9
+                                       }
+                                   }) { _ in
             ScriptedTracker { image in
                 if case .frame = image { throw ScriptedFailure.failed }
                 return vision(square)
@@ -220,6 +263,38 @@ struct PanelTrackerTests {
 
         let observation = try await tracker.track(try blankFrame(at: 1))
         #expect(observation.status == .lost(.trackerFailed))
+        #expect(observation.quad == nil)
+    }
+
+    @Test("A restart that lands on a lookalike is rejected, and the panel is looked for elsewhere")
+    func restartLookalikeFallsBackToDetection() async throws {
+        let tracker = PanelTracker(detector: ScriptedDetector([vision(moved)]),
+                                   learnAppearance: looksLike(moved)) { start in
+            // The restart finds something where the panel was: not the panel.
+            ScriptedTracker { _ in vision(start) }
+        }
+        try await tracker.startTracking(try scriptedReference())
+
+        let observation = try await tracker.track(try blankFrame(at: 1))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), moved) < 1e-9)
+    }
+
+    @Test("A re-found panel gets the same checks as any tracked frame")
+    func reacquiredResultIsEvaluated() async throws {
+        let tracker = PanelTracker(detector: ScriptedDetector([vision(moved)]),
+                                   learnAppearance: looksLike(moved)) { start in
+            ScriptedTracker { image in
+                guard case .frame = image else { return vision(start) }
+                if start == square { throw ScriptedFailure.failed }
+                // The new sequence answers, but too unsure to count.
+                return vision(start, confidence: 0.1)
+            }
+        }
+        try await tracker.startTracking(try scriptedReference())
+
+        let observation = try await tracker.track(try blankFrame(at: 1))
+        #expect(observation.status != .tracked)
         #expect(observation.quad == nil)
     }
 
@@ -288,6 +363,16 @@ private let square = PanelQuad(
     topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
     bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
 
+/// Where the panel went while it was lost.
+private let moved = PanelQuad(
+    topLeft: ImagePoint(x: 0.35, y: 0.30), topRight: ImagePoint(x: 0.85, y: 0.30),
+    bottomRight: ImagePoint(x: 0.85, y: 0.80), bottomLeft: ImagePoint(x: 0.35, y: 0.80))
+
+/// Something else panel-shaped, nearer where the panel was than `moved` is.
+private let cabinet = PanelQuad(
+    topLeft: ImagePoint(x: 0.20, y: 0.25), topRight: ImagePoint(x: 0.70, y: 0.25),
+    bottomRight: ImagePoint(x: 0.70, y: 0.75), bottomLeft: ImagePoint(x: 0.20, y: 0.75))
+
 private enum ScriptedFailure: Error { case failed }
 
 /// Upright image quad → what Vision would report (y up).
@@ -307,6 +392,18 @@ private struct ScriptedDetector: RectangleDetecting {
     let found: [VisionQuad]
     init(_ found: [VisionQuad]) { self.found = found }
     func detect(in frame: CameraFrame) async throws -> [VisionQuad] { found }
+}
+
+/// Scores quads by a script instead of their pixels.
+private struct ScriptedAppearance: PanelAppearance {
+    let script: @Sendable (PanelQuad) -> Double
+    func distance(of quad: PanelQuad, in frame: CameraFrame) async throws -> Double { script(quad) }
+}
+
+/// An appearance under which only `panel` looks like the panel.
+private func looksLike(_ panel: PanelQuad)
+    -> @Sendable (PanelQuad, CGImage, CGImagePropertyOrientation) async throws -> (any PanelAppearance)? {
+    { _, _, _ in ScriptedAppearance { maxCornerError($0, panel) < 1e-9 ? 0.05 : 0.9 } }
 }
 
 private final class ScriptedTracker: RectangleTracking {
