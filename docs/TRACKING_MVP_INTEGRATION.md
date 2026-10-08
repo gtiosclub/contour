@@ -80,3 +80,11 @@ Independent review found no confirmed critical/important defect. Overlapping
 guidance starts, wrong-map target rejection, and old UI-task completion deserve
 additional regression coverage; these were review coverage suggestions, not
 reproduced failures.
+
+## Follow-up: independent manual tracking test
+
+The main screen now has a Debug-only manual camera capture path for arbitrary
+panels, with four marked corners and one marked target. It calls the shared
+reference handoff and uses live tracking/haptics. Registration errors are shown.
+See `SURFACE_FALLBACK_AND_MANUAL_TEST.md` for usage and the reproduced Surface
+fallback defect. Aditya's original fixture-layout setup remains unchanged.

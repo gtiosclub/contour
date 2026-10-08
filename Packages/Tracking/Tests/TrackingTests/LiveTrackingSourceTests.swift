@@ -116,8 +116,10 @@ struct LiveTrackingSourceTests {
                                         fingertipTracker: scriptedFingertip())
         await source.use(try reference())
         #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .lost })
+        #expect(await source.registrationError() == .registrationFailed)
 
         await source.use(try reference())
+        #expect(await source.registrationError() == nil)
         #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .good })
     }
 

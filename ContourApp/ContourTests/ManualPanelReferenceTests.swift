@@ -41,6 +41,61 @@ struct ManualPanelReferenceTests {
         }
     }
 
+    @Test("A manually marked target is normalized against the marked panel, not the photo")
+    func manualTargetUsesPanelSpace() throws {
+        let corners = [ImagePoint(x: 0.2, y: 0.1), ImagePoint(x: 0.8, y: 0.1),
+                       ImagePoint(x: 0.8, y: 0.9), ImagePoint(x: 0.2, y: 0.9)]
+        let reference = try ManualTrackingReferenceBuilder.make(photo: photo(), corners: corners,
+            target: ImagePoint(x: 0.35, y: 0.7))
+        let button = try #require(reference.detection.map.buttons.first)
+        #expect(reference.detection.map.buttons.count == 1)
+        #expect(button.label == "Manual target")
+        #expect(abs(button.bounds.center.x - 0.25) < 1e-9)
+        #expect(abs(button.bounds.center.y - 0.75) < 1e-9)
+        #expect(reference.photo.id == reference.detection.referencePhotoID)
+        #expect(reference.detection.quad != .fullFrame)
+    }
+
+    @Test("A target outside the marked panel is rejected")
+    func manualTargetOutsidePanelIsRejected() {
+        let corners = [ImagePoint(x: 0.2, y: 0.1), ImagePoint(x: 0.8, y: 0.1),
+                       ImagePoint(x: 0.8, y: 0.9), ImagePoint(x: 0.2, y: 0.9)]
+        #expect(throws: ManualTrackingReferenceBuilder.BuildError.targetOutsidePanel) {
+            try ManualTrackingReferenceBuilder.make(photo: photo(), corners: corners,
+                target: ImagePoint(x: 0.05, y: 0.5))
+        }
+    }
+
+    @Test("A crossed panel cannot initialize the manual tracking test")
+    func manualTargetRejectsCrossedPanel() {
+        let corners = [ImagePoint(x: 0.2, y: 0.1), ImagePoint(x: 0.8, y: 0.9),
+                       ImagePoint(x: 0.8, y: 0.1), ImagePoint(x: 0.2, y: 0.9)]
+        #expect(throws: ManualTrackingReferenceBuilder.BuildError.invalidPanel) {
+            try ManualTrackingReferenceBuilder.make(photo: photo(), corners: corners,
+                target: ImagePoint(x: 0.5, y: 0.5))
+        }
+    }
+
+    @Test("Manual setup guides to its marked target even when Surface cannot detect a panel")
+    func manualSetupBypassesSurface() async throws {
+        let corners = [ImagePoint(x: 0.2, y: 0.1), ImagePoint(x: 0.8, y: 0.1),
+                       ImagePoint(x: 0.8, y: 0.9), ImagePoint(x: 0.2, y: 0.9)]
+        let reference = try ManualTrackingReferenceBuilder.make(photo: photo(), corners: corners,
+            target: ImagePoint(x: 0.5, y: 0.5))
+        let target = try #require(reference.detection.map.buttons.first)
+        let feedback = PrintingFeedbackEngine(isPrinting: false)
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(failure: .noPanelFound),
+            tracking: MockTrackingSource(target: PanelPoint(x: 0.5, y: 0.5),
+                                         steps: 3, interval: .milliseconds(1)),
+            feedback: feedback, liveComponents: [])
+        await pipeline.replaceReference(with: reference)
+        #expect(pipeline.canGuide)
+        await pipeline.guide(to: target)
+        #expect(await feedback.outcomes.last == .arrived)
+        #expect(pipeline.panelReference?.photo.id == reference.photo.id)
+    }
+
     @Test("replacement clears the old target and rejects IDs outside the new layout")
     func replacementScopesTargetToNewLayout() throws {
         let corners = [ImagePoint(x: 0.1, y: 0.1), ImagePoint(x: 0.9, y: 0.1),

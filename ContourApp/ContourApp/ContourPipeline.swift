@@ -38,6 +38,7 @@ final class ContourPipeline {
 
     /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
+    private(set) var trackingError: String?
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
@@ -123,6 +124,7 @@ final class ContourPipeline {
         generation &+= 1
         let scan = generation
         panelReference = nil
+        trackingError = nil
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
@@ -140,6 +142,7 @@ final class ContourPipeline {
         generation &+= 1
         let replacement = generation
         panelReference = nil
+        trackingError = nil
         await cancelGuidance()
         guard generation == replacement, !Task.isCancelled else { return }
         if let live = tracking as? LiveTrackingSource { await live.use(reference) }
@@ -206,6 +209,20 @@ final class ContourPipeline {
         var arrived = false
         for await frame in tracking.frames() {
             if Task.isCancelled || generation != session { break }
+            if let live = tracking as? LiveTrackingSource {
+                let failure = await live.registrationError()
+                guard generation == session, !Task.isCancelled else { break }
+                switch failure {
+                case .invalidReferenceQuad:
+                    trackingError = "Tracking could not initialize: the panel corners are invalid. Prepare a new reference."
+                case .unreadableReferencePhoto:
+                    trackingError = "Tracking could not read the reference photo. Capture a new reference."
+                case .registrationFailed:
+                    trackingError = "Vision could not track the marked panel in the reference photo. Capture again and mark its actual boundary."
+                default:
+                    trackingError = nil
+                }
+            }
             let state = MockGuidance.state(for: frame, target: target)
 
             // A frame or two of blur isn't worth announcing: say the panel is

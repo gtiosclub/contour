@@ -61,6 +61,10 @@ public struct LiveTrackingSource: TrackingSource {
         await engine?.use(reference)
     }
 
+    /// Registration failure for the current reference, if initialization failed.
+    /// Cleared by the next reference handoff. No camera ownership is transferred.
+    public func registrationError() async -> PanelTrackingError? { await engine?.registrationError() }
+
     /// Start tracking and return the stream of frames.
     ///
     /// One stream at a time: frames are a chain, so two streams would compete
@@ -109,6 +113,7 @@ private actor Engine {
     private var generation = 0
     private var previous: TrackingObservation?
     private var smoothed: PanelPoint?
+    private var initializationFailure: PanelTrackingError?
 
     init(camera: any CameraFrameSource, panelTracker: PanelTracker,
          fingertipTracker: FingertipTracker, evaluator: TrackingQualityEvaluator) {
@@ -128,7 +133,10 @@ private actor Engine {
         panel = .waiting(reference)
         previous = nil
         smoothed = nil
+        initializationFailure = nil
     }
+
+    func registrationError() -> PanelTrackingError? { initializationFailure }
 
     /// Each guidance session starts fresh from the panel, not from wherever
     /// the last session left off.
@@ -149,7 +157,10 @@ private actor Engine {
                 guard generation == handOver else { return lost(frame) }
                 panel = .tracking
             } catch let error as PanelTrackingError where error.meansUnusablePanel {
-                if generation == handOver { panel = .unusable }
+                if generation == handOver {
+                    panel = .unusable
+                    initializationFailure = error
+                }
                 return lost(frame)
             } catch {
                 // Cancelled or superseded: try again on the next frame.

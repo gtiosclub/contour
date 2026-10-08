@@ -26,6 +26,11 @@ struct ContentView: View {
     @State private var guidanceID: UUID?
     @State private var scanTask: Task<Void, Never>?
     @State private var scanID: UUID?
+    #if DEBUG
+    @State private var showManualTracking = false
+    @State private var manualPhoto: PanelPhoto?
+    @State private var manualTargetID: UUID?
+    #endif
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -87,6 +92,9 @@ struct ContentView: View {
                     if let lastError {
                         Text(lastError).foregroundStyle(.red)
                     }
+                    if let trackingError = pipeline.trackingError {
+                        Text(trackingError).foregroundStyle(.red)
+                    }
                 }
 
                 Section("Run the pipeline") {
@@ -97,10 +105,16 @@ struct ContentView: View {
                             .task { try? await camera.start() }
                     }
                     Button("Scan panel") { scan() }
-                    Button(guidanceTask == nil ? "Guide to Start" : "Stop") { toggleGuidance() }
+                    #if DEBUG
+                    if pipeline.liveComponents.contains(.tracking) {
+                        Button("Manual tracking test") { captureManualReference() }
+                            .disabled(scanTask != nil)
+                    }
+                    #endif
+                    Button(guidanceTask == nil ? guidanceTitle : "Stop") { toggleGuidance() }
                         .disabled(map == nil || !pipeline.canGuide || scanTask != nil)
                     Text(pipeline.liveComponents.contains(.tracking)
-                         ? "Keep the panel in view and move your finger toward Start. "
+                         ? "Keep the panel in view and move your finger toward the selected target. "
                            + "It vibrates faster as you get closer."
                          : pipeline.liveComponents.contains(.feedback)
                          ? "Guidance vibrates. Tracking is still simulated, so the "
@@ -120,6 +134,22 @@ struct ContentView: View {
             }
             .navigationTitle("Contour")
         }
+        #if DEBUG
+        .sheet(isPresented: $showManualTracking) {
+            NavigationStack {
+                if let photo = manualPhoto {
+                    ManualTrackingSetupView(photo: photo) { reference in
+                        await pipeline.replaceReference(with: reference)
+                        guard pipeline.panelReference?.photo.id == reference.photo.id,
+                              !Task.isCancelled else { throw CancellationError() }
+                        manualTargetID = reference.detection.map.buttons.first?.id
+                        map = reference.detection.map
+                        lastError = nil
+                    }
+                }
+            }
+        }
+        #endif
         .onChange(of: pipeline.panelReference?.photo.id) { _, _ in
             map = pipeline.panelReference?.detection.map
         }
@@ -135,6 +165,9 @@ struct ContentView: View {
     }
 
     private func scan() {
+        #if DEBUG
+        manualTargetID = nil
+        #endif
         scanTask?.cancel()
         guidanceTask?.cancel()
         guidanceTask = nil
@@ -153,7 +186,11 @@ struct ContentView: View {
                 guard scanID == id, !Task.isCancelled else { return }
                 map = detected
                 if !pipeline.canGuide {
-                    lastError = "Found the buttons but not the edges of the panel. Step back so the whole panel is in view, then scan again."
+                    #if DEBUG
+                    lastError = "Surface did not return a trackable panel outline. Try showing the full panel, or use Manual tracking test to test tracking independently."
+                    #else
+                    lastError = "Surface did not return a trackable panel outline. Try showing the full panel, then scan again."
+                    #endif
                 }
             } catch is CancellationError {
                 // A replacement scan or navigation ended this request.
@@ -162,6 +199,39 @@ struct ContentView: View {
             }
         }
     }
+
+    private var guidanceTitle: String {
+        #if DEBUG
+        if manualTargetID != nil { return "Guide to manual target" }
+        #endif
+        return "Guide to Start"
+    }
+
+    #if DEBUG
+    private func captureManualReference() {
+        scanTask?.cancel()
+        guidanceTask?.cancel()
+        guidanceTask = nil
+        guidanceID = nil
+        lastError = nil
+        let id = UUID()
+        scanID = id
+        scanTask = Task {
+            defer { if scanID == id { scanTask = nil } }
+            do {
+                await pipeline.stopGuidance()
+                try Task.checkCancellation()
+                let photo = try await camera.capturePanelPhoto()
+                guard scanID == id, !Task.isCancelled else { return }
+                manualPhoto = photo
+                showManualTracking = true
+            } catch is CancellationError {
+            } catch {
+                if scanID == id { lastError = error.localizedDescription }
+            }
+        }
+    }
+    #endif
 
     private func stopWork() {
         scanTask?.cancel()
@@ -216,7 +286,7 @@ struct ContentView: View {
             guidanceID = nil
             return
         }
-        guard pipeline.canGuide, let map, let target = startButton(in: map) else {
+        guard pipeline.canGuide, let map, let target = guidanceTarget(in: map) else {
             lastError = "No Start button found on the panel."
             return
         }
@@ -229,6 +299,13 @@ struct ContentView: View {
                 guidanceID = nil
             }
         }
+    }
+
+    private func guidanceTarget(in map: SurfaceMap) -> SurfaceMap.Button? {
+        #if DEBUG
+        if let manualTargetID { return map.buttons.first { $0.id == manualTargetID } }
+        #endif
+        return startButton(in: map)
     }
 }
 
