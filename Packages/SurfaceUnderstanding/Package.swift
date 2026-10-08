@@ -32,7 +32,8 @@ let package = Package(
                 .product(name: "ContourMocks", package: "ContourMocks"),
             ],
             resources: [
-                .process("generated_buttons.jpeg")
+                .process("generated_buttons.jpeg"),
+                .copy("Resources/TestSet")
             ]
         ),
     ]
