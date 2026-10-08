@@ -68,6 +68,16 @@ final class TrackingDebugModel {
         await worker.process(frame)
     }
 
+    func visualFingertip(in frame: CameraFrame, panelTracked: Bool,
+                        fingertip: ImagePoint?) async -> TrackingDiagnostics {
+        // Fusion deliberately skips finger detection without a usable panel.
+        // Diagnostics can still observe the raw image-space finger, without
+        // making a panel-space position or guidance claim.
+        guard panelTracked else { return await process(frame) }
+        return TrackingDiagnostics(timestamp: frame.timestamp, fingertip: fingertip,
+                                   status: fingertip == nil ? .notDetected : .detected)
+    }
+
     /// Screen owns only its subscription, never the shared camera lifetime.
     /// Full tracking uses the production emitter's exact same-frame sample.
     func run(camera: CameraService, reference: PanelReference? = nil) async {
@@ -95,6 +105,8 @@ final class TrackingDebugModel {
                         // Production processes every delivered frame; UI draws at most 10 Hz.
                         guard sample.cameraFrame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
                         lastDisplay = sample.cameraFrame.timestamp
+                        let finger = await visualFingertip(in: sample.cameraFrame,
+                            panelTracked: sample.panelQuad != nil, fingertip: sample.imageFingertip)
                         let rendered = await renderer.image(for: sample.cameraFrame)
                         guard !Task.isCancelled, referenceGeneration == session else { break }
                         image = rendered
@@ -102,9 +114,7 @@ final class TrackingDebugModel {
                         trackingFrame = sample.frame
                         assessment = sample.assessment
                         latency = max(0, Date().timeIntervalSince(sample.cameraFrame.timestamp))
-                        latest = TrackingDiagnostics(timestamp: sample.frame.timestamp,
-                            fingertip: sample.imageFingertip,
-                            status: sample.imageFingertip == nil ? .notDetected : .detected)
+                        latest = finger
                         error = sample.registrationError == nil ? nil
                             : "Panel tracking could not initialize from this reference. Capture again and mark its actual corners."
                         framesProcessed += 1

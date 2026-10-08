@@ -77,7 +77,8 @@ Simulator/package success is not physical-device validation of Vision alignment,
 recovery, capture-to-output latency, or haptic usability.
 
 Latest review on October 8, 2026: Core 11, Mocks 13, Surface 58, Tracking 64,
-Feedback 25, UI 3 (174 package tests total); app simulator 20 tests passed.
+Feedback 25, UI 3 (174 package tests total); app simulator 22 tests passed after
+correcting fingertip diagnostics during panel loss.
 Package isolation and diff whitespace checks passed. The preceding visual
 diagnostics implementation also passed Harness and generic iOS device builds.
 Independent review of all integration changes found no confirmed major

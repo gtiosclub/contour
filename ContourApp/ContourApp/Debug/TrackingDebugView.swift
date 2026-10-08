@@ -48,6 +48,8 @@ struct TrackingDebugView: View {
                 }
                 Text("Yellow: panel. Green: fingertip. Cyan: buttons. Orange: selected target. Pixels and overlays come from the same processed frame.")
                     .font(.caption).foregroundStyle(.secondary)
+                Text("The green fingertip can remain visible when the panel is lost. Target distance and guidance still require usable panel tracking.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tracking overlay", isOn: $showOverlay)
                 Button(capturing ? "Capturing…" : "Capture manual panel and target") { capturePanel() }
                     .buttonStyle(.borderedProminent).disabled(capturing)

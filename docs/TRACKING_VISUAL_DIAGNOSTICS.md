@@ -4,6 +4,10 @@ Run the Debug app on an iPhone and keep it upright. Open Developer tools →
 Tracking Diagnostics. With no usable reference, it shows fingertip-only detection.
 With a scanned or manually prepared reference, it runs the production panel,
 finger, homography, and quality pipeline.
+If the combined tracker cannot use the panel, Diagnostics independently checks
+the fingertip on that same displayed image. The green dot can therefore remain
+visible during panel loss; it does not imply that panel mapping, target distance,
+or guidance is available. The production tracker and detector are unchanged.
 
 To bypass the Surface detector:
 
@@ -49,8 +53,10 @@ longer stops the shared camera when leaving the screen. A thread characterizatio
 test did not reproduce main-thread detector execution in the original path, so
 that hypothesis is not claimed as the cause of the reported freeze.
 
-Automated checks: Tracking 64 tests, app 20 tests, and generic iOS device build
-passed. The app tests include capture corner landmarks and diagnostic worker
+Automated checks: Tracking 64 tests and the preceding generic iOS device build
+passed; the fingertip diagnostic correction passed all 22 app tests. The app
+tests include capture corner landmarks, independent fingertip display during
+panel loss, preservation of fused observations, and diagnostic worker
 isolation; the Tracking tests check that visual samples match emitted frame
 timestamps and clear lost geometry. Actual phone responsiveness, overlay
 alignment, and tracker accuracy still require the device checks above.
