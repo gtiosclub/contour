@@ -42,6 +42,9 @@ public struct PanelObservation: Hashable, Sendable {
         /// does when something covers a corner. The next frame starts a fresh
         /// sequence from the last good position.
         case trackerFailed
+        /// A restarted sequence found a rectangle, but it doesn't look like
+        /// the panel (a cabinet, a door).
+        case unrecognized
     }
 
     /// The camera frame's capture time, not when processing finished.
@@ -93,18 +96,33 @@ public actor PanelTracker {
         /// An image showing the panel at `previous`: the reference photo until
         /// the first tracked frame, then the last tracked frame.
         var lastSeen: TrackerImage
+        /// What the panel looks like in the reference photo, to check that what
+        /// a restart or re-finding found is the panel. `nil` if it couldn't be
+        /// learned: restarts go unchecked and there's no re-finding.
+        let appearance: (any PanelAppearance)?
         var updating = false
     }
 
+    /// A re-detected rectangle further than this from the panel's appearance
+    /// isn't the panel. Feature-print distance. On the synthetic fixtures the
+    /// panel scores ~0.03 (0.11 with corners 2% off), a same-shaped rectangle
+    /// without buttons 0.65, bare wall 0.9. Retune on real photos.
+    static let maximumAppearanceDistance = 0.3
+    /// The best rectangle must be clearly more like the panel than the
+    /// runner-up (best < ratio × runner-up), or it's a guess.
+    static let ambiguityRatio = 0.8
+
     private let makeTracker: @Sendable (PanelQuad) -> any RectangleTracking
     private let detector: any RectangleDetecting
+    private let learnAppearance: @Sendable (PanelQuad, CGImage, CGImagePropertyOrientation) async throws -> (any PanelAppearance)?
     private let minimumConfidence: Double
     private var session: Session?
     /// Bumped by every start and stop, so in-flight work can tell it's stale.
     private var generation: UInt64 = 0
 
     public init(minimumConfidence: Double = TrackingQualityThresholds().panelFloor) {
-        self.init(minimumConfidence: minimumConfidence, detector: VisionRectangleDetector()) {
+        self.init(minimumConfidence: minimumConfidence, detector: VisionRectangleDetector(),
+                  learnAppearance: { try await VisionPanelAppearance(panel: $0, in: $1, orientation: $2) }) {
             VisionRectangleTracker(start: $0)
         }
     }
@@ -112,8 +130,11 @@ public actor PanelTracker {
     // Keep the Vision boundary replaceable for deterministic tests.
     init(minimumConfidence: Double = TrackingQualityThresholds().panelFloor,
          detector: any RectangleDetecting = NoRectangles(),
+         learnAppearance: @escaping @Sendable (PanelQuad, CGImage, CGImagePropertyOrientation) async throws
+            -> (any PanelAppearance)? = { _, _, _ in nil },
          makeTracker: @escaping @Sendable (PanelQuad) -> any RectangleTracking) {
         self.detector = detector
+        self.learnAppearance = learnAppearance
         self.minimumConfidence = minimumConfidence
         self.makeTracker = makeTracker
     }
@@ -139,7 +160,8 @@ public actor PanelTracker {
         // fails outright when the image size changes and the reference photo
         // is rarely the camera's size.
         let registration = makeTracker(quad)
-        let still = TrackerImage.still(image, Self.orientation(reference.photo.orientation))
+        let orientation = Self.orientation(reference.photo.orientation)
+        let still = TrackerImage.still(image, orientation)
 
         let registered: VisionQuad?
         do {
@@ -155,7 +177,20 @@ public actor PanelTracker {
         guard case let .tracked(start, _) = evaluate(registered, previous: quad) else {
             throw PanelTrackingError.registrationFailed
         }
-        session = Session(id: id, tracker: nil, previous: start, lastSeen: still)
+
+        // Re-finding is a fallback, so failing to learn the panel's appearance
+        // only turns it off; it doesn't fail registration.
+        let appearance: (any PanelAppearance)?
+        do {
+            appearance = try await learnAppearance(start, image, orientation)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            appearance = nil
+        }
+        guard generation == id else { throw PanelTrackingError.superseded }
+
+        session = Session(id: id, tracker: nil, previous: start, lastSeen: still, appearance: appearance)
     }
 
     /// Advance tracking by one camera frame. Call sequentially, in capture order.
@@ -198,6 +233,14 @@ public actor PanelTracker {
         case .success(let raw):
             switch evaluate(raw, previous: current.previous) {
             case let .tracked(quad, confidence):
+                // A restarted sequence follows any clean-edged rectangle near
+                // where the panel was, so check it's the panel. A running one
+                // has been on the panel since a frame that passed this check.
+                if current.tracker == nil, try await !looksLikePanel(quad, in: frame, current) {
+                    reason = .unrecognized
+                    break
+                }
+                guard session?.id == current.id else { throw PanelTrackingError.superseded }
                 session?.previous = quad
                 session?.lastSeen = .frame(frame)
                 return .tracked(quad, confidence: confidence, at: frame.timestamp)
@@ -210,47 +253,83 @@ public actor PanelTracker {
         // A fresh sequence couldn't find the panel near where we last saw it:
         // the phone moved too far while we weren't following it. Look for it
         // anywhere in this frame and start following it from there.
-        if current.tracker == nil, let found = await reacquire(in: frame, near: current.previous, session: current.id) {
+        if current.tracker == nil, let found = try await reacquire(in: frame, for: current) {
             return found
         }
         return .lost(reason, at: frame.timestamp)
     }
 
-    /// The rectangle in `frame` most like the panel we lost: about the same
-    /// size, nearest to where it was. Starts a new sequence on it.
-    private func reacquire(in frame: CameraFrame, near previous: PanelQuad, session id: UInt64) async -> PanelObservation? {
-        guard let candidates = try? await detector.detect(in: frame) else { return nil }
-        let size = Self.area(previous)
-        let best = candidates
-            .compactMap { raw -> (quad: PanelQuad, confidence: Double)? in
-                guard raw.confidence.isFinite, raw.confidence >= minimumConfidence else { return nil }
-                let quad = Self.aligned(Self.imageQuad(raw), to: previous)
-                guard PanelHomography.isValid(quad), (size * 0.4...size * 2.5).contains(Self.area(quad)) else { return nil }
-                return (quad, min(raw.confidence, 1))
+    /// The rectangle in `frame` that looks like the registered panel, if one
+    /// clearly does. Starts a new sequence on it.
+    private func reacquire(in frame: CameraFrame, for current: Session) async throws -> PanelObservation? {
+        guard let appearance = current.appearance else { return nil }
+        let candidates: [VisionQuad]
+        do {
+            candidates = try await detector.detect(in: frame)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+
+        // Size and position can't tell the panel from a cabinet door next to
+        // it; what's inside the rectangle can.
+        var scored: [(quad: PanelQuad, distance: Double)] = []
+        for raw in candidates where raw.confidence.isFinite && raw.confidence >= minimumConfidence {
+            let quad = Self.aligned(Self.imageQuad(raw), to: current.previous)
+            guard PanelHomography.isValid(quad) else { continue }
+            do {
+                let distance = try await appearance.distance(of: quad, in: frame)
+                if distance.isFinite { scored.append((quad, distance)) }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                continue
             }
-            .min { Self.cost(corners($0.quad), corners(previous), 0) < Self.cost(corners($1.quad), corners(previous), 0) }
-        guard let best else { return nil }
+        }
+        guard session?.id == current.id else { throw PanelTrackingError.superseded }
+        guard let match = Self.clearMatch(scored) else { return nil }
 
-        // The new sequence learns the panel from this frame.
-        let tracker = makeTracker(best.quad)
-        guard (try? await tracker.update(.frame(frame))) != nil, session?.id == id else { return nil }
+        // The new sequence learns the panel from this frame. Its answer gets
+        // the same checks as any other frame's.
+        let tracker = makeTracker(match)
+        let raw: VisionQuad?
+        do {
+            raw = try await tracker.update(.frame(frame))
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return nil
+        }
+        guard session?.id == current.id else { throw PanelTrackingError.superseded }
+        guard case let .tracked(quad, confidence) = evaluate(raw, previous: match) else { return nil }
+
         session?.tracker = tracker
-        session?.previous = best.quad
+        session?.previous = quad
         session?.lastSeen = .frame(frame)
-        return .tracked(best.quad, confidence: best.confidence, at: frame.timestamp)
+        return .tracked(quad, confidence: confidence, at: frame.timestamp)
     }
 
-    private func corners(_ quad: PanelQuad) -> [ImagePoint] {
-        [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+    /// Whether `quad` in `frame` looks like the registered panel. Unchecked
+    /// (true) when the panel's appearance couldn't be learned.
+    private func looksLikePanel(_ quad: PanelQuad, in frame: CameraFrame, _ current: Session) async throws -> Bool {
+        guard let appearance = current.appearance else { return true }
+        do {
+            return try await appearance.distance(of: quad, in: frame) <= Self.maximumAppearanceDistance
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            return false
+        }
     }
 
-    /// Shoelace area of the quad, in image space.
-    static func area(_ quad: PanelQuad) -> Double {
-        let p = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
-        return abs((0..<4).reduce(0) { sum, i in
-            let a = p[i], b = p[(i + 1) % 4]
-            return sum + a.x * b.y - b.x * a.y
-        }) / 2
+    /// The quad that looks most like the panel, if it's alike enough and no
+    /// other quad comes close: two equally good candidates is a guess.
+    static func clearMatch(_ scored: [(quad: PanelQuad, distance: Double)]) -> PanelQuad? {
+        let ranked = scored.sorted { $0.distance < $1.distance }
+        guard let best = ranked.first, best.distance <= maximumAppearanceDistance else { return nil }
+        if ranked.count > 1, best.distance >= ambiguityRatio * ranked[1].distance { return nil }
+        return best.quad
     }
 
     /// The panel's pose for the current frame.

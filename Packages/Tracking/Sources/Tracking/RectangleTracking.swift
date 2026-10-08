@@ -1,6 +1,8 @@
 // Tracking — Panel Registration & Lost Tracking (Vision boundary)
 import ContourCore
 import CoreGraphics
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import ImageIO
 import Vision
 
@@ -82,4 +84,46 @@ struct VisionRectangleDetector: RectangleDetecting {
 /// Finds nothing. The default for tests that don't exercise re-finding.
 struct NoRectangles: RectangleDetecting {
     func detect(in frame: CameraFrame) async throws -> [VisionQuad] { [] }
+}
+
+/// How much the inside of a quad looks like the registered panel. Re-finding
+/// uses it to tell the panel from other rectangles (a cabinet, a door).
+protocol PanelAppearance: Sendable {
+    /// `quad` is in upright image space, y down. Smaller is more alike.
+    func distance(of quad: PanelQuad, in frame: CameraFrame) async throws -> Double
+}
+
+/// Compares Vision feature prints of the panel, each flattened to face the
+/// camera first so the angle it's seen from doesn't count as a difference.
+struct VisionPanelAppearance: PanelAppearance {
+    private let reference: FeaturePrintObservation
+
+    /// Learns what the panel at `quad` looks like in the reference photo.
+    init(panel quad: PanelQuad, in image: CGImage, orientation: CGImagePropertyOrientation) async throws {
+        reference = try await Self.print(of: quad, in: CIImage(cgImage: image).oriented(orientation))
+    }
+
+    func distance(of quad: PanelQuad, in frame: CameraFrame) async throws -> Double {
+        let upright = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(frame.orientation)
+        return try Double(reference.distance(to: try await Self.print(of: quad, in: upright)))
+    }
+
+    private static func print(of quad: PanelQuad, in upright: CIImage) async throws -> FeaturePrintObservation {
+        let image = upright.transformed(
+            by: CGAffineTransform(translationX: -upright.extent.minX, y: -upright.extent.minY))
+        // Core Image is in pixels, lower-left origin, y up.
+        func point(_ p: ImagePoint) -> CGPoint {
+            CGPoint(x: p.x * image.extent.width, y: (1 - p.y) * image.extent.height)
+        }
+        let flatten = CIFilter.perspectiveCorrection()
+        flatten.inputImage = image
+        flatten.topLeft = point(quad.topLeft)
+        flatten.topRight = point(quad.topRight)
+        flatten.bottomRight = point(quad.bottomRight)
+        flatten.bottomLeft = point(quad.bottomLeft)
+        guard let flat = flatten.outputImage else { throw FlatteningFailed() }
+        return try await GenerateImageFeaturePrintRequest().perform(on: flat)
+    }
+
+    private struct FlatteningFailed: Error {}
 }
