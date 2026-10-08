@@ -1,4 +1,4 @@
-# Tracking MVP integration — first pass
+# Tracking MVP integration
 
 This work was developed in an isolated worktree and is now available in the
 main local checkout on `tracking-mvp-integration`. No teammate branch or GitHub
@@ -43,20 +43,23 @@ The app still uses MockGuidance's simple center-distance policy.
 
 ## Remaining work and owners
 
-- Remy/Zaynah: physical-phone end-to-end validation, latency measurement, and
-  combined panel/fingertip/quality diagnostics. Validate small phone movement,
-  finger disappearance, panel loss, Stop/restart, and replacement while busy.
-- Aditya, with integration owners: call `replaceReference(with:)` from manual
-  setup, clear target selection, run live initialization/restart, and expose
-  registration errors/retry. Current #48 UI still prepares a reference only.
-- Miguel: review the appearance-learning failure path (restarted tracking can
-  proceed unchecked), decide whether automatic recovery is suitable for MVP,
-  and validate recovery on real panels/distracting rectangles. His algorithm is
+- Remy/Zaynah: physical-phone end-to-end validation and latency measurement.
+  Combined visual diagnostics are now implemented. Validate small phone movement,
+  finger disappearance, partial panel occlusion, Stop/restart, and replacement
+  while busy. Integration follow-up: expose panel-loss reasons for reproducible
+  occlusion reports.
+- Aditya: no new task from this integration. Both manual setup callbacks now use
+  the shared reference handoff; replacement clears target/output state and
+  registration errors are surfaced. His original fixture setup remains intact.
+- Miguel: investigate the reported panel loss when a finger partially covers
+  the panel, identify the failure reason, and improve occlusion tolerance and
+  recovery. Validate real panels and distracting rectangles. His algorithm is
   retained, not rewritten in this integration change.
 - Puranjay: finish #43's assessed button-relative output; current simple guidance
   is only a demo fallback.
 - Justin: no new implementation required unless geometry validation finds a bug.
-- Babitha: device validation of the merged fingertip detector; fixes only if needed.
+- Babitha: no new fix from the panel-occlusion report; investigate only if device
+  validation identifies an independent fingertip detection failure.
 
 ## Verification
 
@@ -73,13 +76,21 @@ change the user's global Xcode selection.
 Simulator/package success is not physical-device validation of Vision alignment,
 recovery, capture-to-output latency, or haptic usability.
 
-Verified on October 8, 2026: Core 11, Mocks 13, Surface 58, Tracking 63,
-Feedback 25, UI 3 (173 package tests total); app simulator 14 tests passed;
-Harness build succeeded; package isolation and diff whitespace checks passed.
-Independent review found no confirmed critical/important defect. Overlapping
-guidance starts, wrong-map target rejection, and old UI-task completion deserve
-additional regression coverage; these were review coverage suggestions, not
-reproduced failures.
+Latest review on October 8, 2026: Core 11, Mocks 13, Surface 58, Tracking 64,
+Feedback 25, UI 3 (174 package tests total); app simulator 20 tests passed.
+Package isolation and diff whitespace checks passed. The preceding visual
+diagnostics implementation also passed Harness and generic iOS device builds.
+Independent review of all integration changes found no confirmed major
+correctness regression. Physical-phone validation remains required.
+
+Compatibility limits: reference initialization currently recognizes the concrete
+`LiveTrackingSource`; a future wrapper/replacement will need an initialization
+interface. The optional visual sample callback is additive and defaults to nil;
+its consumer must enqueue promptly because it runs on the tracking actor.
+Diagnostics use a separate tracker subscription and do not stop the shared
+camera on exit. The camera/speech prototype implementation is unchanged, but
+its renamed navigation entry is now Debug-only. Core contracts and panel,
+finger, and homography algorithms are unchanged.
 
 ## Follow-up: independent manual tracking test
 
@@ -88,3 +99,5 @@ panels, with four marked corners and one marked target. It calls the shared
 reference handoff and uses live tracking/haptics. Registration errors are shown.
 See `SURFACE_FALLBACK_AND_MANUAL_TEST.md` for usage and the reproduced Surface
 fallback defect. Aditya's original fixture-layout setup remains unchanged.
+See `TRACKING_VISUAL_DIAGNOSTICS.md` for same-frame overlays, exact capture
+review, and normalized finger-to-target distance.
