@@ -3,7 +3,8 @@ import SwiftUI
 import ContourCore
 import UIKit
 
-/// Preview and diagnostics share the same aspect-fill image transform.
+/// Shows the full capture field of view. Aspect fit preserves the pixels that
+/// PanelPhotoCapture sends to Surface instead of hiding them outside a crop.
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     var fingertip: ImagePoint?
@@ -11,7 +12,8 @@ struct CameraPreview: UIViewRepresentable {
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.previewLayer.session = session
-        view.previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer.videoGravity = .resizeAspect
+        view.backgroundColor = .black
         return view
     }
 
@@ -40,7 +42,8 @@ struct CameraPreview: UIViewRepresentable {
 
         override func layoutSubviews() {
             super.layoutSubviews()
-            if let connection = previewLayer.connection, connection.isVideoRotationAngleSupported(90) {
+            if let connection = previewLayer.connection,
+               connection.isVideoRotationAngleSupported(90), connection.videoRotationAngle != 90 {
                 connection.videoRotationAngle = 90
             }
             // Diagnostics should show the latest measurement without visual lag.

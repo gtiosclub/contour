@@ -19,6 +19,26 @@ import UniformTypeIdentifiers
 @Suite("Live tracking stream")
 struct LiveTrackingSourceTests {
 
+    @Test("Visual samples use the same frame and geometry as emitted tracking")
+    func visualSamplesMatchTrackingFrames() async throws {
+        let samples = SampleStore()
+        let source = LiveTrackingSource(camera: FakeCamera(count: 3),
+            panelTracker: scriptedPanel(lostOnFrame: 1), fingertipTracker: scriptedFingertip(),
+            onSample: { samples.append($0) })
+        await source.use(try reference())
+        let frames = await collect(source.frames())
+        let snapshots = samples.values
+        #expect(snapshots.count == 3)
+        guard snapshots.count == 3 else { return }
+        #expect(snapshots.map(\.frame.timestamp) == frames.map(\.timestamp))
+        #expect(snapshots.allSatisfy { $0.cameraFrame.timestamp == $0.frame.timestamp })
+        #expect(snapshots[0].panelQuad == square)
+        #expect(snapshots[0].imageFingertip == ImagePoint(x: 0.5, y: 0.5))
+        #expect(snapshots[0].assessment?.quality == .good)
+        #expect(snapshots[1].panelQuad == nil)
+        #expect(snapshots[1].frame.fingertip == nil)
+    }
+
     @Test("Before a panel is handed over, every frame is lost and none are dropped")
     func lostUntilThereIsAPanel() async throws {
         let source = LiveTrackingSource(camera: FakeCamera(count: 3), panelTracker: scriptedPanel(),
@@ -291,4 +311,11 @@ private actor DetectionGate {
         release?.resume()
         release = nil
     }
+}
+
+private final class SampleStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: [LiveTrackingSample] = []
+    func append(_ sample: LiveTrackingSample) { lock.withLock { samples.append(sample) } }
+    var values: [LiveTrackingSample] { lock.withLock { samples } }
 }

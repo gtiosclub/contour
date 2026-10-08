@@ -39,7 +39,7 @@ struct ContentView: View {
                 #if DEBUG
                 Section("Developer tools") {
                     NavigationLink("Tracking Diagnostics") {
-                        TrackingDebugView(camera: camera)
+                        TrackingDebugView(camera: camera, pipeline: pipeline)
                     }
                     NavigationLink("Model image spike (Surface)") {
                         ModelImageSpikeView()
@@ -51,11 +51,15 @@ struct ContentView: View {
                 #endif
 
                 
-                Section("Developing LiveCameraView") {
-                    NavigationLink("Enter LiveCameraView") {
+                #if DEBUG
+                Section("Experience prototype") {
+                    NavigationLink("Camera and speech prototype") {
                         LiveCameraView()
                     }
+                    Text("Evan's separate UI and speech prototype. Use the pipeline controls below for integrated tracking and guidance.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
+                #endif
                 
                 
                 Section("Pipeline") {
@@ -97,11 +101,19 @@ struct ContentView: View {
                     }
                 }
 
+                if let reference = pipeline.panelReference, !reference.photo.data.isEmpty {
+                    Section("Captured image and returned controls") {
+                        DisclosureGroup("Review exact capture") {
+                            CapturedPanelReviewView(reference: reference)
+                        }
+                    }
+                }
+
                 Section("Run the pipeline") {
                     if surfaceIsLive {
                         // What the scan will capture, so you can aim at the panel.
                         CameraPreview(session: camera.session)
-                            .frame(height: 260)
+                            .frame(height: 360)
                             .task { try? await camera.start() }
                     }
                     Button("Scan panel") { scan() }
@@ -152,6 +164,12 @@ struct ContentView: View {
         #endif
         .onChange(of: pipeline.panelReference?.photo.id) { _, _ in
             map = pipeline.panelReference?.detection.map
+            #if DEBUG
+            // Diagnostics can prepare a new manual target too. Never retain
+            // the previous reference's button ID when returning to this screen.
+            manualTargetID = map?.buttons.count == 1 && map?.buttons.first?.label == "Manual target"
+                ? map?.buttons.first?.id : nil
+            #endif
         }
         .onDisappear { stopWork() }
         .onChange(of: scenePhase) { _, phase in
