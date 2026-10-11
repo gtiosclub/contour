@@ -102,6 +102,27 @@ enum SyntheticPanel {
         return (try photo(image, size: size), regions, labels)
     }
 
+    /// A small labelled panel beside an optional, larger appliance door.
+    static func smallPanelPhoto(scale: Double, door: Bool = false) throws -> (photo: PanelPhoto, quad: PanelQuad) {
+        let canvas = PixelSize(width: 1600, height: 1200)
+        let width = CGFloat(canvas.width) * scale
+        let panel = CGRect(x: 760, y: 360, width: width, height: width * 2 / 3)
+        let ctx = try context(canvas, background: CGColor(gray: 0.03, alpha: 1))
+        if door {
+            ctx.setFillColor(CGColor(gray: 0.8, alpha: 1))
+            ctx.fill(CGRect(x: 40, y: 100, width: 650, height: 1000))
+        }
+        ctx.draw(try render(), in: panel)
+        func corner(_ x: CGFloat, _ y: CGFloat) -> ImagePoint {
+            ImagePoint(x: Double(x) / 1600, y: 1 - Double(y) / 1200)
+        }
+        let quad = PanelQuad(topLeft: corner(panel.minX, panel.maxY),
+                             topRight: corner(panel.maxX, panel.maxY),
+                             bottomRight: corner(panel.maxX, panel.minY),
+                             bottomLeft: corner(panel.minX, panel.minY))
+        return (try photo(try makeImage(ctx), size: canvas), quad)
+    }
+
     /// Four keys sitting on a raised plate, plus two loose keys beside it.
     /// Vision finds the plate as a rectangle too, with the same confidence as
     /// the keys, so a "keep the bigger box" rule would return the plate and

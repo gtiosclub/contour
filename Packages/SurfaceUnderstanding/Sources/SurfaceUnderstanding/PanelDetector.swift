@@ -68,11 +68,19 @@ public struct PanelDetector: Sendable {
 
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 10
-        request.minimumConfidence = 0.7
+        request.minimumConfidence = 0.3
         request.minimumAspectRatio = 0.1
         request.maximumAspectRatio = 1.0
         request.minimumSize = 0.1
         request.quadratureTolerance = 45
+
+        // Match ButtonDetector's key request, without adding OCR to this path.
+        let keys = VNDetectRectanglesRequest()
+        keys.maximumObservations = 30
+        keys.minimumSize = 0.03
+        keys.minimumConfidence = 0.5
+        keys.minimumAspectRatio = 0.3
+        keys.maximumAspectRatio = 1.0
 
         let handler = VNImageRequestHandler(
             cgImage: image,
@@ -82,7 +90,14 @@ public struct PanelDetector: Sendable {
 
         do {
             try handler.perform([request])
+            guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+            // Separate calls avoid a Vision hang during concurrent Swift tests.
+            try handler.perform([keys])
         } catch {
+            if Task.isCancelled || error is CancellationError ||
+                (error as? SurfaceUnderstandingError) == .cancelled {
+                throw SurfaceUnderstandingError.cancelled
+            }
             throw SurfaceUnderstandingError.underlying(error.localizedDescription)
         }
 
@@ -90,7 +105,7 @@ public struct PanelDetector: Sendable {
             throw SurfaceUnderstandingError.cancelled
         }
 
-        // Pick the largest qualifying rectangle by its actual corner area.
+        // Use actual corner area, including for perspective-skewed rectangles.
         func area(_ rectangle: VNRectangleObservation) -> CGFloat {
             let points = [
                 rectangle.topLeft,
@@ -109,27 +124,49 @@ public struct PanelDetector: Sendable {
             return abs(total) / 2
         }
 
-        let rectangles = (request.results ?? []).filter { $0.confidence >= 0.7 }
-        let rectangle = rectangles.max(by: { area($0) < area($1) })
-        if let rectangle, area(rectangle) < 0.25, rectangles.count >= 3 {
-            // Several controls provide evidence for a panel whose border is
-            // outside the photo. With less evidence, preserve a valid inset
-            // rectangle rather than mistaking its small area for no panel.
-            return (.fullFrame, 0.6, false, [])
+        let rectangles = request.results ?? []
+        guard let largest = rectangles.max(by: { area($0) < area($1) }) else {
+            throw SurfaceUnderstandingError.noPanelFound
         }
-        guard let rectangle else { throw SurfaceUnderstandingError.noPanelFound }
 
         // Vision uses bottom-left origin; Contour uses top-left.
         func imagePoint(_ point: CGPoint) -> ImagePoint {
             ImagePoint(x: Double(point.x), y: 1.0 - Double(point.y))
         }
+        func panelQuad(_ rectangle: VNRectangleObservation) -> PanelQuad {
+            PanelQuad(topLeft: imagePoint(rectangle.topLeft),
+                      topRight: imagePoint(rectangle.topRight),
+                      bottomRight: imagePoint(rectangle.bottomRight),
+                      bottomLeft: imagePoint(rectangle.bottomLeft))
+        }
 
-        let quad = PanelQuad(
-            topLeft: imagePoint(rectangle.topLeft),
-            topRight: imagePoint(rectangle.topRight),
-            bottomRight: imagePoint(rectangle.bottomRight),
-            bottomLeft: imagePoint(rectangle.bottomLeft)
-        )
+        let keyBoxes = keys.results ?? []
+        let candidates = rectangles.map { rectangle in
+            let quad = panelQuad(rectangle)
+            let candidateArea = area(rectangle)
+            let count = keyBoxes.filter { key in
+                // The second request can find the panel itself or the door.
+                guard area(key) < candidateArea * 0.5 else { return false }
+                let center = CGPoint(x: key.boundingBox.midX, y: key.boundingBox.midY)
+                return rectify(imagePoint(center), within: quad).isOnPanel
+            }.count
+            return (rectangle: rectangle, area: candidateArea, count: count)
+        }
+        let mostKeys = candidates.map(\.count).max() ?? 0
+        let rectangle: VNRectangleObservation
+        if mostKeys >= 3 {
+            // Prefer a tight panel over a control column with a barcode or trim
+            // when both contain essentially the same number of keys.
+            rectangle = candidates.filter { $0.count >= 3 && Double($0.count) >= Double(mostKeys) * 0.9 }
+                .min(by: { $0.area < $1.area })!.rectangle
+        } else if keyBoxes.count >= 3 {
+            // The keypad is visible, but its enclosing border may be off-camera.
+            return (.fullFrame, 0.6, false, [])
+        } else {
+            // Sparse evidence still preserves lone rectangles and simple panels.
+            rectangle = largest
+        }
+        let quad = panelQuad(rectangle)
 
         guard expandWithText else {
             return (quad, Double(rectangle.confidence), false, [])
