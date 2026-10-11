@@ -1,3 +1,11 @@
+//
+//  RealPanelLabels.swift
+//  SurfaceUnderstanding
+//
+//  Created by Asav Gupta on 10/8/26.
+//
+
+
 import ContourCore
 
 /// Labels main's LabelReader read off the team's Drive photos (Oct 8):
