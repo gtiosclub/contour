@@ -166,18 +166,44 @@ public struct PanelDetector: Sendable {
             // Sparse evidence still preserves lone rectangles and simple panels.
             rectangle = largest
         }
-        let quad = panelQuad(rectangle)
+        let seed = panelQuad(rectangle)
+        let keyCorners = keyBoxes.filter { area($0) < area(rectangle) * 0.5 }.map { key in
+            [key.topLeft, key.topRight, key.bottomRight, key.bottomLeft].map(imagePoint)
+        }
+        let quad = enclosingKeyGroups(seed: seed, keys: keyCorners)
+        let expanded = quad != seed
+        let confidence = min(Double(rectangle.confidence), expanded ? 0.85 : 1)
 
         guard expandWithText else {
-            return (quad, Double(rectangle.confidence), false, [])
+            return (quad, confidence, expanded, [])
         }
 
         // A strong rectangle can be only one button bank. Use nearby text to
         // include the display and keypad rather than equating rectangle confidence
         // with confidence that the entire panel has been found.
-        return try refinePanel(seed: quad, confidence: Double(rectangle.confidence)) {
+        let refined = try refinePanel(seed: quad, confidence: confidence) {
             try controlEvidence(in: image, orientation: orientation, seed: quad)
         }
+        return (refined.quad, refined.confidence, expanded || refined.estimatedAlignment, refined.warnings)
+    }
+
+    /// A close-up may expose a border around presets, but no border around the
+    /// whole keypad. Require a majority of keys just beyond that group's ends
+    /// before using the existing geometric expansion to include the column.
+    /// This uses rectangle evidence only; text recognition remains opt-in.
+    func enclosingKeyGroups(seed: PanelQuad, keys: [[ImagePoint]]) -> PanelQuad {
+        let centers = keys.compactMap { corners -> PanelPoint? in
+            guard corners.count == 4 else { return nil }
+            let center = ImagePoint(x: (corners.map(\.x).min()! + corners.map(\.x).max()!) / 2,
+                                    y: (corners.map(\.y).min()! + corners.map(\.y).max()!) / 2)
+            return rectify(center, within: seed)
+        }
+        let inside = centers.filter(\.isOnPanel).count
+        let continuing = centers.filter {
+            !$0.isOnPanel && (0...1).contains($0.x) && (-1...2).contains($0.y)
+        }.count
+        guard inside >= 3, continuing > inside else { return seed }
+        return enclosingControls(seed: seed, evidence: keys)
     }
 
     /// OCR is optional refinement. A failure must not discard a valid rectangle.
@@ -243,8 +269,8 @@ public struct PanelDetector: Sendable {
             .map { $0.bottom - $0.top }.sorted()
         let typicalHeight = interiorHeights.isEmpty ? 1 : interiorHeights[interiorHeights.count / 2]
         var bounds = Bounds(left: 0, top: 0, right: 1, bottom: 1)
-        // Isolated oversized text below a panel is often branding, not a control.
-        // Preserve large keypad digits that form a row with other nearby evidence.
+        // Isolated oversized evidence below a panel is often branding or trim.
+        // Preserve larger keys or keypad digits that share a row with nearby evidence.
         var remaining = boxes.filter { box in
             guard box.top > 1, box.bottom - box.top > typicalHeight * 2 else { return true }
             return boxes.contains { other in

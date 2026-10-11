@@ -236,3 +236,27 @@ func insetPanelRetainsOuterEdges() async throws {
                              bottomLeft: ImagePoint(x: 250.0 / 900, y: 440.0 / 600))
     expectPanelCorners(result.quad, expected)
 }
+
+@Test("A preset group expands to the continuing keypad without distant scene boxes")
+func panelKeyGroupIncludesContinuingColumn() {
+    let seed = PanelQuad(topLeft: ImagePoint(x: 0.3, y: 0.1), topRight: ImagePoint(x: 0.7, y: 0.1),
+                         bottomRight: ImagePoint(x: 0.7, y: 0.4), bottomLeft: ImagePoint(x: 0.3, y: 0.4))
+    func box(_ x: Double, _ y: Double) -> [ImagePoint] {
+        [(x,y), (x+0.15,y), (x+0.15,y+0.12), (x,y+0.12)].map {
+            ImagePoint(x: 0.3 + 0.4 * $0.0, y: 0.1 + 0.3 * $0.1)
+        }
+    }
+    let inside = [box(0.1,0.1), box(0.4,0.1), box(0.7,0.1)]
+    let outside = [box(0.1,1.1), box(0.7,1.1), box(0.1,1.5), box(0.7,1.5)]
+    let distant = box(2,1.2)
+    let detector = PanelDetector()
+    let expanded = detector.enclosingKeyGroups(seed: seed, keys: inside + outside + [distant])
+    #expect(expanded != seed)
+    for point in (inside + outside).flatMap({ $0 }) {
+        #expect(detector.rectify(point, within: expanded).isOnPanel)
+    }
+    #expect(!detector.rectify(distant[0], within: expanded).isOnPanel)
+    // A few neighbouring boxes alone must not enlarge a complete panel.
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(outside.prefix(3))) == seed)
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(repeating: distant, count: 8)) == seed)
+}
