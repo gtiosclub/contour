@@ -23,7 +23,12 @@ import Vision
 /// Stage 1 — find the panel.
 public struct PanelDetector: Sendable {
 
-    public init() {}
+    /// Opt in to OCR-based control expansion; disabled for the low-latency MVP.
+    public var expandWithText: Bool
+
+    public init(expandWithText: Bool = false) {
+        self.expandWithText = expandWithText
+    }
 
     /// Locate the appliance panel in `photo`.
     ///
@@ -104,12 +109,15 @@ public struct PanelDetector: Sendable {
             return abs(total) / 2
         }
 
-        guard let rectangle = request.results?
-            .filter({ $0.confidence >= 0.7 })
-            .max(by: { area($0) < area($1) })
-        else {
-            throw SurfaceUnderstandingError.noPanelFound
+        let rectangles = (request.results ?? []).filter { $0.confidence >= 0.7 }
+        let rectangle = rectangles.max(by: { area($0) < area($1) })
+        if let rectangle, area(rectangle) < 0.25, rectangles.count >= 3 {
+            // Several controls provide evidence for a panel whose border is
+            // outside the photo. With less evidence, preserve a valid inset
+            // rectangle rather than mistaking its small area for no panel.
+            return (.fullFrame, 0.6, false, [])
         }
+        guard let rectangle else { throw SurfaceUnderstandingError.noPanelFound }
 
         // Vision uses bottom-left origin; Contour uses top-left.
         func imagePoint(_ point: CGPoint) -> ImagePoint {
@@ -122,6 +130,10 @@ public struct PanelDetector: Sendable {
             bottomRight: imagePoint(rectangle.bottomRight),
             bottomLeft: imagePoint(rectangle.bottomLeft)
         )
+
+        guard expandWithText else {
+            return (quad, Double(rectangle.confidence), false, [])
+        }
 
         // A strong rectangle can be only one button bank. Use nearby text to
         // include the display and keypad rather than equating rectangle confidence

@@ -27,34 +27,6 @@ import SurfaceUnderstanding
 import SwiftUI
 import Tracking
 
-/// Real panel quad from Surface Understanding, mock buttons over the top.
-///
-/// `LiveSurfaceUnderstanding` returns a real quad today but an empty button list,
-/// because `ButtonDetector` and `LabelReader` are still stubs. An empty map is
-/// correct for that package and useless for target selection, so this fills the
-/// gap in the only place allowed to know about both: the app target.
-///
-/// The quad is real, so Tracking can lock onto an actual appliance. The buttons
-/// are fiction at fixed positions, so **nothing about where a button is on the
-/// real panel is true here.** Do not chase a finger to one of these and expect to
-/// land on anything.
-///
-/// Delete this type when the two stubs land.
-private struct RealPanelMockButtons: ContourCore.SurfaceUnderstanding {
-
-    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
-        // Real detection, real failures: a bad frame throws from here exactly as
-        // it would in the all-real configuration.
-        let real = try await LiveSurfaceUnderstanding().detectPanel(from: photo)
-
-        return PanelDetection(
-            referencePhotoID: photo.id,
-            quad: real.quad,
-            map: MockSurfaceMaps.microwave
-        )
-    }
-}
-
 /// Holds one implementation of each protocol and runs a guidance session.
 @MainActor
 @Observable
@@ -64,8 +36,17 @@ final class ContourPipeline {
     let tracking: any TrackingSource
     let feedback: any FeedbackEngine
 
-    /// Retained for future live tracker initialization; live tracking is still a stub.
+    /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
+    private(set) var trackingError: String?
+    private var generation: UInt64 = 0
+    private var guidanceTask: Task<Void, Never>?
+    private var guidanceGeneration: UInt64?
+
+    var canGuide: Bool {
+        guard let reference = panelReference else { return false }
+        return !liveComponents.contains(.tracking) || reference.detection.quad != .fullFrame
+    }
 
     /// Which of the three are real implementations rather than mocks. Rendered
     /// on the placeholder screen so the state of the project is visible at a
@@ -110,39 +91,27 @@ final class ContourPipeline {
         )
     }
 
-    /// Real panel quad, mock buttons. Use this until ButtonDetector and
-    /// LabelReader land. Delete the mock half when they do.
+    /// Real Surface Understanding (panel, buttons and labels) and real feedback
+    /// (haptics), mock tracking. Use this to run everything that is live today
+    /// before tracking is.
     ///
-    /// This is what Tracking needs to lock onto a real appliance this week: the
-    /// quad and the reference photo are genuine, so `panelReference` after
-    /// `detectPanel(in:)` describes a panel that actually exists. The buttons are
-    /// the canned microwave, at positions that have nothing to do with the panel
-    /// in front of the camera.
-    ///
-    /// Unlike `mock()`, this can throw from `detectPanel(in:)` — a photo with no
+    /// Unlike `mock()`, this can throw from `detectPanel(in:)`: a photo with no
     /// panel in it fails here, as it should.
     static func realPanel() -> ContourPipeline {
         ContourPipeline(
-            surfaceUnderstanding: RealPanelMockButtons(),
+            surfaceUnderstanding: LiveSurfaceUnderstanding(),
             tracking: MockTrackingSource(),
-            feedback: PrintingFeedbackEngine(),
-            liveComponents: [.surfaceUnderstanding]
+            feedback: LiveFeedbackEngine(),
+            liveComponents: [.surfaceUnderstanding, .feedback]
         )
     }
 
-    /// Everything real.
-    ///
-    /// Do not call this yet — the live types are `fatalError` stubs and this
-    /// will crash on first use. It exists so the switchover is a one-line
-    /// change and so the live types stay compiled and linked from day one.
-    ///
-    /// Teams: as your package comes up, move your line from `mock()` into here
-    /// and add your `Component` to `liveComponents`. Mixed configurations are
-    /// expected and fine — that is the point of mocking per protocol.
-    static func live() -> ContourPipeline {
+    /// Everything real, on `camera`: Surface Understanding reads the panel,
+    /// Tracking follows it and the fingertip, and guidance vibrates.
+    static func live(camera: CameraService) -> ContourPipeline {
         ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: LiveTrackingSource(),
+            tracking: LiveTrackingSource(camera: camera),
             feedback: LiveFeedbackEngine(),
             liveComponents: Set(Component.allCases)
         )
@@ -152,10 +121,50 @@ final class ContourPipeline {
 
     /// Detect the panel in `photo`.
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
+        generation &+= 1
+        let scan = generation
         panelReference = nil
+        trackingError = nil
+        await cancelGuidance()
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
-        panelReference = try PanelReference(photo: photo, detection: detection)
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
+        let reference = try PanelReference(photo: photo, detection: detection)
+        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
+        panelReference = reference
         return detection.map
+    }
+
+    /// Shared handoff for manual setup and replacement. Previous guidance ends
+    /// before a different reference or target can be used.
+    func replaceReference(with reference: PanelReference) async {
+        generation &+= 1
+        let replacement = generation
+        panelReference = nil
+        trackingError = nil
+        await cancelGuidance()
+        guard generation == replacement, !Task.isCancelled else { return }
+        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        guard generation == replacement, !Task.isCancelled else { return }
+        panelReference = reference
+    }
+
+    /// Stop guidance without discarding the reference, so it can be retried.
+    func stopGuidance() async {
+        generation &+= 1
+        await cancelGuidance()
+    }
+
+    private func cancelGuidance() async {
+        let old = guidanceTask
+        let oldGeneration = guidanceGeneration
+        old?.cancel()
+        await old?.value
+        if guidanceGeneration == oldGeneration {
+            guidanceTask = nil
+            guidanceGeneration = nil
+        }
     }
 
     /// Guide the user's finger to `target` until the stream ends or the task is
@@ -165,10 +174,79 @@ final class ContourPipeline {
     /// guidance, out to Experience. The composition step is
     /// `MockGuidance` — placeholder wiring that gets replaced once the real
     /// guidance policy has an owner. See MockGuidance.swift.
+    ///
+    /// An outcome is presented once, not on every frame it stays true. Losing
+    /// the panel is announced once it has been gone for 0.3 s, then guidance
+    /// picks up again when it's back. Arriving ends the session, and any other
+    /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
+        generation &+= 1
+        let session = generation
+        await cancelGuidance()
+        guard generation == session, !Task.isCancelled else { return }
+        if let reference = panelReference {
+            guard canGuide, reference.detection.map.buttons.contains(where: { $0.id == target.id }) else { return }
+        } else if liveComponents.contains(.tracking) {
+            return
+        }
+        let task = Task { await self.runGuidance(to: target, session: session) }
+        guidanceTask = task
+        guidanceGeneration = session
+        await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if guidanceGeneration == session {
+            guidanceTask = nil
+            guidanceGeneration = nil
+        }
+    }
+
+    private func runGuidance(to target: SurfaceMap.Button, session: UInt64) async {
+        var announced: OutcomeSignal?
+        var lostSince: Date?
+        var arrived = false
         for await frame in tracking.frames() {
-            if Task.isCancelled { return }
-            await feedback.present(MockGuidance.state(for: frame, target: target))
+            if Task.isCancelled || generation != session { break }
+            if let live = tracking as? LiveTrackingSource {
+                let failure = await live.registrationError()
+                guard generation == session, !Task.isCancelled else { break }
+                switch failure {
+                case .invalidReferenceQuad:
+                    trackingError = "Tracking could not initialize: the panel corners are invalid. Prepare a new reference."
+                case .unreadableReferencePhoto:
+                    trackingError = "Tracking could not read the reference photo. Capture a new reference."
+                case .registrationFailed:
+                    trackingError = "Vision could not track the marked panel in the reference photo. Capture again and mark its actual boundary."
+                default:
+                    trackingError = nil
+                }
+            }
+            let state = MockGuidance.state(for: frame, target: target)
+
+            // A frame or two of blur isn't worth announcing: say the panel is
+            // lost only once it has been gone for a moment.
+            if state.outcome == .lostTracking {
+                let since = lostSince ?? frame.timestamp
+                lostSince = since
+                if frame.timestamp.timeIntervalSince(since) < 0.3 { continue }
+            } else {
+                lostSince = nil
+            }
+
+            if let outcome = state.outcome, outcome == announced { continue }
+            announced = state.outcome
+            await feedback.present(state)
+            if state.outcome == .arrived {
+                arrived = true
+                break
+            }
+        }
+        if !arrived {
+            // Stopping, or the camera going away, must not leave the vibration
+            // running.
+            await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
     }
 }

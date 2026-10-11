@@ -3,13 +3,12 @@
 //  ContourFeedback — Experience / Outcome Signals & Harness
 //
 //  ┌──────────────────────────────────────────────────────────────────────────┐
-//  │  EMPTY ROOM. This is Experience's package, and nobody outside the team   │
-//  │  commits here.                                                           │
+//  │  HAPTICS ONLY, for the MVP.                                              │
 //  │                                                                          │
-//  │  Everything below is a stub. Replace the bodies, keep the signatures —   │
-//  │  the signatures are ContourCore's contract and other teams are building  │
-//  │  against them right now. Until this works, the app runs on               │
-//  │  ContourMocks.PrintingFeedbackEngine.                                    │
+//  │  REAL     proximity pulses (ProximityHaptics) and the four outcome        │
+//  │           signals (OutcomeAnnouncer), through HapticEngineManager.        │
+//  │  PENDING  directional audio and speech. DirectionalAudio and SpeechQueue  │
+//  │           are still stubs, so this never calls them.                      │
 //  └──────────────────────────────────────────────────────────────────────────┘
 //
 //  WHAT THIS PACKAGE OWES THE APP
@@ -40,16 +39,29 @@
 import ContourCore
 import Foundation
 
-/// The real feedback engine. Experience builds this out.
+/// The real feedback engine: guidance you feel.
 public struct LiveFeedbackEngine: FeedbackEngine {
 
-    public init() {}
+    private let proximity: ProximityHaptics
+    private let announcer: OutcomeAnnouncer
+
+    public init() {
+        let player = HapticPlayer()
+        proximity = ProximityHaptics(player: player)
+        announcer = OutcomeAnnouncer(player: player)
+    }
 
     /// Present one moment of guidance as haptics, audio, and/or speech.
     ///
     /// A state with a non-`nil` `outcome` is terminal — play the corresponding
     /// signal for `arrived`, `lostTracking`, `notFound`, or `lowConfidence`.
+    /// Otherwise the pulses follow the distance, and a state with no vector (no
+    /// finger seen) goes quiet.
     public func present(_ state: GuidanceState) async {
-        fatalError("unimplemented — owned by Experience / Outcome Signals & Harness")
+        if let outcome = state.outcome {
+            await announcer.announce(outcome)
+        } else {
+            await proximity.play(for: state)
+        }
     }
 }

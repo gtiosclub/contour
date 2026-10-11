@@ -70,6 +70,17 @@ jobs:
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Test manual reference setup
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -workspace Contour.xcworkspace \
+            -scheme ContourApp \
+            -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0" \
+            -only-testing:ContourTests/ManualPanelReferenceTests \
+            -skipMacroValidation \
+            CODE_SIGNING_ALLOWED=NO
+
       - name: Build Harness
         run: |
           set -o pipefail

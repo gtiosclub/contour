@@ -15,7 +15,6 @@ import UniformTypeIdentifiers
 
 // MARK: - LiveSurfaceUnderstanding
 //
-// The quad half of LiveSurfaceUnderstanding is real; buttons and labels are not.
 // What these pin is that the failure paths THROW rather than trap. A crash here
 // would take the app down on a bad frame, and bad frames are the normal case for
 // someone aiming a camera they cannot see.
@@ -87,7 +86,9 @@ func blankImageThrowsNoPanelFound() async throws {
     }
 }
 
-@Test("a panel-shaped image returns the real quad, the photo's id, and no buttons")
+@Test("a plain panel returns the real quad, the photo's id, and no buttons",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
 func panelShapedImageReturnsRealQuad() async throws {
     // A bright rectangle on a dark field: the simplest thing Vision will call a
     // panel. Inset so the quad has to come back as something other than
@@ -109,7 +110,9 @@ func panelShapedImageReturnsRealQuad() async throws {
     #expect((try? PanelReference(photo: subject, detection: detection)) != nil,
             "the app must be able to build a PanelReference from this")
 
-    // Buttons are still pending, and an empty map is a success, not a failure.
+    // Nothing on this panel looks like a button or reads as a label, and an
+    // empty map is a success, not a failure. Text recognition still runs, in
+    // case it's a flat keypad, so this is skipped on CI.
     #expect(detection.map.buttons.isEmpty)
     #expect(detection.map.confidence > 0, "panel confidence should carry through")
 
@@ -124,4 +127,57 @@ func panelShapedImageReturnsRealQuad() async throws {
     let height = quad.bottomLeft.y - quad.topLeft.y
     #expect(width > 0.2, "quad should span a real fraction of the image")
     #expect(height > 0.1)
+}
+
+@Test("the synthetic microwave comes back with all six buttons and their labels",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func fullPipelineReadsTheMicrowave() async throws {
+    let subject = try SyntheticPanel.photo()
+
+    let detection = try await LiveSurfaceUnderstanding().detectPanel(from: subject)
+
+    #expect(detection.referencePhotoID == subject.id)
+    let expected = SyntheticPanel.expected.buttons
+    #expect(detection.map.buttons.count == expected.count)
+
+    // Every key the mock lists is covered by exactly one found button, and that
+    // button reads (close to) the right label.
+    for key in expected {
+        let hits = detection.map.buttons.filter { $0.bounds.contains(key.bounds.center) }
+        #expect(hits.count == 1, "\(key.label ?? "?") is covered by \(hits.count) buttons")
+        if let hit = hits.first {
+            #expect(TextRecognitionCheck.labelsMatch([hit.label], [key.label]),
+                    "read \(hit.label ?? "nil") for \(key.label ?? "nil")")
+        }
+    }
+}
+
+@Test("a label printed under its key goes to that key",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func labelUnderKeyGoesToTheKey() async throws {
+    let (subject, keys, labels) = try SyntheticPanel.labelsUnderKeysPhoto()
+
+    let detection = try await LiveSurfaceUnderstanding().detectPanel(from: subject)
+
+    for (key, label) in zip(keys, labels) {
+        let hit = detection.map.buttons.first { $0.bounds.contains(key.center) }
+        #expect(TextRecognitionCheck.labelsMatch([hit?.label], [label]),
+                "the key above \(label) read \(hit?.label ?? "nothing")")
+    }
+}
+
+@Test("a flat keypad with printed labels and no key outlines gets a button per label",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func printedLabelsBecomeButtons() async throws {
+    let (subject, labels) = try SyntheticPanel.printedKeypadPhoto()
+
+    let detection = try await LiveSurfaceUnderstanding().detectPanel(from: subject)
+
+    for label in labels {
+        let hits = detection.map.buttons.filter { TextRecognitionCheck.labelsMatch([$0.label], [label]) }
+        #expect(hits.count == 1, "\(label): \(hits.count) buttons, map was \(detection.map.buttons.map(\.label))")
+    }
 }

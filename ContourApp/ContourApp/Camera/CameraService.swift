@@ -72,8 +72,8 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
 
     private func configure() throws {
         guard !configured else { return }
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-        else { throw CameraError.unavailable }
+        guard let device = Self.closeFocusingCamera() else { throw CameraError.unavailable }
+        try Self.focusNear(device)
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
@@ -95,6 +95,38 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
         }
         output.setSampleBufferDelegate(self, queue: queue)
         configured = true
+    }
+
+    /// The back camera that can focus on a panel a few centimetres away.
+    ///
+    /// The wide camera alone can't focus much closer than about 20 cm, so the
+    /// keypad goes soft when you hold the phone near it. The multi-camera
+    /// devices hand off to the ultra-wide's macro focus automatically when the
+    /// subject is too close. Falls back to the wide camera on phones without one.
+    private static func closeFocusingCamera() -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    /// Continuous autofocus and exposure, tuned for something close. On a
+    /// multi-camera device, starts at the wide camera's normal 1× framing
+    /// rather than the ultra-wide's.
+    private static func focusNear(_ device: AVCaptureDevice) throws {
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        if let wide = device.virtualDeviceSwitchOverVideoZoomFactors.first {
+            device.videoZoomFactor = CGFloat(truncating: wide)
+        }
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusMode = .continuousAutoFocus
+        }
+        if device.isAutoFocusRangeRestrictionSupported {
+            device.autoFocusRangeRestriction = .near
+        }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposureMode = .continuousAutoExposure
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
