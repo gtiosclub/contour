@@ -33,12 +33,16 @@ import Tracking
 final class ContourPipeline {
 
     let surfaceUnderstanding: any ContourCore.SurfaceUnderstanding
-    let tracking: any TrackingSource
+    private(set) var tracking: any TrackingSource
+    let sessionFactory: GuidanceSessionFactory
+    private(set) var trackingMethod: PanelTrackingMethod
+    private(set) var featureOptions: FeatureTrackingOptions
     let feedback: any FeedbackEngine
 
     /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
     private(set) var trackingError: String?
+    private(set) var hybridStatus: HybridTrackingDiagnostics?
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
@@ -71,8 +75,14 @@ final class ContourPipeline {
         surfaceUnderstanding: any ContourCore.SurfaceUnderstanding,
         tracking: any TrackingSource,
         feedback: any FeedbackEngine,
-        liveComponents: Set<Component>
+        liveComponents: Set<Component>,
+        sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision,
+        trackingMethod: PanelTrackingMethod = .vision,
+        featureOptions: FeatureTrackingOptions = FeatureTrackingOptions()
     ) {
+        self.sessionFactory = sessionFactory
+        self.trackingMethod = trackingMethod
+        self.featureOptions = featureOptions
         self.surfaceUnderstanding = surfaceUnderstanding
         self.tracking = tracking
         self.feedback = feedback
@@ -117,6 +127,17 @@ final class ContourPipeline {
         )
     }
 
+    /// Independent UI work supplies scripted sessions; assembly supplies the
+    /// real factory. Construction errors remain explicit to the caller.
+    static func live(camera: any CameraFrameSource, sessionFactory: @escaping GuidanceSessionFactory,
+                     method: PanelTrackingMethod = .vision,
+                     options: FeatureTrackingOptions = FeatureTrackingOptions()) throws -> ContourPipeline {
+        ContourPipeline(surfaceUnderstanding: LiveSurfaceUnderstanding(),
+            tracking: try sessionFactory(camera, method, options, nil),
+            feedback: LiveFeedbackEngine(), liveComponents: Set(Component.allCases), sessionFactory: sessionFactory,
+            trackingMethod: method, featureOptions: options)
+    }
+
     // MARK: Session
 
     /// Detect the panel in `photo`.
@@ -125,12 +146,13 @@ final class ContourPipeline {
         let scan = generation
         panelReference = nil
         trackingError = nil
+        hybridStatus = nil
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let reference = try PanelReference(photo: photo, detection: detection)
-        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        if let live = tracking as? any GuidanceTrackingSession { await live.use(reference) }
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         panelReference = reference
         return detection.map
@@ -143,9 +165,10 @@ final class ContourPipeline {
         let replacement = generation
         panelReference = nil
         trackingError = nil
+        hybridStatus = nil
         await cancelGuidance()
         guard generation == replacement, !Task.isCancelled else { return }
-        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
+        if let live = tracking as? any GuidanceTrackingSession { await live.use(reference) }
         guard generation == replacement, !Task.isCancelled else { return }
         panelReference = reference
     }
@@ -209,9 +232,11 @@ final class ContourPipeline {
         var arrived = false
         for await frame in tracking.frames() {
             if Task.isCancelled || generation != session { break }
-            if let live = tracking as? LiveTrackingSource {
+            if let live = tracking as? any GuidanceTrackingSession {
                 let failure = await live.registrationError()
+                let status = await live.hybridStatus()
                 guard generation == session, !Task.isCancelled else { break }
+                hybridStatus = status
                 switch failure {
                 case .invalidReferenceQuad:
                     trackingError = "Tracking could not initialize: the panel corners are invalid. Prepare a new reference."

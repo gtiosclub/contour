@@ -9,12 +9,15 @@ public struct CameraFrame: @unchecked Sendable {
     public let pixelBuffer: CVPixelBuffer
     public let timestamp: Date
     public let orientation: CGImagePropertyOrientation
+    /// Pose/intrinsics belong to these exact pixels, before upright rotation.
+    public let world: WorldCameraSnapshot?
 
     public init(pixelBuffer: CVPixelBuffer, timestamp: Date,
-                orientation: CGImagePropertyOrientation = .up) {
+                orientation: CGImagePropertyOrientation = .up, world: WorldCameraSnapshot? = nil) {
         self.pixelBuffer = pixelBuffer
         self.timestamp = timestamp
         self.orientation = orientation
+        self.world = world
     }
 }
 
