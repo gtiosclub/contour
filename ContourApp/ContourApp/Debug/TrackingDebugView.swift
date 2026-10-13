@@ -7,7 +7,7 @@ import Tracking
 struct TrackingDebugView: View {
     let camera: CameraService
     let pipeline: ContourPipeline
-    @State private var model = TrackingDebugModel()
+    @State private var model: TrackingDebugModel
     @State private var showOverlay = true
     @State private var showReferenceSetup = false
     @State private var showManualSetup = false
@@ -18,9 +18,19 @@ struct TrackingDebugView: View {
     @State private var manualReference = ManualReferenceState()
     @Environment(\.scenePhase) private var scenePhase
 
-    private struct RunID: Hashable { let reference: UUID?; let active: Bool }
+    init(camera: CameraService, pipeline: ContourPipeline) {
+        self.camera = camera
+        self.pipeline = pipeline
+        _model = State(initialValue: TrackingDebugModel(sessionFactory: pipeline.sessionFactory))
+    }
+
+    private struct RunID: Hashable {
+        let reference: UUID?; let active: Bool
+        let method: PanelTrackingMethod; let options: FeatureTrackingOptions
+    }
     private var runID: RunID {
-        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active)
+        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active,
+              method: pipeline.trackingMethod, options: pipeline.featureOptions)
     }
 
     private var distanceToTarget: Double? {
@@ -131,7 +141,8 @@ struct TrackingDebugView: View {
         }
         .task(id: runID) {
             guard runID.active else { model.clearDisplayedResults(); return }
-            await model.run(camera: camera, reference: manualReference.reference)
+            await model.run(camera: camera, reference: manualReference.reference,
+                            method: pipeline.trackingMethod, options: pipeline.featureOptions)
         }
         .onDisappear { capture?.cancel() }
         .onChange(of: scenePhase) { _, phase in

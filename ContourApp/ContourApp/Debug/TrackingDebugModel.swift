@@ -18,6 +18,7 @@ final class TrackingDebugModel {
     private(set) var panelQuad: PanelQuad?
     private(set) var trackingFrame: TrackingFrame?
     private(set) var latency: TimeInterval?
+    private let sessionFactory: GuidanceSessionFactory
     private let worker: DiagnosticWorker
     private let renderer = FrameImageRenderer()
     private let evaluator: TrackingQualityEvaluator
@@ -26,7 +27,9 @@ final class TrackingDebugModel {
     private var lastLogTime: ContinuousClock.Instant?
     private let logger = Logger(subsystem: "edu.gatech.contour", category: "TrackingDiagnostics")
 
-    init(processor: any TrackingFrameProcessor = FingertipFrameProcessor()) {
+    init(processor: any TrackingFrameProcessor = FingertipFrameProcessor(),
+         sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision) {
+        self.sessionFactory = sessionFactory
         self.worker = DiagnosticWorker(processor: processor)
         var thresholds = TrackingQualityThresholds()
         thresholds.panelRequired = false
@@ -80,7 +83,9 @@ final class TrackingDebugModel {
 
     /// Screen owns only its subscription, never the shared camera lifetime.
     /// Full tracking uses the production emitter's exact same-frame sample.
-    func run(camera: CameraService, reference: PanelReference? = nil) async {
+    func run(camera: any CameraControl, reference: PanelReference? = nil,
+             method: PanelTrackingMethod = .vision,
+             options: FeatureTrackingOptions = FeatureTrackingOptions()) async {
         clearDisplayedResults()
         let session = referenceGeneration
         do {
@@ -90,7 +95,7 @@ final class TrackingDebugModel {
             running = true
             if let reference {
                 let pair = AsyncStream<LiveTrackingSample>.makeStream(bufferingPolicy: .bufferingNewest(1))
-                let source = LiveTrackingSource(camera: camera, onSample: { pair.continuation.yield($0) })
+                let source = try sessionFactory(camera, method, options, { pair.continuation.yield($0) })
                 await source.use(reference)
                 let drive = Task {
                     for await _ in source.frames() {
