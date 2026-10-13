@@ -29,7 +29,8 @@ let package = Package(
             dependencies: [
                 "Tracking",
                 .product(name: "ContourMocks", package: "ContourMocks"),
-            ]
+            ],
+            resources: [.copy("Fixtures")]
         ),
     ]
 )

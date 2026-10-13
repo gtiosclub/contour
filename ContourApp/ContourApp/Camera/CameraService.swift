@@ -4,19 +4,22 @@ import Tracking
 
 /// Session mutations and delegate callbacks are confined to `queue`.
 /// `session` is exposed only for attaching a preview layer on the main actor.
-nonisolated final class CameraService: NSObject, CameraFrameSource,
+nonisolated final class CameraService: NSObject, CameraControl,
     AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
+    let status = CameraStatus()
+    let usesWorldTracking = false
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
     private var continuations: [UUID: AsyncStream<CameraFrame>.Continuation] = [:]
 
     enum CameraError: LocalizedError {
-        case permissionDenied, unavailable
+        case permissionDenied, unavailable, exposureControlUnavailable
         var errorDescription: String? {
             switch self {
             case .permissionDenied: "Camera access is unavailable. Enable it in Settings."
             case .unavailable: "Rear camera unavailable. Use a physical iPhone or iPad."
+            case .exposureControlUnavailable: "Exposure adjustment has not been implemented yet."
             }
         }
     }
@@ -52,6 +55,21 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
         }
     }
 
+    @MainActor func retry() async {
+        status.error = nil
+        await stop()
+        do { try await start() }
+        catch { status.error = error.localizedDescription }
+        status.revision &+= 1
+    }
+
+    /// S0 only declares the control seam; C implements actual bias later.
+    /// Automatic exposure remains unchanged, and unsupported requests fail.
+    func setExposureBias(_ value: Float) async throws -> Float? {
+        guard value == 0 else { throw CameraError.exposureControlUnavailable }
+        return nil
+    }
+
     /// Every subscriber gets its own newest-frame buffer. Cancelling one does
     /// not stop the shared camera or steal another subscriber's frames.
     func cameraFrames() async -> AsyncStream<CameraFrame> {
@@ -72,8 +90,8 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
 
     private func configure() throws {
         guard !configured else { return }
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
-        else { throw CameraError.unavailable }
+        guard let device = Self.closeFocusingCamera() else { throw CameraError.unavailable }
+        try Self.focusNear(device)
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureVideoDataOutput()
         output.alwaysDiscardsLateVideoFrames = true
@@ -95,6 +113,38 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
         }
         output.setSampleBufferDelegate(self, queue: queue)
         configured = true
+    }
+
+    /// The back camera that can focus on a panel a few centimetres away.
+    ///
+    /// The wide camera alone can't focus much closer than about 20 cm, so the
+    /// keypad goes soft when you hold the phone near it. The multi-camera
+    /// devices hand off to the ultra-wide's macro focus automatically when the
+    /// subject is too close. Falls back to the wide camera on phones without one.
+    private static func closeFocusingCamera() -> AVCaptureDevice? {
+        AVCaptureDevice.default(.builtInTripleCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(.builtInDualWideCamera, for: .video, position: .back)
+            ?? AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back)
+    }
+
+    /// Continuous autofocus and exposure, tuned for something close. On a
+    /// multi-camera device, starts at the wide camera's normal 1× framing
+    /// rather than the ultra-wide's.
+    private static func focusNear(_ device: AVCaptureDevice) throws {
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+        if let wide = device.virtualDeviceSwitchOverVideoZoomFactors.first {
+            device.videoZoomFactor = CGFloat(truncating: wide)
+        }
+        if device.isFocusModeSupported(.continuousAutoFocus) {
+            device.focusMode = .continuousAutoFocus
+        }
+        if device.isAutoFocusRangeRestrictionSupported {
+            device.autoFocusRangeRestriction = .near
+        }
+        if device.isExposureModeSupported(.continuousAutoExposure) {
+            device.exposureMode = .continuousAutoExposure
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
