@@ -106,6 +106,54 @@ enum SyntheticPanel {
 
         return (try photo(image, size: canvas), quad)
     }
+    
+    static func displayQuadPhoto() throws -> (photo: PanelPhoto, displayQuad: PanelQuad) {
+        let canvas = PixelSize(width: 1500, height: 1100)
+        let ctx = try context(canvas, background: CGColor(gray: 0.9, alpha: 1))
+
+        let display = CGRect(x: 550, y: 830, width: 400, height: 120)
+        ctx.setFillColor(CGColor(gray: 0.15, alpha: 1))
+        ctx.fill(display)
+
+        ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
+        for i in 0..<4 {
+            ctx.fill(CGRect(
+                x: 590 + CGFloat(i) * 85,
+                y: 865,
+                width: 24,
+                height: 50
+            ))
+        }
+
+        ctx.setFillColor(CGColor(gray: 0.2, alpha: 1))
+        for i in 0..<6 {
+            ctx.fill(CGRect(
+                x: 250 + CGFloat(i) * 170,
+                y: 690,
+                width: 120,
+                height: 80
+            ))
+        }
+
+        let image = try makeImage(ctx)
+
+        func corner(_ x: CGFloat, _ yUp: CGFloat) -> ImagePoint {
+            ImagePoint(
+                x: Double(x) / Double(canvas.width),
+                y: 1 - Double(yUp) / Double(canvas.height)
+            )
+        }
+
+        let quad = PanelQuad(
+            topLeft: corner(display.minX, display.maxY),
+            topRight: corner(display.maxX, display.maxY),
+            bottomRight: corner(display.maxX, display.minY),
+            bottomLeft: corner(display.minX, display.minY)
+        )
+
+        return (try photo(image, size: canvas), quad)
+    }
+
 
     /// Three labels on one continuous light strip, 20 px apart. Vision reads
     /// them as a single line ("Popcorn Beverage Defrost"), which is what a

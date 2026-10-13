@@ -25,6 +25,10 @@ public struct ButtonDetector: Sendable {
     /// `LabelReader`. A region you are unsure about should be returned with low
     /// confidence rather than dropped; the caller decides the threshold.
     ///
+    /// If the given panel quad is incorrect, such as covering only the clock
+    /// display, returning no buttons is correct. `LiveSurfaceUnderstanding` can
+    /// then fall back to searching the whole photo.
+    ///
     /// Bounds must not overlap. `ContourMocks` asserts that about its canned
     /// map and the app assumes it when hit-testing.
     public func detectButtons(
@@ -34,32 +38,11 @@ public struct ButtonDetector: Sendable {
         let image = try photo.cgImage()
 
         let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 30
+        request.maximumObservations = 0
         request.minimumSize = 0.03
         request.minimumConfidence = 0.5
         request.minimumAspectRatio = 0.3
         request.maximumAspectRatio = 1.0
-
-        let panelCorners = [
-            panel.topLeft,
-            panel.topRight,
-            panel.bottomRight,
-            panel.bottomLeft
-        ]
-
-        let minX = panelCorners.map(\.x).min()!
-        let maxX = panelCorners.map(\.x).max()!
-        let minY = panelCorners.map(\.y).min()!
-        let maxY = panelCorners.map(\.y).max()!
-
-        let region = CGRect(
-            x: minX,
-            y: 1.0 - maxY,
-            width: maxX - minX,
-            height: maxY - minY
-        ).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
-
-        request.regionOfInterest = region
 
         try VNImageRequestHandler(
             cgImage: image,
@@ -104,11 +87,6 @@ public struct ButtonDetector: Sendable {
                 continue
             }
             
-            // ignore tiny rectangles unlikely to be buttons
-            if bounds.width < 0.05 || bounds.height < 0.05 {
-                continue
-            }
-            
             // ignore if centers are outside the panel
             if !bounds.center.isOnPanel {
                 continue
@@ -142,7 +120,7 @@ public struct ButtonDetector: Sendable {
 /// lets a frame swallow the keys inside it, the second keeps a key's text
 /// instead of the key. The result doesn't depend on the order Vision returned
 /// the boxes in.
-private func removeOverlappingBoxes(
+func removeOverlappingBoxes(
     _ results: [(bounds: PanelRect, confidence: Double)]
 ) -> [(bounds: PanelRect, confidence: Double)] {
     func area(_ i: Int) -> Double {
@@ -172,6 +150,7 @@ private func removeOverlappingBoxes(
 
     var dropped = Set<Int>()
 
+    // The more confident of two nested boxes wins outright.
     for i in results.indices {
         for j in results.indices where isInside(j, i) {
             if results[j].confidence > results[i].confidence {
@@ -182,6 +161,7 @@ private func removeOverlappingBoxes(
         }
     }
 
+    // Equal confidence: decide by how much of the outer box the inner ones fill.
     var frames = Set<Int>()
     var details = Set<Int>()
     for i in results.indices where !dropped.contains(i) {

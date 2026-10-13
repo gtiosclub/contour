@@ -16,6 +16,8 @@ func buttonDetectorKeepsKeysOnAPlate() async throws {
 
     let found = try await ButtonDetector().detectButtons(in: photo, panel: .fullFrame)
 
+    // One box per key, and no box covering several keys. Keeping the larger of
+    // two overlapping boxes returned the plate instead of the four keys on it.
     #expect(found.count == keys.count)
     for key in keys {
         #expect(found.contains { $0.bounds.contains(key.center) }, "no box covers the key at \(key.center)")
@@ -36,16 +38,6 @@ func buttonDetectorIgnoresClutterOutsidePanel() async throws {
     )
 
     #expect(found.count == SyntheticPanel.expected.buttons.count)
-
-    print("EXPECTED:")
-    for expected in SyntheticPanel.expected.buttons {
-        print("\(expected.label ?? "?"): \(expected.bounds.center)")
-    }
-
-    print("FOUND CENTERS:")
-    for box in found {
-        print(box.bounds.center)
-    }
     
     for expected in SyntheticPanel.expected.buttons {
         #expect(
@@ -87,4 +79,22 @@ func buttonDetectorKeepsKeyWithHalfOverlap() async throws {
         found.contains { $0.bounds.contains(key.center) },
         "the real key was not returned"
     )
+}
+
+@Test("Button Detector: ignores digits when quad covers only the display")
+func buttonDetectorRejectsDisplayOnlyQuad() async throws {
+    let (photo, displayQuad) = try SyntheticPanel.displayQuadPhoto()
+
+    let displayResults = try await ButtonDetector().detectButtons(
+        in: photo,
+        panel: displayQuad
+    )
+
+    let fullFrameResults = try await ButtonDetector().detectButtons(
+        in: photo,
+        panel: .fullFrame
+    )
+
+    #expect(displayResults.isEmpty)
+    #expect(fullFrameResults.count >= 6)
 }
