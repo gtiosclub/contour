@@ -38,7 +38,7 @@ public struct ButtonDetector: Sendable {
         let image = try photo.cgImage()
 
         let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 0
+        request.maximumObservations = 30
         request.minimumSize = 0.03
         request.minimumConfidence = 0.5
         request.minimumAspectRatio = 0.3
