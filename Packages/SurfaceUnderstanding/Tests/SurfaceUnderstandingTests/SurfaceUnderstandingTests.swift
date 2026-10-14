@@ -21,36 +21,6 @@ import Testing
 import Foundation
 @testable import SurfaceUnderstanding
 
-// Prints what match() returns for the PR's before/after table. Don't commit this file.
-//
-//   REPORT=1 swift test --filter matcherReport
-//
-// Skipped unless REPORT is set.
-
-@Test("matcher report", .enabled(if: ProcessInfo.processInfo.environment["REPORT"] != nil))
-func matcherReport() {
-    let requests = ["start", "stop", "pause", "timer", "time", "clock", "add 30 seconds", "power"]
-    // The 18 microwave lists: everything in RealPanelLabels except the 2 ovens and the hand-labelled panels.
-    let photos = RealPanelLabels.lists.keys
-        .filter { !$0.hasPrefix("hand-labelled") && !$0.lowercased().contains("oven") }
-        .sorted()
-
-    var table = "| Photo | " + requests.joined(separator: " | ") + " |\n"
-    table += "|---|" + String(repeating: "---|", count: requests.count) + "\n"
-    for photo in photos {
-        let labels = RealPanelLabels.lists[photo]!
-        let map = SurfaceMap(buttons: labels.enumerated().map { i, label in
-            SurfaceMap.Button(label: label, bounds: PanelRect(x: 0, y: Double(i) / Double(labels.count), width: 1, height: 0.01), confidence: 1)
-        }, confidence: 1)
-        let cells = requests.map { request -> String in
-            guard let match = TargetMatcher().match(request, in: map) else { return "nil" }
-            return "\(match.button.label ?? "?") (\(String(format: "%.1f", match.confidence)))"
-        }
-        table += "| \(photo) | " + cells.joined(separator: " | ") + " |\n"
-    }
-    print("\n\(photos.count) microwave lists\n\n\(table)")
-}
-
 @Test("LiveSurfaceUnderstanding still satisfies the ContourCore contract")
 func conformsToContract() {
     let subject: any ContourCore.SurfaceUnderstanding = LiveSurfaceUnderstanding()
