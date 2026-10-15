@@ -22,7 +22,8 @@ struct ButtonLookupTests {
     // lines as "Start Pause".
     let microwave = map(["Start Pause", "Cancel/Off", "Popcorn", "Clock", "Kitchen Timer", "5", "Add 30 Sec", nil])
 
-    @Test("start finds the key read as \"Start Pause\"", arguments: ["start", "Start", "press start please", "go"])
+    @Test("start finds the key read as \"Start Pause\"",
+          arguments: ["start", "Start", "the start button", "press start please", "go"])
     func startFindsStartPause(request: String) {
         #expect(ButtonLookup.button(for: request, in: microwave)?.label == "Start Pause")
     }
@@ -37,8 +38,8 @@ struct ButtonLookupTests {
         #expect(ButtonLookup.button(for: "five", in: microwave)?.label == "5")
     }
 
-    @Test("the shortest label wins: Start beats Start Time")
-    func shortestWins() {
+    @Test("the key that says just Start wins over Start Time")
+    func exactLabelWins() {
         #expect(ButtonLookup.button(for: "start", in: map(["Start Time", "Start"]))?.label == "Start")
     }
 
@@ -46,5 +47,37 @@ struct ButtonLookupTests {
     func notOnThePanel() {
         #expect(ButtonLookup.button(for: "defrost", in: microwave) == nil)
         #expect(ButtonLookup.button(for: "please", in: microwave) == nil)
+    }
+
+    // The old lookup fell back to matching word by word and took the shortest
+    // label, which picked the wrong key on each of these. Labels are trimmed
+    // from what LabelReader read off the team's photos (#78's RealPanelLabels).
+
+    @Test("a display is not a key: \"one\" doesn't find the 1 in 1:35")
+    func displayIsNotAKey() {
+        let panel = map(["1:35", "Time Cook", "Popcorn", "2", "5", "Clock", "START →vûsec."])
+        #expect(ButtonLookup.button(for: "one", in: panel) == nil)
+    }
+
+    @Test("start never means Delay Start")
+    func startIsNotDelayStart() {
+        let oven = map(["Timer Set/Off", "10:43", "Broil", "Cook Time", "Delay Start", "Clock"])
+        #expect(ButtonLookup.button(for: "press start", in: oven) == nil)
+    }
+
+    @Test("text merged across the panel is not one key")
+    func mergedTextIsNotAKey() {
+        let glare = map([
+            "Kitchen Timer", "Time Cook", "Beverage",
+            "10:45 Defrost Add Weight/Time 30 Sec Power Clock Popcorn Potato Pizza Frozen Vegetable Dinner Plate Express Cook",
+            "Start Pause",
+        ])
+        #expect(ButtonLookup.button(for: "popcorn", in: glare) == nil)
+    }
+
+    @Test("every word said is on the key: cook time is Time Cook, not Cook")
+    func everyWordIsOnTheKey() {
+        let panel = map(["Popcorn", "Time Cook", "Cook", "Time", "Express Cook", "Start Pause"])
+        #expect(ButtonLookup.button(for: "press cook time", in: panel)?.label == "Time Cook")
     }
 }
