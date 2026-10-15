@@ -66,6 +66,94 @@ enum SyntheticPanel {
         )
         return (try photo(image, size: canvas), quad)
     }
+    
+    /// The inset panel with bright rectangles outside the panel.
+    /// The detector should ignore those rectangles and only find buttons
+    /// inside the supplied panel quad.
+    static func insetPhotoWithClutter() throws -> (photo: PanelPhoto, quad: PanelQuad) {
+        let canvas = PixelSize(width: 1500, height: 1100)
+        let panelRect = CGRect(x: 330, y: 240, width: size.width, height: size.height)
+
+        let ctx = try context(
+            canvas,
+            background: CGColor(red: 0.03, green: 0.03, blue: 0.04, alpha: 1)
+        )
+
+        ctx.draw(try render(), in: panelRect)
+
+        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
+
+        ctx.fill(CGRect(x: 60, y: 80, width: 180, height: 100))
+        ctx.fill(CGRect(x: 1180, y: 100, width: 220, height: 120))
+        ctx.fill(CGRect(x: 80, y: 850, width: 200, height: 110))
+        ctx.fill(CGRect(x: 1200, y: 820, width: 180, height: 140))
+
+        let image = try makeImage(ctx)
+
+        func corner(_ x: CGFloat, _ yUp: CGFloat) -> ImagePoint {
+            ImagePoint(
+                x: Double(x) / Double(canvas.width),
+                y: 1 - Double(yUp) / Double(canvas.height)
+            )
+        }
+
+        let quad = PanelQuad(
+            topLeft: corner(panelRect.minX, panelRect.maxY),
+            topRight: corner(panelRect.maxX, panelRect.maxY),
+            bottomRight: corner(panelRect.maxX, panelRect.minY),
+            bottomLeft: corner(panelRect.minX, panelRect.minY)
+        )
+
+        return (try photo(image, size: canvas), quad)
+    }
+    
+    static func displayQuadPhoto() throws -> (photo: PanelPhoto, displayQuad: PanelQuad) {
+        let canvas = PixelSize(width: 1500, height: 1100)
+        let ctx = try context(canvas, background: CGColor(gray: 0.9, alpha: 1))
+
+        let display = CGRect(x: 550, y: 830, width: 400, height: 120)
+        ctx.setFillColor(CGColor(gray: 0.15, alpha: 1))
+        ctx.fill(display)
+
+        ctx.setFillColor(CGColor(gray: 0.95, alpha: 1))
+        for i in 0..<4 {
+            ctx.fill(CGRect(
+                x: 590 + CGFloat(i) * 85,
+                y: 865,
+                width: 24,
+                height: 50
+            ))
+        }
+
+        ctx.setFillColor(CGColor(gray: 0.2, alpha: 1))
+        for i in 0..<6 {
+            ctx.fill(CGRect(
+                x: 250 + CGFloat(i) * 170,
+                y: 690,
+                width: 120,
+                height: 80
+            ))
+        }
+
+        let image = try makeImage(ctx)
+
+        func corner(_ x: CGFloat, _ yUp: CGFloat) -> ImagePoint {
+            ImagePoint(
+                x: Double(x) / Double(canvas.width),
+                y: 1 - Double(yUp) / Double(canvas.height)
+            )
+        }
+
+        let quad = PanelQuad(
+            topLeft: corner(display.minX, display.maxY),
+            topRight: corner(display.maxX, display.maxY),
+            bottomRight: corner(display.maxX, display.minY),
+            bottomLeft: corner(display.minX, display.minY)
+        )
+
+        return (try photo(image, size: canvas), quad)
+    }
+
 
     /// Three labels on one continuous light strip, 20 px apart. Vision reads
     /// them as a single line ("Popcorn Beverage Defrost"), which is what a
@@ -166,6 +254,96 @@ enum SyntheticPanel {
         }
         return (try photo(try makeImage(ctx), size: size), rects)
     }
+    
+    static func duplicateLabelPhoto() throws -> (photo: PanelPhoto, key: PanelRect) {
+        let ctx = try context(
+            size,
+            background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1)
+        )
+
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let key = CGRect(
+            x: 0.30 * CGFloat(size.width),
+            y: 0.30 * CGFloat(size.height),
+            width: 0.40 * CGFloat(size.width),
+            height: 0.30 * CGFloat(size.height)
+        )
+
+        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
+        ctx.fill(key)
+
+        ctx.setFillColor(CGColor(red: 0.20, green: 0.20, blue: 0.20, alpha: 1))
+        ctx.fill(CGRect(
+            x: key.minX + 70,
+            y: key.minY + 35,
+            width: key.width - 140,
+            height: 50
+        ))
+
+        ctx.fill(CGRect(
+            x: key.minX + 80,
+            y: key.minY + 40,
+            width: key.width - 160,
+            height: 40
+        ))
+
+        let keyRect = PanelRect(
+            x: Double(key.minX / CGFloat(size.width)),
+            y: Double(key.minY / CGFloat(size.height)),
+            width: Double(key.width / CGFloat(size.width)),
+            height: Double(key.height / CGFloat(size.height))
+        )
+
+        let image = try makeImage(ctx)
+
+        return (try photo(image, size: size), keyRect)
+    }
+
+    static func halfOverlappingPhoto() throws -> (photo: PanelPhoto, key: PanelRect) {
+        let ctx = try context(
+            size,
+            background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1)
+        )
+
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let key = CGRect(
+            x: 0.25 * CGFloat(size.width),
+            y: 0.30 * CGFloat(size.height),
+            width: 0.30 * CGFloat(size.width),
+            height: 0.30 * CGFloat(size.height)
+        )
+
+        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
+        ctx.fill(key)
+
+        let overlapping = CGRect(
+            x: key.midX,
+            y: key.minY - 20,
+            width: key.width * 0.8,
+            height: key.height + 40
+        )
+
+        ctx.setStrokeColor(CGColor(red: 0.40, green: 0.40, blue: 0.40, alpha: 1))
+        ctx.setLineWidth(8)
+        ctx.stroke(overlapping)
+
+        let panelRect = PanelRect(
+            x: Double(key.minX / CGFloat(size.width)),
+            y: Double(key.minY / CGFloat(size.height)),
+            width: Double(key.width / CGFloat(size.width)),
+            height: Double(key.height / CGFloat(size.height))
+        )
+
+        return (
+            try photo(try makeImage(ctx), size: size),
+            panelRect
+        )
+    }
+    
 
     /// Three dark keys on a light panel with their labels printed UNDER them,
     /// not on them, like a ▷ key with "START" below it. Returns the keys and
