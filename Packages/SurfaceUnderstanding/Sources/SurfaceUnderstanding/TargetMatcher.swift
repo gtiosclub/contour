@@ -103,7 +103,7 @@ public struct TargetMatcher: Sendable {
     /// What to try when the panel doesn't have the key that was asked for.
     /// Pause never falls back to Cancel: Cancel can wipe the time they set.
     private let fallbacks: [String: [String]] = [
-        "stop": ["cancel", "pause"],
+        "stop": ["cancel"],
         "pause": ["stop"],
         "cancel": ["stop"],
     ]
@@ -247,8 +247,13 @@ public struct TargetMatcher: Sendable {
         if asked.count == 1, let alternatives = fallbacks[asked[0]] {
             for alternative in alternatives {
                 let tried = lookup(alternative, in: map)
-                if tried.count == 1 { return TargetMatch(button: tried[0].button, confidence: 0.7) }
                 if tried.count > 1 { return nil }
+                if tried.count == 1 {
+                    // A fallback never lands on a Start key: on an idle
+                    // microwave, pressing it would start cooking.
+                    if (tried[0].button.label.map(words) ?? []).contains("start") { return nil }
+                    return TargetMatch(button: tried[0].button, confidence: 0.7)
+                }
             }
         }
         return nil
