@@ -50,7 +50,8 @@ struct VoiceRequest {
         input.captureSession.startRunning()
         defer { input.captureSession.stopRunning() }
 
-        // Stop listening at the time limit; that ends the results below.
+        // Stop listening at the time limit, or as soon as this task is
+        // cancelled; either ends the results below.
         let deadline = Task {
             try? await Task.sleep(for: timeout)
             await analyzer.cancelAndFinishNow()
@@ -59,14 +60,18 @@ struct VoiceRequest {
 
         var heard = Heard(text: "", button: nil)
         do {
-            for try await result in transcriber.results {
-                let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !text.isEmpty else { continue }
-                heard.text = text
-                if let button = ButtonLookup.button(for: text, in: map) {
-                    heard.button = button
-                    break
+            try await withTaskCancellationHandler {
+                for try await result in transcriber.results {
+                    let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty else { continue }
+                    heard.text = text
+                    if let button = ButtonLookup.button(for: text, in: map) {
+                        heard.button = button
+                        break
+                    }
                 }
+            } onCancel: {
+                deadline.cancel()
             }
         } catch {
             // The analyzer stopping at the time limit can end the results with
