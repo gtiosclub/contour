@@ -11,7 +11,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
     let usesWorldTracking = false
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
-    private var continuations: [UUID: AsyncStream<CameraFrame>.Continuation] = [:]
+    private let frames = CameraFrameHub()
 
     enum CameraError: LocalizedError {
         case permissionDenied, unavailable, exposureControlUnavailable
@@ -37,9 +37,15 @@ nonisolated final class CameraService: NSObject, CameraControl,
             queue.async {
                 do {
                     try self.configure()
-                    if !self.session.isRunning { self.session.startRunning() }
+                    if !self.session.isRunning {
+                        self.frames.begin()
+                        self.session.startRunning()
+                    }
                     continuation.resume()
-                } catch { continuation.resume(throwing: error) }
+                } catch {
+                    self.frames.end()
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -48,8 +54,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
         await withCheckedContinuation { continuation in
             queue.async {
                 if self.session.isRunning { self.session.stopRunning() }
-                self.continuations.values.forEach { $0.finish() }
-                self.continuations.removeAll()
+                self.frames.end()
                 continuation.resume()
             }
         }
@@ -73,19 +78,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
     /// Every subscriber gets its own newest-frame buffer. Cancelling one does
     /// not stop the shared camera or steal another subscriber's frames.
     func cameraFrames() async -> AsyncStream<CameraFrame> {
-        let id = UUID()
-        let pair = AsyncStream<CameraFrame>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        await withCheckedContinuation { continuation in
-            queue.async {
-                self.continuations[id] = pair.continuation
-                continuation.resume()
-            }
-        }
-        pair.continuation.onTermination = { [weak self] _ in
-            guard let self else { return }
-            self.queue.async { self.continuations.removeValue(forKey: id) }
-        }
-        return pair.stream
+        frames.subscribe()
     }
 
     private func configure() throws {
@@ -151,10 +144,12 @@ nonisolated final class CameraService: NSObject, CameraControl,
                        from connection: AVCaptureConnection) {
         guard let buffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         // Convert monotonic capture time to Date without substituting processing time.
-        let age = CMTimeGetSeconds(CMClockGetTime(CMClockGetHostTimeClock()))
-            - CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+        let captureTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds
+        let age = CameraFrameHub.hostTime - captureTime
         let frame = CameraFrame(pixelBuffer: buffer,
                                 timestamp: Date().addingTimeInterval(-age), orientation: .up)
-        continuations.values.forEach { $0.yield(frame) }
+        // A buffer queued before stop() carries an older capture time, so it
+        // is dropped instead of reaching the next run's subscribers.
+        frames.publish(frame, capturedAt: captureTime)
     }
 }
