@@ -38,12 +38,15 @@
 
 import ContourCore
 import Foundation
+import OSLog
 
 /// The real Surface pipeline: panel, then buttons, then labels.
 ///
 /// Conforms to `ContourCore.SurfaceUnderstanding`. Fully qualified because the
 /// module shares the protocol's name — see the note above.
 public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
+
+    private let logger = Logger(subsystem: "edu.gatech.contour", category: "SurfaceScan")
 
     public init() {}
 
@@ -60,8 +63,10 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
     ///   `.underlying` — and `.cancelled` if the task is cancelled later on.
     public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
         var (quad, confidence) = try await PanelDetector().detectPanel(in: photo)
+        logger.info("Panel stage: capture=\(photo.id.uuidString, privacy: .public) pixels=\(photo.pixelSize.width)x\(photo.pixelSize.height) orientation=\(photo.orientation.rawValue, privacy: .public) fullFrame=\(quad == .fullFrame) confidence=\(confidence) quad=\(String(describing: quad), privacy: .public)")
         try checkCancellation()
         var found = try await detectButtons(in: photo, panel: quad)
+        logger.info("Button stage: buttons inside initial panel=\(found.count)")
 
         // No buttons inside the quad usually means the quad is wrong, not that
         // the panel has no buttons. Look across the whole photo instead.
@@ -69,6 +74,7 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             try checkCancellation()
             let wholePhoto = try await detectButtons(in: photo, panel: .fullFrame)
             if !wholePhoto.isEmpty {
+                logger.notice("Using fullFrame fallback: initial panel contained no buttons; whole photo contains \(wholePhoto.count)")
                 quad = .fullFrame
                 // The same confidence PanelDetector gives its own full-frame answer.
                 confidence = min(confidence, 0.6)
@@ -91,6 +97,7 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             SurfaceMap.Button(label: $0.label, bounds: $0.bounds, confidence: 0.5)
         }
         let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
+        logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
 
@@ -102,6 +109,7 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             return try await ButtonDetector().detectButtons(in: photo, panel: panel)
         } catch {
             try checkCancellation()
+            logger.error("Button detection failed: \(String(describing: error), privacy: .public)")
             return []
         }
     }

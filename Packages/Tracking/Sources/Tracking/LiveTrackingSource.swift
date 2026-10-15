@@ -45,14 +45,18 @@ public struct LiveTrackingSource: TrackingSource {
     /// Track the panel and fingertip in `camera`'s frames.
     ///
     /// Frames are `.lost` until `use(_:)` hands over the panel to follow.
+    /// `onSample` optionally receives the exact input image and observations
+    /// behind each emitted frame. It runs on the tracking actor; consumers
+    /// should enqueue samples promptly rather than perform rendering here.
     public init(
         camera: any CameraFrameSource,
-        panelTracker: PanelTracker = PanelTracker(),
+        panelTracker: any PanelTracking = PanelTracker(),
         fingertipTracker: FingertipTracker = FingertipTracker(),
-        evaluator: TrackingQualityEvaluator = TrackingQualityEvaluator()
+        evaluator: TrackingQualityEvaluator = TrackingQualityEvaluator(),
+        onSample: (@Sendable (LiveTrackingSample) -> Void)? = nil
     ) {
         engine = Engine(camera: camera, panelTracker: panelTracker,
-                        fingertipTracker: fingertipTracker, evaluator: evaluator)
+                        fingertipTracker: fingertipTracker, evaluator: evaluator, onSample: onSample)
     }
 
     /// The panel to follow, from Surface Understanding's detection. Replaces any
@@ -60,6 +64,12 @@ public struct LiveTrackingSource: TrackingSource {
     public func use(_ reference: PanelReference) async {
         await engine?.use(reference)
     }
+
+    /// Registration failure for the current reference, if initialization failed.
+    /// Cleared by the next reference handoff. No camera ownership is transferred.
+    public func registrationError() async -> PanelTrackingError? { await engine?.registrationError() }
+
+    public func hybridStatus() async -> HybridTrackingDiagnostics? { await engine?.hybridStatus() }
 
     /// Start tracking and return the stream of frames.
     ///
@@ -97,9 +107,10 @@ private actor Engine {
     }
 
     private let camera: any CameraFrameSource
-    private let panelTracker: PanelTracker
+    private let panelTracker: any PanelTracking
     private let fingertipTracker: FingertipTracker
     private let evaluator: TrackingQualityEvaluator
+    private let onSample: (@Sendable (LiveTrackingSample) -> Void)?
 
     private var panel = Panel.none
     /// The last panel handed over, so a new stream can start from it.
@@ -109,13 +120,22 @@ private actor Engine {
     private var generation = 0
     private var previous: TrackingObservation?
     private var smoothed: PanelPoint?
+    private var initializationFailure: PanelTrackingError?
+    private var sampleQuad: PanelQuad?
+    private var sampleTip: ImagePoint?
+    private var sampleAssessment: TrackingAssessment?
+    private var panelStatus: PanelObservation.Status?
+    private var featureDiagnostics: FeatureTrackingDiagnostics?
+    private var hybridDiagnostics: HybridTrackingDiagnostics?
 
-    init(camera: any CameraFrameSource, panelTracker: PanelTracker,
-         fingertipTracker: FingertipTracker, evaluator: TrackingQualityEvaluator) {
+    init(camera: any CameraFrameSource, panelTracker: any PanelTracking,
+         fingertipTracker: FingertipTracker, evaluator: TrackingQualityEvaluator,
+         onSample: (@Sendable (LiveTrackingSample) -> Void)?) {
         self.camera = camera
         self.panelTracker = panelTracker
         self.fingertipTracker = fingertipTracker
         self.evaluator = evaluator
+        self.onSample = onSample
     }
 
     func cameraFrames() async -> AsyncStream<CameraFrame> {
@@ -128,7 +148,13 @@ private actor Engine {
         panel = .waiting(reference)
         previous = nil
         smoothed = nil
+        initializationFailure = nil
+        panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
     }
+
+    func registrationError() -> PanelTrackingError? { initializationFailure }
+
+    func hybridStatus() -> HybridTrackingDiagnostics? { hybridDiagnostics }
 
     /// Each guidance session starts fresh from the panel, not from wherever
     /// the last session left off.
@@ -137,6 +163,22 @@ private actor Engine {
     }
 
     func process(_ frame: CameraFrame) async -> TrackingFrame {
+        let session = generation
+        sampleQuad = nil
+        sampleTip = nil
+        sampleAssessment = nil
+        panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
+        let result = await processFrame(frame)
+        guard generation == session, !Task.isCancelled else { return .lost(at: frame.timestamp) }
+        onSample?(LiveTrackingSample(cameraFrame: frame, frame: result,
+            panelQuad: sampleQuad, imageFingertip: sampleTip, assessment: sampleAssessment,
+            registrationError: initializationFailure, panelStatus: panelStatus,
+            featureDiagnostics: featureDiagnostics, hybridDiagnostics: hybridDiagnostics))
+        return result
+    }
+
+    private func processFrame(_ frame: CameraFrame) async -> TrackingFrame {
+        let frameGeneration = generation
         switch panel {
         case .none, .unusable:
             return lost(frame)
@@ -148,7 +190,10 @@ private actor Engine {
                 guard generation == handOver else { return lost(frame) }
                 panel = .tracking
             } catch let error as PanelTrackingError where error.meansUnusablePanel {
-                if generation == handOver { panel = .unusable }
+                if generation == handOver {
+                    panel = .unusable
+                    initializationFailure = error
+                }
                 return lost(frame)
             } catch {
                 // Cancelled or superseded: try again on the next frame.
@@ -164,12 +209,17 @@ private actor Engine {
         } catch {
             return lost(frame)
         }
+        guard generation == frameGeneration, !Task.isCancelled else { return .lost(at: frame.timestamp) }
+        panelStatus = observation.status
+        featureDiagnostics = observation.featureDiagnostics
+        hybridDiagnostics = observation.hybridDiagnostics
         guard observation.status == .tracked, let quad = observation.quad,
               let homography = try? PanelHomography(quad: quad) else {
             return lost(frame)
         }
 
         let tip = try? await fingertipTracker.detect(in: frame)
+        guard generation == frameGeneration, !Task.isCancelled else { return .lost(at: frame.timestamp) }
         let fingertip = smooth(tip?.fingertip.flatMap { homography.panelPoint(for: $0) })
 
         let rated = TrackingObservation(
@@ -180,7 +230,13 @@ private actor Engine {
         )
         let assessment = evaluator.assess(rated, previous: previous, asOf: Date())
         previous = rated
-        guard assessment.quality != .lost else { return lost(frame) }
+        sampleAssessment = assessment
+        guard assessment.quality != .lost else {
+            hybridDiagnostics?.source = .unavailable
+            return lost(frame)
+        }
+        sampleQuad = quad
+        sampleTip = tip?.fingertip
 
         return TrackingFrame(
             timestamp: frame.timestamp,

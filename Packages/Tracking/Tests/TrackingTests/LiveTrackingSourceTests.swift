@@ -19,9 +19,44 @@ import UniformTypeIdentifiers
 @Suite("Live tracking stream")
 struct LiveTrackingSourceTests {
 
+    @Test("Production live tracking rejects an already stale capture")
+    func staleCaptureIsLost() async throws {
+        let samples = SampleStore()
+        // Use the production evaluator here: capture age, rather than machine
+        // execution speed, is the input this test intentionally exercises.
+        let source = LiveTrackingSource(camera: FakeCamera(count: 1, timestampOffset: -2),
+            panelTracker: scriptedPanel(), fingertipTracker: scriptedFingertip(),
+            onSample: { samples.append($0) })
+        await source.use(try reference())
+        let frame = try #require(await collect(source.frames()).first)
+        #expect(frame.trackingQuality == .lost)
+        #expect(frame.fingertip == nil)
+        #expect(samples.values.first?.assessment?.reason == .stale)
+    }
+
+    @Test("Visual samples use the same frame and geometry as emitted tracking")
+    func visualSamplesMatchTrackingFrames() async throws {
+        let samples = SampleStore()
+        let source = scriptedSource(camera: FakeCamera(count: 3),
+            panelTracker: scriptedPanel(lostOnFrame: 1), fingertipTracker: scriptedFingertip(),
+            onSample: { samples.append($0) })
+        await source.use(try reference())
+        let frames = await collect(source.frames())
+        let snapshots = samples.values
+        #expect(snapshots.count == 3)
+        guard snapshots.count == 3 else { return }
+        #expect(snapshots.map(\.frame.timestamp) == frames.map(\.timestamp))
+        #expect(snapshots.allSatisfy { $0.cameraFrame.timestamp == $0.frame.timestamp })
+        #expect(snapshots[0].panelQuad == square)
+        #expect(snapshots[0].imageFingertip == ImagePoint(x: 0.5, y: 0.5))
+        #expect(snapshots[0].assessment?.quality == .good)
+        #expect(snapshots[1].panelQuad == nil)
+        #expect(snapshots[1].frame.fingertip == nil)
+    }
+
     @Test("Before a panel is handed over, every frame is lost and none are dropped")
     func lostUntilThereIsAPanel() async throws {
-        let source = LiveTrackingSource(camera: FakeCamera(count: 3), panelTracker: scriptedPanel(),
+        let source = scriptedSource(camera: FakeCamera(count: 3), panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip())
 
         let frames = await collect(source.frames())
@@ -34,7 +69,7 @@ struct LiveTrackingSourceTests {
     func fingertipLandsOnThePanel() async throws {
         // The panel fills the middle half of the image, and the fingertip is at
         // the image's centre, so it's at the panel's centre.
-        let source = LiveTrackingSource(camera: FakeCamera(count: 2), panelTracker: scriptedPanel(),
+        let source = scriptedSource(camera: FakeCamera(count: 2), panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip(x: 0.5, visionY: 0.5))
         await source.use(try reference())
 
@@ -53,7 +88,7 @@ struct LiveTrackingSourceTests {
     func fingertipYIsFlipped() async throws {
         // Vision y 0.7 (up) is image y 0.3 (down): a tenth of the image above the
         // panel's centre, which is a fifth of the panel's height above it.
-        let source = LiveTrackingSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
+        let source = scriptedSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip(x: 0.5, visionY: 0.7))
         await source.use(try reference())
 
@@ -64,7 +99,7 @@ struct LiveTrackingSourceTests {
 
     @Test("No finger in view is degraded, with no fingertip")
     func noFingerIsDegraded() async throws {
-        let source = LiveTrackingSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
+        let source = scriptedSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip(present: false))
         await source.use(try reference())
 
@@ -76,9 +111,9 @@ struct LiveTrackingSourceTests {
 
     @Test("Losing the panel is a lost frame, and the stream keeps going")
     func lostPanelIsLost() async throws {
-        let source = LiveTrackingSource(camera: FakeCamera(count: 3),
+        let source = scriptedSource(camera: FakeCamera(count: 3),
                                         panelTracker: scriptedPanel(lostOnFrame: 1),
-                                        fingertipTracker: scriptedFingertip())
+                                        fingertipTracker: scriptedFingertip(delay: .milliseconds(200)))
         await source.use(try reference())
 
         let frames = await collect(source.frames())
@@ -90,7 +125,7 @@ struct LiveTrackingSourceTests {
     @Test("Stopping the consumer releases the camera")
     func cancellingReleasesTheCamera() async throws {
         let camera = FakeCamera(count: nil)
-        let source = LiveTrackingSource(camera: camera, panelTracker: scriptedPanel(),
+        let source = scriptedSource(camera: camera, panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip())
         let consumer = Task { for await _ in source.frames() {} }
         try await Task.sleep(for: .milliseconds(50))
@@ -112,12 +147,14 @@ struct LiveTrackingSourceTests {
                 return up(square)
             }
         }
-        let source = LiveTrackingSource(camera: FakeCamera(count: 2), panelTracker: tracker,
+        let source = scriptedSource(camera: FakeCamera(count: 2), panelTracker: tracker,
                                         fingertipTracker: scriptedFingertip())
         await source.use(try reference())
         #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .lost })
+        #expect(await source.registrationError() == .registrationFailed)
 
         await source.use(try reference())
+        #expect(await source.registrationError() == nil)
         #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .good })
     }
 
@@ -130,7 +167,7 @@ struct LiveTrackingSourceTests {
                 return up(square)
             }
         }
-        let source = LiveTrackingSource(camera: FakeCamera(count: 2), panelTracker: tracker,
+        let source = scriptedSource(camera: FakeCamera(count: 2), panelTracker: tracker,
                                         fingertipTracker: scriptedFingertip())
         await source.use(try reference())
 
@@ -142,6 +179,25 @@ struct LiveTrackingSourceTests {
         #expect(registrations.next() == 4)
     }
 
+    @Test("Replacing the reference while fingertip detection runs discards the old point")
+    func replacementDiscardsInFlightFingertip() async throws {
+        let gate = DetectionGate()
+        let source = scriptedSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
+            fingertipTracker: FingertipTracker { _ in
+                await gate.pause()
+                return FingertipJoint(x: 0.5, y: 0.5, confidence: 0.9)
+            })
+        await source.use(try reference())
+        let consumer = Task { await collect(source.frames()) }
+        await gate.waitUntilPaused()
+        await source.use(try reference())
+        await gate.resume()
+        let frames = await consumer.value
+        #expect(frames.count == 1)
+        #expect(frames.first?.fingertip == nil)
+        #expect(frames.first?.trackingQuality == .lost)
+    }
+
     @Test("A source with no camera finishes straight away")
     func noCameraFinishes() async {
         #expect(await collect(LiveTrackingSource().frames()).isEmpty)
@@ -149,6 +205,20 @@ struct LiveTrackingSourceTests {
 }
 
 // MARK: - Fakes
+
+/// Scripted geometry/confidence tests do not assert the runner's speed.
+/// Keep all other quality checks; production age handling is covered above
+/// and deterministically at its thresholds in TrackingQualityTests.
+private func scriptedSource(camera: any CameraFrameSource, panelTracker: PanelTracker,
+                            fingertipTracker: FingertipTracker,
+                            onSample: (@Sendable (LiveTrackingSample) -> Void)? = nil) -> LiveTrackingSource {
+    var thresholds = TrackingQualityThresholds()
+    thresholds.staleDegraded = .infinity
+    thresholds.staleLost = .infinity
+    return LiveTrackingSource(camera: camera, panelTracker: panelTracker,
+        fingertipTracker: fingertipTracker, evaluator: TrackingQualityEvaluator(thresholds: thresholds),
+        onSample: onSample)
+}
 
 private let square = PanelQuad(
     topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
@@ -160,20 +230,25 @@ private func collect(_ stream: AsyncStream<TrackingFrame>) async -> [TrackingFra
     return frames
 }
 
-/// Emits `count` frames stamped as they're sent (so nothing reads as stale),
+/// Emits `count` frames stamped as they're sent, with an optional age offset,
 /// or keeps emitting until cancelled when `count` is nil.
 private final class FakeCamera: CameraFrameSource, @unchecked Sendable {
     let count: Int?
+    let timestampOffset: TimeInterval
     let released = Flag()
-    init(count: Int?) { self.count = count }
+    init(count: Int?, timestampOffset: TimeInterval = 0) {
+        self.count = count
+        self.timestampOffset = timestampOffset
+    }
 
     func cameraFrames() async -> AsyncStream<CameraFrame> {
-        let count = count, released = released
+        let count = count, released = released, timestampOffset = timestampOffset
         return AsyncStream { continuation in
             let task = Task {
                 var index = 0
                 while count.map({ index < $0 }) ?? true, !Task.isCancelled {
-                    continuation.yield(CameraFrame(pixelBuffer: pixelBuffer(), timestamp: Date()))
+                    continuation.yield(CameraFrame(pixelBuffer: pixelBuffer(),
+                        timestamp: Date().addingTimeInterval(timestampOffset)))
                     index += 1
                     // Spaced like a camera. The stream keeps only the newest
                     // frame for a slow consumer, so a burst would skip some.
@@ -232,8 +307,12 @@ private final class ScriptedRectangles: RectangleTracking {
 }
 
 /// A fingertip at Vision's normalized (x, y-up), confidence 0.9.
-private func scriptedFingertip(x: Double = 0.5, visionY: Double = 0.5, present: Bool = true) -> FingertipTracker {
-    FingertipTracker { _ in present ? FingertipJoint(x: x, y: visionY, confidence: 0.9) : nil }
+private func scriptedFingertip(x: Double = 0.5, visionY: Double = 0.5, present: Bool = true,
+                              delay: Duration = .zero) -> FingertipTracker {
+    FingertipTracker { _ in
+        if delay > .zero { try await Task.sleep(for: delay) }
+        return present ? FingertipJoint(x: x, y: visionY, confidence: 0.9) : nil
+    }
 }
 
 /// A decodable reference whose quad is `square`.
@@ -250,4 +329,31 @@ private func reference() throws -> PanelReference {
                            timestamp: Date(timeIntervalSince1970: 0))
     return try PanelReference(photo: photo, detection: PanelDetection(
         referencePhotoID: photo.id, quad: square, map: MockSurfaceMaps.microwave))
+}
+
+private actor DetectionGate {
+    private var paused = false
+    private var entered: CheckedContinuation<Void, Never>?
+    private var release: CheckedContinuation<Void, Never>?
+    func pause() async {
+        paused = true
+        entered?.resume()
+        entered = nil
+        await withCheckedContinuation { release = $0 }
+    }
+    func waitUntilPaused() async {
+        if paused { return }
+        await withCheckedContinuation { entered = $0 }
+    }
+    func resume() {
+        release?.resume()
+        release = nil
+    }
+}
+
+private final class SampleStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var samples: [LiveTrackingSample] = []
+    func append(_ sample: LiveTrackingSample) { lock.withLock { samples.append(sample) } }
+    var values: [LiveTrackingSample] { lock.withLock { samples } }
 }

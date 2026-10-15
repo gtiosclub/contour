@@ -15,6 +15,7 @@
 		C0470002000000000000002D /* ContourMocks in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000019 /* ContourMocks */; };
 		C04700020000000000000050 /* ContourCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003C /* ContourCore */; };
 		C04700020000000000000051 /* ContourMocks in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003D /* ContourMocks */; };
+		C04700020000000000000052 /* Tracking in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003E /* Tracking */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -66,6 +67,7 @@
 			files = (
 				C04700020000000000000050 /* ContourCore in Frameworks */,
 				C04700020000000000000051 /* ContourMocks in Frameworks */,
+				C04700020000000000000052 /* Tracking in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -142,6 +144,7 @@
 			packageProductDependencies = (
 				C0470002000000000000003C /* ContourCore */,
 				C0470002000000000000003D /* ContourMocks */,
+				C0470002000000000000003E /* Tracking */,
 			);
 			productName = ContourTests;
 			productReference = 14A1806530536BAD00FEEF08 /* ContourTests.xctest */;
@@ -586,6 +589,10 @@
 		C0470002000000000000003D /* ContourMocks */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ContourMocks;
+		};
+		C0470002000000000000003E /* Tracking */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Tracking;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

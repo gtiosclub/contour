@@ -60,11 +60,6 @@ func mockPanelIsMatchable() {
             "every button in the canned panel should be labelled")
 }
 
-@Test("the test set starts empty and is waiting for Week 2 labels")
-func testSetIsEmptyForNow() {
-    #expect(TestSet.samples.isEmpty, "add a LabelledSample per hand-labelled photo")
-}
-
 @Test("a full-frame quad covers the unit square")
 func fullFrameQuad() {
     #expect(PanelQuad.fullFrame.topLeft == ImagePoint(x: 0, y: 0))
