@@ -62,6 +62,32 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
     ///   `PanelDetector` — `.undecodableImage`, `.noPanelFound`, `.cancelled`, or
     ///   `.underlying` — and `.cancelled` if the task is cancelled later on.
     public func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
+#if DEBUG && os(iOS)
+        let started = ContinuousClock.now
+        do {
+            let detection = try await scan(photo)
+            await record(
+                photo,
+                detection: detection,
+                seconds: started.duration(to: .now).seconds,
+                error: nil
+            )
+            return detection
+        } catch {
+            await record(
+                photo,
+                detection: nil,
+                seconds: started.duration(to: .now).seconds,
+                error: String(reflecting: error)
+            )
+            throw error
+        }
+#else
+        return try await scan(photo)
+#endif
+    }
+
+    private func scan(_ photo: PanelPhoto) async throws -> PanelDetection {
         var (quad, confidence) = try await PanelDetector().detectPanel(in: photo)
         logger.info("Panel stage: capture=\(photo.id.uuidString, privacy: .public) pixels=\(photo.pixelSize.width)x\(photo.pixelSize.height) orientation=\(photo.orientation.rawValue, privacy: .public) fullFrame=\(quad == .fullFrame) confidence=\(confidence) quad=\(String(describing: quad), privacy: .public)")
         try checkCancellation()
@@ -100,6 +126,26 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
+
+#if DEBUG && os(iOS)
+    private func record(
+        _ photo: PanelPhoto,
+        detection: PanelDetection?,
+        seconds: Double,
+        error: String?
+    ) async {
+        do {
+            try await ScanRecorder.shared.record(
+                photo: photo,
+                detection: detection,
+                seconds: seconds,
+                error: error
+            )
+        } catch {
+            logger.error("Could not record scan: \(String(reflecting: error), privacy: .public)")
+        }
+    }
+#endif
 
     /// Buttons inside `panel`. A failure here (Vision's own errors aren't
     /// `SurfaceUnderstandingError`s) means no buttons found, not no answer:
@@ -147,3 +193,12 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         if Task.isCancelled { throw SurfaceUnderstandingError.cancelled }
     }
 }
+
+#if DEBUG && os(iOS)
+private extension Duration {
+    var seconds: Double {
+        let parts = components
+        return Double(parts.seconds) + Double(parts.attoseconds) / 1e18
+    }
+}
+#endif
