@@ -60,6 +60,35 @@ struct TrackingDebugView: View {
                     .font(.caption).foregroundStyle(.secondary)
                 Text("The green fingertip can remain visible when the panel is lost. Target distance and guidance still require usable panel tracking.")
                     .font(.caption).foregroundStyle(.secondary)
+                Picker("Tracking method", selection: Binding(
+                    get: { pipeline.trackingMethod },
+                    set: { requestSettings(method: $0, options: pipeline.featureOptions) }
+                )) {
+                    ForEach(PanelTrackingMethod.allCases, id: \.self) { method in
+                        Text(method.rawValue).tag(method)
+                    }
+                }
+                Toggle("Exclude bright highlights", isOn: Binding(
+                    get: { pipeline.featureOptions.excludeHighlights },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.excludeHighlights = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                Toggle("Enhance contrast", isOn: Binding(
+                    get: { pipeline.featureOptions.normalizeContrast },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.normalizeContrast = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                if let trackingError = pipeline.trackingError {
+                    Text(trackingError).foregroundStyle(.red)
+                }
+                Text("Guidance and Diagnostics use the same settings with separate tracking sessions.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tracking overlay", isOn: $showOverlay)
                 Button(capturing ? "Capturing…" : "Capture manual panel and target") { capturePanel() }
                     .buttonStyle(.borderedProminent).disabled(capturing)
@@ -156,6 +185,10 @@ struct TrackingDebugView: View {
         model.clearDisplayedResults()
         manualReference.replace(with: reference)
         manualReference.selectTarget(reference.detection.map.buttons.first?.id)
+    }
+
+    private func requestSettings(method: PanelTrackingMethod, options: FeatureTrackingOptions) {
+        pipeline.requestTrackingSettings(method: method, options: options)
     }
 
     private func capturePanel() {
