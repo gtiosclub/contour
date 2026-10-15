@@ -63,11 +63,20 @@ nonisolated final class CameraFrameHub: Sendable {
     /// Delivers `frame` if it was captured during the current generation.
     @discardableResult
     func publish(_ frame: CameraFrame, capturedAt captureTime: TimeInterval) -> Bool {
-        let targets = state.withLock { state -> [AsyncStream<CameraFrame>.Continuation]? in
+        publish(capturedAt: captureTime) { _ in frame }
+    }
+
+    /// Builds the frame only once it is known to belong to the current
+    /// generation, so world data is stamped with that generation's identity.
+    @discardableResult
+    func publish(capturedAt captureTime: TimeInterval, _ makeFrame: (Generation) -> CameraFrame) -> Bool {
+        let accepted = state.withLock { state -> (Generation, [AsyncStream<CameraFrame>.Continuation])? in
             guard let generation = state.generation, captureTime >= generation.startTime else { return nil }
-            return Array(state.subscribers.values)
+            return (generation, Array(state.subscribers.values))
         }
-        guard let targets else { return false }
+        guard let (generation, targets) = accepted else { return false }
+        // If end() races this, those streams are already finished and drop it.
+        let frame = makeFrame(generation)
         targets.forEach { $0.yield(frame) }
         return true
     }

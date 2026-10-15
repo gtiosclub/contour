@@ -1,17 +1,32 @@
+import ARKit
 import AVFoundation
 import Foundation
 import Tracking
 
 /// Session mutations and delegate callbacks are confined to `queue`.
 /// `session` is exposed only for attaching a preview layer on the main actor.
+///
+/// With world tracking, ARKit owns the camera instead and `session` never runs,
+/// so its preview layer stays black until the preview draws from frames.
 nonisolated final class CameraService: NSObject, CameraControl,
-    AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
+    AVCaptureVideoDataOutputSampleBufferDelegate, ARSessionDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
     let status = CameraStatus()
-    let usesWorldTracking = false
+    let usesWorldTracking: Bool
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
     private let frames = CameraFrameHub()
+    private let arSession = ARSession()
+    private var arRunning = false
+
+    /// World tracking is opt-in and falls back to AVFoundation on devices
+    /// without ARWorldTrackingConfiguration support.
+    init(worldTracking: Bool = false) {
+        usesWorldTracking = worldTracking && ARWorldTrackingConfiguration.isSupported
+        super.init()
+        arSession.delegate = self
+        arSession.delegateQueue = queue
+    }
 
     enum CameraError: LocalizedError {
         case permissionDenied, unavailable, exposureControlUnavailable
@@ -36,6 +51,11 @@ nonisolated final class CameraService: NSObject, CameraControl,
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 do {
+                    if self.usesWorldTracking {
+                        self.startWorldTracking()
+                        continuation.resume()
+                        return
+                    }
                     try self.configure()
                     if !self.session.isRunning {
                         self.frames.begin()
@@ -54,6 +74,10 @@ nonisolated final class CameraService: NSObject, CameraControl,
         await withCheckedContinuation { continuation in
             queue.async {
                 if self.session.isRunning { self.session.stopRunning() }
+                if self.arRunning {
+                    self.arSession.pause()
+                    self.arRunning = false
+                }
                 self.frames.end()
                 continuation.resume()
             }
@@ -79,6 +103,17 @@ nonisolated final class CameraService: NSObject, CameraControl,
     /// not stop the shared camera or steal another subscriber's frames.
     func cameraFrames() async -> AsyncStream<CameraFrame> {
         frames.subscribe()
+    }
+
+    /// Every run resets tracking, so world coordinates restart from scratch
+    /// and the new generation's identity marks that change.
+    private func startWorldTracking() {
+        guard !arRunning else { return }
+        let configuration = ARWorldTrackingConfiguration()
+        configuration.isAutoFocusEnabled = true
+        frames.begin()
+        arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+        arRunning = true
     }
 
     private func configure() throws {
@@ -151,5 +186,31 @@ nonisolated final class CameraService: NSObject, CameraControl,
         // A buffer queued before stop() carries an older capture time, so it
         // is dropped instead of reaching the next run's subscribers.
         frames.publish(frame, capturedAt: captureTime)
+    }
+
+    func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        // ARFrame.timestamp uses the same host clock as sample buffers.
+        let age = CameraFrameHub.hostTime - frame.timestamp
+        let camera = frame.camera
+        let normalTracking = if case .normal = camera.trackingState { true } else { false }
+        frames.publish(capturedAt: frame.timestamp) { generation in
+            // Pose and intrinsics describe these exact pixels in their native
+            // landscape orientation; `.right` turns them upright.
+            let world = WorldCameraSnapshot(
+                sessionID: generation.id,
+                cameraToWorld: camera.transform,
+                intrinsics: camera.intrinsics,
+                imageSize: SIMD2(Float(camera.imageResolution.width), Float(camera.imageResolution.height)),
+                normalTracking: normalTracking,
+                planes: [])
+            return CameraFrame(pixelBuffer: frame.capturedImage,
+                               timestamp: Date().addingTimeInterval(-age), orientation: .right, world: world)
+        }
+    }
+
+    func session(_ session: ARSession, didFailWithError error: Error) {
+        arRunning = false
+        frames.end()
+        Task { @MainActor in self.status.error = error.localizedDescription }
     }
 }

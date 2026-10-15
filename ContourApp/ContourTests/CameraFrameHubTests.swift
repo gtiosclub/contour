@@ -1,6 +1,8 @@
 import CoreVideo
 import Foundation
+import ImageIO
 import Testing
+import simd
 import Tracking
 @testable import ContourApp
 
@@ -63,6 +65,21 @@ struct CameraFrameHubTests {
         let second = hub.begin(at: 5)
         #expect(first.id != second.id)
         #expect(hub.current == second)
+    }
+
+    @Test("World data is stamped with the current run's identity")
+    func worldFramesCarryRunIdentity() async throws {
+        let hub = CameraFrameHub()
+        let run = hub.begin(at: 0)
+        var frames = hub.subscribe().makeAsyncIterator()
+        let pixels = try frame(at: 1).pixelBuffer
+        hub.publish(capturedAt: 1) { generation in
+            let world = WorldCameraSnapshot(sessionID: generation.id, cameraToWorld: matrix_identity_float4x4,
+                intrinsics: matrix_identity_float3x3, imageSize: SIMD2(4, 4), normalTracking: true, planes: [])
+            return CameraFrame(pixelBuffer: pixels, timestamp: Date(timeIntervalSince1970: 1),
+                               orientation: .right, world: world)
+        }
+        #expect(await frames.next()?.world?.sessionID == run.id)
     }
 
     private func frame(at time: TimeInterval) throws -> CameraFrame {
