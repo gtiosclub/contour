@@ -128,12 +128,50 @@ func neat1ReadingOrder() {
 }
 @Test("Words with close vertical centres stay on one line")
 func closeVerticalCentresStayOnOneLine() {
-    let words = [
-        word("Start", x: 0.10, y: 0.5000, width: 0.07, height: 0.012),
-        word("Pause", x: 0.175, y: 0.5059, width: 0.07, height: 0.012)
-    ]
+    let start = word("Start", x: 0.10, y: 0.5059, width: 0.07, height: 0.012)
+        let pause = word("Pause", x: 0.175, y: 0.5000, width: 0.07, height: 0.012)
 
-    let buttons = LabelReader.textButtons(from: words)
-
-    #expect(buttons.map(\.label) == ["Start Pause"])
+        #expect(
+            LabelReader.readingOrder([pause, start]).map(\.text)
+                == ["Start", "Pause"]
+        )
 }
+@Test("a clock and words inside its display are removed, but Express Cook stays")
+func clockDisplayWordsAreRemoved() {
+    let clock = word("300", x: 0.40, y: 0.20, width: 0.16, height: 0.056)
+    let displayStart = word("Start", x: 0.52, y: 0.235, width: 0.06, height: 0.012)
+    let express = word("Express", x: 0.40, y: 0.30, width: 0.08, height: 0.018)
+    let cook = word("Cook", x: 0.49, y: 0.30, width: 0.05, height: 0.018)
+
+    let remaining = LabelReader.removingClockWords(
+        from: [clock, displayStart, express, cook]
+    )
+
+    #expect(remaining.map(\.text) == ["Express", "Cook"])
+    #expect(LabelReader.textButtons(from: remaining).map(\.label) == ["Express Cook"])
+}
+
+@Test("a long barcode is not mistaken for a clock")
+func barcodeIsNotAClock() {
+    let barcode = word("0000017272", x: 0.30, y: 0.10, width: 0.20, height: 0.056)
+    let start = word("Start", x: 0.40, y: 0.20)
+
+    let remaining = LabelReader.removingClockWords(from: [barcode, start])
+
+    #expect(remaining.count == 2)
+    #expect(remaining.contains(where: { $0.text == "0000017272" }))
+    #expect(remaining.contains(where: { $0.text == "Start" }))
+}
+
+@Test("words outside the clock columns remain")
+func wordsOutsideClockColumnsRemain() {
+    let clock = word("3:00", x: 0.40, y: 0.20, width: 0.16, height: 0.056)
+    let pizza = word("Pizza", x: 0.20, y: 0.22, height: 0.018)
+    let potato = word("Potato", x: 0.62, y: 0.22, height: 0.018)
+
+    let remaining = LabelReader.removingClockWords(from: [clock, pizza, potato])
+
+    #expect(remaining.map(\.text).sorted() == ["Pizza", "Potato"])
+}
+
+

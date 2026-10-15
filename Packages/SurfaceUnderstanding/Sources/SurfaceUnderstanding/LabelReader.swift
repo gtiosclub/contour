@@ -19,12 +19,12 @@ import Vision
 
 /// Stage 3 — read the labels.
 public struct LabelReader: Sendable {
-    
+
     typealias Recognizer = @Sendable (CGImage, RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation]
     var recognizer: Recognizer = LabelReader.recognize
     public init() {}
     init(recognizer: @escaping Recognizer) { self.recognizer = recognizer }
-    
+
     /// Read the text inside each of `regions` on the rectified panel.
     ///
     /// Text is assigned word by word: each word goes to the region that
@@ -45,7 +45,7 @@ public struct LabelReader: Sendable {
     ) async throws -> [String?] {
         try await read(in: photo, panel: panel, regions: regions).labels
     }
-    
+
     /// The labels for `regions`, plus the text that belongs to none of them.
     struct Reading {
         var labels: [String?]
@@ -57,12 +57,12 @@ public struct LabelReader: Sendable {
         /// keys, not a key. Their words went to `textButtons` instead.
         var frames: Set<Int> = []
     }
-    
+
     /// One pass of text recognition, shared by the labels and the text-only
     /// buttons.
     func read(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> Reading {
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
-        
+
         let image = try photo.cgImage()
         // On macOS/iOS 27 the neural model behind `.accurate` sometimes
         // fails to load (e5rtError, "precompiled compute operation"), and
@@ -79,7 +79,7 @@ public struct LabelReader: Sendable {
             }
             throw SurfaceUnderstandingError.underlying(error.localizedDescription)
         }
-        
+
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
         
         let words = locateWords(in: observations, panel: panel)
@@ -90,7 +90,7 @@ public struct LabelReader: Sendable {
             frames: assigned.frames
         )
     }
-    
+
     static func recognize(_ image: CGImage, level: RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation] {
         var request = RecognizeTextRequest()
         request.recognitionLevel = level
@@ -98,7 +98,7 @@ public struct LabelReader: Sendable {
         request.minimumTextHeightFraction = 0
         return try await request.perform(on: image)
     }
-    
+
     /// .accurate if it answers within `budget`, otherwise .fast.
     static func recognizeText(in image: CGImage, budget: Duration = .seconds(2),
                               using recognize: @escaping Recognizer = LabelReader.recognize) async throws -> [RecognizedTextObservation] {
@@ -115,9 +115,9 @@ public struct LabelReader: Sendable {
         try Task.checkCancellation()
         return try await recognize(image, .fast)
     }
-    
+
     // MARK: - Words
-    
+
     /// One recognised word, placed in panel space (y down).
     struct Word: Equatable {
         let text: String
@@ -125,11 +125,11 @@ public struct LabelReader: Sendable {
         let right: Double
         let top: Double
         let bottom: Double
-        
+    
         var centre: PanelPoint { PanelPoint(x: (left + right) / 2, y: (top + bottom) / 2) }
         var height: Double { bottom - top }
     }
-    
+
     /// Every word Vision read, with its box in panel space.
     ///
     /// Uses the word's own box when Vision can give one, and falls back to the
@@ -137,11 +137,11 @@ public struct LabelReader: Sendable {
     func locateWords(in observations: [RecognizedTextObservation], panel: PanelQuad) -> [Word] {
         let detector = PanelDetector()
         var words: [Word] = []
-        
+
         for observation in observations {
             guard let candidate = observation.topCandidates(1).first else { continue }
             let text = candidate.string
-            
+
             for token in text.split(whereSeparator: \.isWhitespace) {
                 let range = token.startIndex..<token.endIndex
                 let box = (candidate.boundingBox(for: range))?.boundingBox.cgRect
@@ -153,7 +153,7 @@ public struct LabelReader: Sendable {
                     (box.minX, box.minY), (box.maxX, box.minY),
                     (box.minX, box.maxY), (box.maxX, box.maxY),
                 ].map { detector.rectify(ImagePoint(x: $0.0, y: 1 - $0.1), within: panel) }
-                
+
                 words.append(Word(
                     text: String(token),
                     left: corners.map(\.x).min() ?? .nan,
@@ -165,9 +165,9 @@ public struct LabelReader: Sendable {
         }
         return words
     }
-    
+
     // MARK: - Assigning words to keys
-    
+
     /// Each region's label, and the words no region took.
     ///
     /// First every word goes to the region containing its centre. A region
@@ -180,7 +180,7 @@ public struct LabelReader: Sendable {
     static func assign(_ words: [Word], to regions: [PanelRect]) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
         var taken = Array(repeating: [Word](), count: regions.count)
         var unused: [Word] = []
-        
+
         for word in words {
             if let index = regions.firstIndex(where: { $0.contains(word.centre) }) {
                 taken[index].append(word)
@@ -188,25 +188,25 @@ public struct LabelReader: Sendable {
                 unused.append(word)
             }
         }
-        
+
         var frames = Set<Int>()
         for index in regions.indices where groups(of: taken[index]).count > 1 {
             frames.insert(index)
             unused += taken[index]
             taken[index] = []
         }
-        
+
         // A box whose one word fills most of it is that word, not a key.
         func hugsItsWord(_ index: Int) -> Bool {
             guard taken[index].count == 1, let word = taken[index].first else { return false }
             let wordArea = (word.right - word.left) * (word.bottom - word.top)
             return wordArea >= regions[index].width * regions[index].height * 0.4
         }
-        
+
         for (index, region) in regions.enumerated() where taken[index].isEmpty && !frames.contains(index) {
             let wordBoxes = regions.indices.filter { $0 != index && !frames.contains($0) && hugsItsWord($0) }
             let candidates = unused + wordBoxes.flatMap { taken[$0] }
-            
+
             let slack = region.width * 0.25
             let below = candidates.filter { word in
                 word.centre.x >= region.minX - slack && word.centre.x <= region.maxX + slack
@@ -222,13 +222,13 @@ public struct LabelReader: Sendable {
                 taken[box] = []
             }
         }
-        
+
         let labels = taken.map { words in
             words.isEmpty ? nil : readingOrder(words).map(\.text).joined(separator: " ")
         }
         return (labels, unused, frames)
     }
-    
+
     // MARK: - Text without a key
     
     /// Labels made from words that belong to no detected key.
@@ -238,11 +238,11 @@ public struct LabelReader: Sendable {
     /// Labels a normal key-width apart stay separate. Each label's area is its
     /// words' box plus a little margin.
     static func textButtons(from words: [Word]) -> [(label: String, bounds: PanelRect)] {
-        let words = words.filter { word in
+        let words = removingClockWords(from: words).filter { word in
             word.text.contains { $0.isLetter || $0.isNumber }
             && [word.left, word.right, word.top, word.bottom].allSatisfy(\.isFinite)
         }
-        
+
         return groups(of: words).map { group in
             let margin = group.map(\.height).max()! * 0.15
             let minX = group.map(\.left).min()! - margin, maxX = group.map(\.right).max()! + margin
@@ -254,7 +254,50 @@ public struct LabelReader: Sendable {
         }
         .sorted { ($0.bounds.minY, $0.bounds.minX) < ($1.bounds.minY, $1.bounds.minX) }
     }
-    
+    /// Removes a clock display and printed words directly beneath it.
+    /// Kept independent of Vision so the geometry can be unit tested.
+    static func removingClockWords(from words: [Word]) -> [Word] {
+        let heights = words.map(\.height).filter { $0.isFinite && $0 > 0 }.sorted()
+        guard !heights.isEmpty else { return words }
+
+        let middle = heights.count / 2
+        let medianHeight = heights.count.isMultiple(of: 2)
+            ? (heights[middle - 1] + heights[middle]) / 2
+            : heights[middle]
+
+        let clocks = words.filter { word in
+            let digits = word.text.filter(\.isNumber).count
+            let clockCharacters = word.text.allSatisfy {
+                $0.isNumber || $0 == ":" || $0 == "."
+            }
+
+            return clockCharacters
+                && (3...4).contains(digits)
+                && word.height >= 2 * medianHeight
+        }
+
+        guard let clock = clocks.max(by: { $0.height < $1.height }) else {
+            return words
+        }
+
+        return words.filter { word in
+            // Remove the clock itself.
+            if word == clock { return false }
+
+            // Only suppress words within the clock's horizontal columns,
+            // and vertically within the clock display's own height.
+            let insideColumns = word.left < clock.right && word.right > clock.left
+            let alongsideDisplay = word.top >= clock.top && word.top <= clock.bottom + medianHeight
+
+            if insideColumns && alongsideDisplay {
+                return false
+            }
+
+            return true
+        }
+    }
+
+
     /// The words split into labels: words that belong together end up in one
     /// group.
     static func groups(of words: [Word]) -> [[Word]] {
@@ -267,7 +310,7 @@ public struct LabelReader: Sendable {
         }
         return Dictionary(grouping: words.indices, by: root).values.map { $0.map { words[$0] } }
     }
-    
+
     /// On one line with a word-sized gap, or stacked as the two lines of one
     /// label.
     ///
@@ -281,12 +324,11 @@ public struct LabelReader: Sendable {
             let gap = max(a.left, b.left) - min(a.right, b.right)
             return gap <= height * 0.6
         }
-        
+
         let overlap = min(a.right, b.right) - max(a.left, b.left)
         let narrower = min(a.right - a.left, b.right - b.left)
         return overlap >= narrower * 0.5 && rise <= height * 1.6
     }
-    
     /// Words in reading order: rows top to bottom, left to right within a row.
     ///
     /// Two words share a row when their vertical centres are close
@@ -305,5 +347,3 @@ public struct LabelReader: Sendable {
         return rows.flatMap { $0.sorted { $0.centre.x < $1.centre.x } }
     }
 }
-
-
