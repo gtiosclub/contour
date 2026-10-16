@@ -38,6 +38,9 @@ struct ContentView: View {
             List {
                 #if DEBUG
                 Section("Developer tools") {
+                    NavigationLink("Directional Audio") {
+                        AudioDebugView()
+                    }
                     NavigationLink("Tracking Diagnostics") {
                         TrackingDebugView(camera: camera, pipeline: pipeline)
                     }

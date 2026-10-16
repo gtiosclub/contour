@@ -21,6 +21,7 @@ public struct DebugMenu: View {
     public var body: some View {
         List {
             // Add your debug screens here:
+            NavigationLink("Directional Audio") { AudioDebugView() }
             NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
             //NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: CameraService()) }
             // Example: NavigationLink("My Debug Tool") { MyDebugToolView() }

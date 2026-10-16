@@ -95,7 +95,8 @@ public struct DirectionalAudio: Sendable {
 // on it here and return nil for the cases that should be silent.
 private extension GuidanceState {
     var audioInput: (direction: PanelVector, distance: Double)? {
-        (direction, Double(distance))
+        guard !isTerminal, let vector else { return nil }
+        return (vector.direction, vector.normalizedDistance)
     }
 }
 

@@ -8,7 +8,7 @@
 import AVFoundation
 
 @MainActor
-final class DirectionalAudioEngine {
+public final class DirectionalAudioEngine {
 
     // MARK: - Pitch mapping
     private struct PitchMapping {
@@ -38,13 +38,13 @@ final class DirectionalAudioEngine {
     private var tickTask: Task<Void, Never>?
     private var configTask: Task<Void, Never>?
 
-    init() {
+    public init() {
         engine.attach(player)
         engine.attach(varispeed)
     }
 
     // MARK: - Public API (frozen Friday)
-    func start() throws {
+    public func start() throws {
         wantsToPlay = true
         fadeTarget = 1
         guard !engine.isRunning else { return }   // idempotent
@@ -59,7 +59,7 @@ final class DirectionalAudioEngine {
         observeEngineConfigChanges()
     }
 
-    func stop() {
+    public func stop() {
         wantsToPlay = false
         fadeTarget = 0                             // ticker fades to silence
         Task { @MainActor [weak self] in
@@ -71,14 +71,14 @@ final class DirectionalAudioEngine {
         }
     }
 
-    func setBeacon(pan: Float, proximity: Float) {
+    public func setBeacon(pan: Float, proximity: Float) {
         if pan.isFinite { targetPan = min(max(pan, -1), 1) }
         if proximity.isFinite {
             targetRate = mapping.rate(for: min(max(proximity, 0), 1))
         }
     }
 
-    func setVolume(_ volume: Float) {
+    public func setVolume(_ volume: Float) {
         if volume.isFinite { userVolume = min(max(volume, 0), 1) }
     }
 
