@@ -190,9 +190,10 @@ that pins it.
 
 ### What you need
 
-- **macOS 26** or later
-- **Xcode 26** (Swift 6, iOS 26 SDK) — the project will not open in Xcode 25
-- An **iPhone running iOS 26** for anything involving the camera. Surface
+- **macOS 27** or later — the Harness targets macOS 27
+- **Xcode 27** (Swift 6.4, iOS 27 SDK) — the packages use `swift-tools-version: 6.4`
+  and will not load in Xcode 26
+- An **iPhone running iOS 27** for anything involving the camera. Surface
   Understanding, and Experience's feedback lanes, can get a long way without one.
 
 ### Clone and open
@@ -212,7 +213,7 @@ see the other team's packages.
 The camera work needs a real phone — the simulator has no rear camera worth
 pointing at a microwave.
 
-1. Plug in an iPhone running iOS 26 and trust the Mac.
+1. Plug in an iPhone running iOS 27 and trust the Mac.
 2. Select the **`ContourApp`** scheme and your device.
 3. **Set up local signing once.** Sign into Xcode's Apple Accounts settings.
    Copy the template from the repo root (edit instead if the local file exists):
@@ -336,17 +337,17 @@ contour/
 
 ## CI
 
-Every PR and every push to `main` runs:
+The repo is public, so GitHub Actions is free. Every PR and every push to
+`main` runs:
 
-1. **Package isolation** — `Scripts/check-dependencies.sh`. Catches a team
-   reaching into another team's package, in the manifest or in an `import`, and
-   catches `ContourMocks` reaching a shipping target rather than staying in
-   `Tests/`.
-2. **`swift test`** for all six packages, in parallel, natively on macOS.
-3. **`xcodebuild build`** for `ContourApp` (iOS Simulator) and `Harness` (macOS).
+1. **Package isolation** on Linux. `Scripts/check-dependencies.sh` catches a
+   team reaching into another team's package, and `ContourMocks` leaking into a
+   shipping target.
+2. **build + test** on macOS. `swift test` in all six packages, then
+   `xcodebuild` for `ContourApp` (iOS Simulator) and `Harness` (macOS).
 
-`main` is protected: PR required, CI green required, no force pushes. If CI is
-red, it's red for everyone — fix it before you start something new.
+Red CI, no merge. Run `swift test` in your package before you push anyway, it's
+faster than waiting on CI.
 
 ## Camera and panel-reference integration
 

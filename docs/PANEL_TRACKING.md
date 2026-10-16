@@ -53,7 +53,7 @@ check catches mismatched captures, not an incorrectly detected quad or map.
 ## First approach to investigate
 
 Apple provides **TrackRectangleRequest**, a Swift-native stateful request available
-from iOS 18 (supported by our iOS 26 minimum). Initialize it with a
+from iOS 18 (supported by our iOS 27 minimum). Initialize it with a
 RectangleObservation made from the shared quad and perform requests sequentially
 on the reference and subsequent images. Retain the same request for the sequence;
 create a fresh one when resetting. Its optional RectangleObservation result

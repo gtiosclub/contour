@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Contour — shared fakes, owned by Experience
 //
 // DEPENDENCY RULE: ContourMocks depends on ContourCore and nothing else.
@@ -11,7 +11,7 @@ import PackageDescription
 
 let package = Package(
     name: "ContourMocks",
-    platforms: [.iOS(.v26), .macOS(.v26)],
+    platforms: [.iOS(.v27), .macOS(.v27)],
     products: [
         .library(name: "ContourMocks", targets: ["ContourMocks"])
     ],

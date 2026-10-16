@@ -81,11 +81,14 @@ reference quads use Core’s separate image-space types. Full convention:
 | File | What goes in it |
 |---|---|
 | `LiveTrackingSource.swift` | The conformance. Fuses the two trackers into a frame stream. |
-| `FingertipTracker.swift` | Index fingertip, camera space → panel space. |
+| `FingertipTracker.swift` | Per-frame Vision index fingertip → timestamped image-space observation. |
+| `FingertipFrameProcessor.swift` | Adapts fingertip observations to debug diagnostics. |
 | `PanelTracker.swift` | Panel pose across frames as the phone moves. |
 
-Every body is `fatalError("unimplemented — owned by Tracking / <lane>")`.
-Replace the bodies, keep the signatures.
+`PanelTracker` and `LiveTrackingSource` remain stubs. `FingertipTracker` now
+accepts each `CameraFrame` through `detect(in:)`; it does not require `PanelPose`
+or convert to panel space. Use its `FingertipObservation` with `PanelHomography`
+when integrating panel tracking. Core contracts are unchanged.
 
 ## Working
 
@@ -122,7 +125,10 @@ CI fails the PR if it does.
 ## Development scaffold
 
 The app's Developer tools → Tracking Diagnostics screen uses a shared camera
-and a replaceable `TrackingFrameProcessor`. It currently reports unimplemented.
+and a replaceable `TrackingFrameProcessor`. Its default `FingertipFrameProcessor`
+returns image-space diagnostics from `FingertipTracker`. It clears missing or
+unusable points rather than retaining the previous detection. Device validation
+is still required before considering the fingertip deliverable complete.
 Tracking algorithms stay in this package; app debug screens are maintained with
 Experience's Mocks & Integration lane. See [camera setup](../../docs/CAMERA_SCAFFOLD.md).
 
