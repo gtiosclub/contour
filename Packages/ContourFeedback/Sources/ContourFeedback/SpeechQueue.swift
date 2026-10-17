@@ -74,10 +74,20 @@ public struct Utterance: Hashable, Sendable {
     /// is right for outcomes and wrong for almost everything else.
     public var expiresAfter: Duration?
 
-    public init(text: String, priority: SpeechPriority, expiresAfter: Duration? = nil) {
+    /// Silence before the words once the line starts, so an earcon can finish
+    /// before the first word lands on top of it. Zero for most lines.
+    public var leadIn: Duration
+
+    public init(
+        text: String,
+        priority: SpeechPriority,
+        expiresAfter: Duration? = nil,
+        leadIn: Duration = .zero
+    ) {
         self.text = text
         self.priority = priority
         self.expiresAfter = expiresAfter
+        self.leadIn = leadIn
     }
 }
 
@@ -116,8 +126,10 @@ private final class SynthesizerDriver: NSObject, AVSpeechSynthesizerDelegate, @u
         return current != nil
     }
 
-    func speak(_ text: String) {
+    func speak(_ text: String, leadIn: Duration = .zero) {
         let utterance = AVSpeechUtterance(string: text)
+        let parts = leadIn.components
+        utterance.preUtteranceDelay = max(0, Double(parts.seconds) + Double(parts.attoseconds) * 1e-18)
         lock.lock()
         let wasSpeaking = current != nil
         current = utterance               // replace BEFORE stopping, so the old
@@ -261,7 +273,7 @@ public actor SpeechQueue {
         else { return }
 
         entries.remove(at: index)
-        driver.speak(chosen.text)         // one line at a time; stops the old one if needed
+        driver.speak(chosen.text, leadIn: chosen.leadIn)   // one line at a time; stops the old one if needed
         setActivity(.speaking(chosen.priority))
     }
 

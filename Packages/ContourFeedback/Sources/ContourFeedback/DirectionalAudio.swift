@@ -123,4 +123,10 @@ public struct DirectionalAudio: Sendable {
     public func stop() async {
         await tone.stop()
     }
+
+    /// Play an earcon once through the same engine, centred. Starts it and
+    /// returns. Does not stop the tone — an outcome does that itself.
+    public func play(_ earcon: Earcon) async {
+        await tone.play(earcon)
+    }
 }

@@ -8,6 +8,7 @@
 //
 //  GRAPH
 //      loop player ──▶ varispeed ──▶ pan mixer ──▶ main mixer ──▶ output
+//      earcon player ─────────────────────────────▲
 //
 //  - The loop player repeats LoopTone's buffer forever. Pitch is the varispeed
 //    rate: 480 Hz × rate.
@@ -15,6 +16,8 @@
 //    player. AVAudioMixing settings only reach a mixer the node feeds directly;
 //    an effect node in between (the varispeed) swallows them, so `player.pan`
 //    did nothing. Everything is MONO up to the main mixer, or pan does nothing.
+//  - Earcons (the outcome sounds) are rendered once into a buffer each and
+//    played on their own node, centred, so they never fight the tone's pan.
 //  - Values never jump. Callers set targets; a ~60 Hz tick moves the live values
 //    a quarter of the way there each frame, so fast changes don't zipper and
 //    starts and stops fade instead of clicking.
@@ -102,6 +105,9 @@ final class ToneEngine {
     private var graph: Graph?
     private var ticker: Task<Void, Never>?
     private var sessionEvents: Task<Void, Never>?
+    private var earconBuffers: [Earcon: AVAudioPCMBuffer] = [:]
+    /// When the last earcon finishes; the engine stays up until then.
+    private var earconEndsAt: ContinuousClock.Instant?
 
     /// Built lazily on first start, so constructing the package's types stays
     /// cheap and nothing touches audio hardware until something plays.
@@ -110,6 +116,7 @@ final class ToneEngine {
         let loop = AVAudioPlayerNode()
         let varispeed = AVAudioUnitVarispeed()
         let panMixer = AVAudioMixerNode()
+        let earcons = AVAudioPlayerNode()
         let buffer: AVAudioPCMBuffer
     }
 
@@ -153,6 +160,22 @@ final class ToneEngine {
     /// Fade out, then halt the engine. Safe to call when idle.
     func stop() {
         wantsTone = false
+    }
+
+    /// Play `earcon` once, centred, cutting off any earcon still playing. Does
+    /// not touch the tone: an outcome stops that separately.
+    func play(_ earcon: Earcon) {
+        do {
+            try ensureRunning()
+        } catch {
+            return
+        }
+        guard let graph, let buffer = earconBuffer(for: earcon, format: graph.buffer.format) else { return }
+        graph.earcons.volume = volume
+        graph.earcons.scheduleBuffer(buffer, at: nil, options: .interrupts)
+        graph.earcons.play()
+        earconEndsAt = ContinuousClock.now + earcon.duration + .milliseconds(100)
+        startTicker()   // keeps the engine up until the earcon is done, then halts it
     }
 
     var isRunning: Bool { graph?.engine.isRunning ?? false }
@@ -205,9 +228,11 @@ final class ToneEngine {
         engine.attach(graph.loop)
         engine.attach(graph.varispeed)
         engine.attach(graph.panMixer)
+        engine.attach(graph.earcons)
         try Self.connect(graph.loop, to: graph.varispeed, format: format, in: engine)
         try Self.connect(graph.varispeed, to: graph.panMixer, format: format, in: engine)
         try Self.connect(graph.panMixer, to: engine.mainMixerNode, format: format, in: engine)
+        try Self.connect(graph.earcons, to: engine.mainMixerNode, format: format, in: engine)
         self.graph = graph
         return graph
     }
@@ -249,7 +274,25 @@ final class ToneEngine {
         current.rate += (target.rate - current.rate) * k
         current.gain += (targetLevel - current.gain) * k
         apply(to: graph)
-        if !wantsTone && current.gain < Self.silence { halt(graph) }
+        if !wantsTone && current.gain < Self.silence && !isPlayingEarcon { halt(graph) }
+    }
+
+    private var isPlayingEarcon: Bool {
+        guard let earconEndsAt else { return false }
+        return ContinuousClock.now < earconEndsAt
+    }
+
+    private func earconBuffer(for earcon: Earcon, format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        if let cached = earconBuffers[earcon] { return cached }
+        let samples = earcon.samples(sampleRate: format.sampleRate)
+        guard !samples.isEmpty,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let channel = buffer.floatChannelData?[0]
+        else { return nil }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        for (index, sample) in samples.enumerated() { channel[index] = sample }
+        earconBuffers[earcon] = buffer
+        return buffer
     }
 
     private func apply(to graph: Graph) {
@@ -260,6 +303,8 @@ final class ToneEngine {
 
     private func halt(_ graph: Graph) {
         graph.loop.stop()
+        graph.earcons.stop()
+        earconEndsAt = nil
         graph.engine.stop()
         ticker?.cancel()
         ticker = nil
