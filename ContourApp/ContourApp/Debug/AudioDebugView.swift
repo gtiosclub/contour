@@ -1,5 +1,4 @@
 #if DEBUG
-import AVFoundation
 import Combine
 import ContourFeedback
 import SwiftUI
@@ -47,13 +46,8 @@ private final class AudioButtonTest: ObservableObject {
         task = Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                #if os(iOS)
-                // Temporary DEBUG-screen setup until Nancy's session config lands.
-                let session = AVAudioSession.sharedInstance()
-                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-                try session.setActive(true)
-                #endif
-
+                // No session setup here: ContourApp configures the one shared
+                // session at launch (AudioSessionConfig).
                 audio.setVolume(0.15)
                 audio.setBeacon(pan: -1, proximity: 0.5)
                 try audio.start()
@@ -95,9 +89,8 @@ private final class AudioButtonTest: ObservableObject {
         status = "Stopped"
     }
 }
-#endif
-
 
 #Preview {
     AudioDebugView()
 }
+#endif
