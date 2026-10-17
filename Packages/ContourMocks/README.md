@@ -29,7 +29,11 @@ one.
 | Type | Stands in for | Behaviour |
 |---|---|---|
 | `MockSurfaceUnderstanding` | Surface Understanding | Returns a hardcoded six-button microwave. Ignores the photo entirely. Can be made to throw. |
-| `MockTrackingSource` | Tracking / Spatial | Walks a fingertip from a start point to a target on a timer. Supports scripted dropouts. |
+| `MockSurfaceMaps.microwaveKeypad` | Surface Understanding | The issue #12 keypad: a second canned map, with one icon-only (`nil`-label) button. |
+| `MockTrackingSource` | Tracking / Spatial | Walks a fingertip from a start point to a target on a timer. Supports scripted dropouts. Can also play a `MockRun` at 30 Hz. |
+| `MockRun` | — | A script for one reach: start, target button id, duration, optional dropout. Presets `.straight`, `.overshoot`, `.withDropout`. |
+| `GuidanceMath` | — | The one place the fingertip-to-target geometry lives. `MockGuidance` and `MockGuidanceSource` both call it. |
+| `MockGuidanceSource` | Tracking + guidance | `MockTrackingSource` chained through `GuidanceMath`: an `AsyncStream<GuidanceState>` at 30 Hz. |
 | `PrintingFeedbackEngine` | Experience | Prints each `GuidanceState` and records it. An actor, so tests can read it mid-stream. |
 | `MockGuidance` | *nobody* | Placeholder wiring: turns `TrackingFrame` + target into `GuidanceState`. See below. |
 | `SeededGenerator` | — | SplitMix64. The only permitted source of variation. |
@@ -62,6 +66,45 @@ Button ids are hardcoded, so you can assert against a specific one. Confidences
 are deliberately uneven — `Defrost` is the scuffed one at `0.61`, so anything
 filtering on per-button confidence has something to filter. Panel confidence is
 `0.94`.
+
+## The issue #12 keypad, `MockRun` and `MockGuidanceSource`
+
+```swift
+let source = MockGuidanceSource(run: .withDropout)           // keypad, target "Start"
+for await state in source.states() {                         // 30 Hz; ends after a 2 s hold
+    await engine.present(state)                              // any FeedbackEngine
+}
+let frames = MockTrackingSource(run: .overshoot).allFrames() // the same frames, no clock: for tests
+```
+
+```
+       x=0                                  x=1
+  y=0   +----------------------------------+
+        |  [Popcorn] [Defrost] [  +30s  ]  |   <- y 0.20 ... 0.40
+        |  [   ✕   ] [ Stop  ] [ Start  ]  |   <- y 0.55 ... 0.75
+  y=1   +----------------------------------+
+```
+
+- **`microwaveKeypad` is in addition to `microwave`, not instead of it.** Other
+  teams' tests pin `microwave` ("Defrost" at `0.61`, every button labelled), so
+  it is unchanged. The keypad has Start `0.94`, Stop `0.91`, +30s `0.88`,
+  Defrost `0.83`, Cancel `0.80`, Popcorn `0.72`. Cancel is an ✕ icon with a `nil`
+  label, so reach it by id: `MockSurfaceMaps.keypadButton(.cancel)`.
+- **A `MockRun`** eases in and out along a straight line to the target's centre,
+  with a `0.01` sine wobble that is zero at both ends, then holds for 2 s.
+  `.overshoot` goes `0.1` past and comes back. `.withDropout` loses tracking from
+  0.75 s to 1.25 s (15 frames with quality `.lost` and a `nil` fingertip). Every
+  frame is a pure function of the run and the tick. Streaming sleeps on a
+  `ContinuousClock` until each tick's deadline, so it does not drift. The
+  original linear walk, `MockTrackingSource(start:target:steps:...)`, is
+  unchanged.
+- **`GuidanceMath.compute(frame:target:)`** clamps distance to `0...1` and turns
+  a `nil` fingertip into `.lostTracking`. `MockGuidance` uses the same math but
+  keeps its old behaviour, because the pipeline and the Harness run on it
+  today. That means unclamped distance off the panel, `.lowConfidence` below a
+  pose-confidence floor, and "no guidance" (not `.lostTracking`) for a `nil`
+  fingertip on a frame that is not `.lost`.
+- `ContourApp` has a DEBUG-only `MockRunDebugView()` that plays the presets.
 
 ## `MockGuidance` is placeholder wiring, not a feature
 

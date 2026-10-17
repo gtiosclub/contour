@@ -13,55 +13,163 @@
 //  way — and they cannot see that they are going the wrong way.
 //  See Packages/ContourCore/COORDINATES.md.
 //
-
+//  THE MAPPING
+//    pan    from dx: hard left at dx = -1, hard right at dx = +1
+//    pitch  from -dy: 960 Hz when the target is straight up, 360 Hz straight down
+//    gain   from normalizedDistance: 1 on the target, `minimumGain` at
+//           `farDistance` (the far corner of the panel) and beyond
+//  All of it is pure and unit-tested. Playing it goes through ToneEngine, which
+//  this shares with DirectionalAudioEngine.
+//
 import ContourCore
 import Foundation
 
-/// A moment of directional audio, described independently of AVFoundation.
-///
-/// Framework-free so it can be asserted on in tests and logged by the Harness.
+/// One moment of the tone, described independently of AVAudioEngine.
 public struct AudioCue: Hashable, Sendable {
-
-    /// Stereo position, `-1` hard left to `+1` hard right.
+    /// `-1` hard left ... `+1` hard right.
     public var pan: Double
-
-    /// Pitch in Hz.
+    /// Hz.
     public var pitch: Double
-
-    /// Loudness, `0...1`.
+    /// `0...1`.
     public var gain: Double
-
     public init(pan: Double, pitch: Double, gain: Double) {
-        self.pan = pan
-        self.pitch = pitch
-        self.gain = gain
+        self.pan = pan; self.pitch = pitch; self.gain = gain
     }
 }
 
-/// Turns direction into something the user hears.
 public struct DirectionalAudio: Sendable {
 
-    public init() {}
+    /// Pitch range in Hz (matches the 0.75...2.0 varispeed range on a 480 Hz tone).
+    public static let lowPitch: Double = 360    // target is straight DOWN
+    public static let highPitch: Double = 960   // target is straight UP
 
-    /// The cue for a given guidance direction.
-    ///
-    /// - Parameter direction: unit vector from fingertip toward target, in panel
-    ///   space. `+dx` is right, **`+dy` is down**.
-    /// - Returns: the cue to render.
-    ///
-    /// Pure and synchronous on purpose — this is the part you can unit-test, and
-    /// it is where the axis trap above gets caught.
+    /// Distance at (or beyond) which the cue is at its quietest, in
+    /// `GuidanceVector.normalizedDistance` units: 1 is the far corner of the panel.
+    public let farDistance: Double
+    /// Floor so a far target is still audible; the user can't see that it's silent.
+    public let minimumGain: Double
+
+    /// The tone this plays through. Shared by default, so every engine drives
+    /// the same one and switching engines can never leave a second tone running.
+    let tone: ToneEngine
+
+    public init(farDistance: Double = 1, minimumGain: Double = 0.2) {
+        self.init(farDistance: farDistance, minimumGain: minimumGain, tone: .guidance)
+    }
+
+    init(farDistance: Double = 1, minimumGain: Double = 0.2, tone: ToneEngine) {
+        // A zero or negative far distance would divide by zero in gain(forDistance:).
+        self.farDistance = farDistance.isFinite && farDistance > 0 ? farDistance : 1
+        self.minimumGain = minimumGain.isFinite ? min(max(minimumGain, 0), 1) : 0.2
+        self.tone = tone
+    }
+
+    // MARK: - Pure mapping (unit-tested)
+
+    /// Direction only: pan from dx, pitch from dy, gain 1.0 because a unit vector has no distance.
     public func cue(for direction: PanelVector) -> AudioCue {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+        let dx = Double(direction.dx)
+        let dy = Double(direction.dy)
+
+        let pan = dx.isFinite ? min(max(dx, -1), 1) : 0
+
+        // THE AXIS TRAP: +dy is DOWN, so "up" is -dy. Negate before mapping to pitch.
+        let up = dy.isFinite ? min(max(-dy, -1), 1) : 0     // -1 down ... +1 up
+        let t = (up + 1) / 2                                 // 0 down ... 1 up
+        let pitch = Self.lowPitch * pow(Self.highPitch / Self.lowPitch, t)  // equal steps = equal musical intervals
+
+        return AudioCue(pan: pan, pitch: pitch, gain: 1)
     }
 
-    /// Render the cue for `state`. Starts audio and returns.
+    /// Direction plus distance: closer is louder.
+    public func cue(for direction: PanelVector, distance: Double) -> AudioCue {
+        var cue = self.cue(for: direction)
+        cue.gain = gain(forDistance: distance)
+        return cue
+    }
+
+    public func gain(forDistance distance: Double) -> Double {
+        guard distance.isFinite else { return minimumGain }
+        let closeness = 1 - min(max(distance / farDistance, 0), 1)   // 1 at the target, 0 when far
+        return minimumGain + (1 - minimumGain) * closeness
+    }
+
+    /// The cue for one guidance state, or `nil` when the tone should be silent:
+    /// no vector, or the state is terminal. The only place that reads
+    /// GuidanceState's shape, and the exact cue `play(for:)` renders.
+    func cue(for state: GuidanceState) -> AudioCue? {
+        guard !state.isTerminal, let vector = state.vector else { return nil }
+        return cue(for: vector.direction, distance: vector.normalizedDistance)
+    }
+
+    // MARK: - Rendering
+
+    /// Retargets the tone and returns. Cheap enough to call on every guidance update.
+    /// A state with no vector, or a terminal one, fades the tone out.
     public func play(for state: GuidanceState) async {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+        await render(state)
     }
 
-    /// Stop anything currently playing. Must be safe to call when idle.
+    /// Fades out and halts. Safe to call when idle.
     public func stop() async {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+        await silence()
+    }
+
+    /// Play an earcon once through the same engine, centred. Starts it and
+    /// returns. Does not stop the tone — an outcome does that itself.
+    public func play(_ earcon: Earcon) async {
+        await playEarcon(earcon)
+    }
+
+    // MARK: - Ducking under speech (#114)
+
+    /// The tone's level under an ordinary spoken line, as a fraction of normal.
+    public static let duckedGain = 0.25
+
+    /// How much of the tone to keep while speech is doing `activity`: all of it
+    /// in silence, a quarter under an ordinary line so the words stay clear,
+    /// none under an interrupting line (an outcome), which must be heard.
+    ///
+    /// Pure, so it is pinned by tests.
+    public static func duckFactor(for activity: SpeechActivity) -> Double {
+        switch activity {
+        case .silent: 1
+        case .speaking(.interrupting): 0
+        case .speaking: duckedGain
+        }
+    }
+
+    /// Duck the tone for `activity`. The level glides there; no click. Feed it
+    /// `SpeechQueue.activityUpdates()`.
+    public func duck(for activity: SpeechActivity) async {
+        await tone.setDuck(Float(Self.duckFactor(for: activity)))
+    }
+
+    // MARK: - Main-actor core
+    //
+    // The public methods above are each one hop to these. LiveFeedbackEngine
+    // calls them directly so a whole frame is applied in one step.
+
+    /// Head for the cue for `state`, or fade out if it has none.
+    @MainActor
+    func render(_ state: GuidanceState) {
+        guard let cue = cue(for: state) else { return silence() }
+        render(cue)
+    }
+
+    /// Head for `cue`, starting the tone if needed.
+    @MainActor
+    func render(_ cue: AudioCue) {
+        tone.render(cue)
+    }
+
+    @MainActor
+    func silence() {
+        tone.stop()
+    }
+
+    @MainActor
+    func playEarcon(_ earcon: Earcon) {
+        tone.play(earcon)
     }
 }

@@ -54,13 +54,13 @@ func fourOutcomes() {
     #expect(OutcomeSignal.allCases.count == 4)
 }
 
-@Test("the Week 2 bake-off has candidates and has not been decided yet")
-func bakeOffPending() {
+@Test("the bake-off has candidates and a provisional pick that LiveFeedbackEngine uses")
+func bakeOffProvisionalPick() {
     #expect(GuidanceModelKind.allCases.count >= 2, "a bake-off needs candidates")
-    #expect(
-        ChosenGuidanceModel.kind == nil,
-        "set this at the end of Week 2 and record why in the PR"
-    )
+    // Provisional until the blindfold runs in docs/decisions/guidance-model.md.
+    #expect(ChosenGuidanceModel.kind == .continuousProximity)
+    #expect(ChosenGuidanceModel.current == .continuousProximity)
+    #expect(LiveFeedbackEngine().model == ChosenGuidanceModel.current)
 }
 
 @Test("+dy is down: a target below the finger points downward")

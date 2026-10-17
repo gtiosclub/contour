@@ -10,6 +10,7 @@
 //  in first.
 //
 
+import ContourFeedback
 import SwiftUI
 
 @main
@@ -20,6 +21,14 @@ struct ContourApp: App {
     @State private var pipeline: ContourPipeline
 
     init() {
+        // The one audio-session setup for the whole app. Tone, earcons and
+        // speech never set a category themselves; they follow its events.
+        do {
+            try AudioSessionConfig.configure()
+        } catch {
+            print("Contour: audio session setup failed: \(error)")
+        }
+
         let camera = CameraService()
         _camera = State(initialValue: camera)
         // On a phone everything runs for real on the camera. The simulator has

@@ -26,9 +26,9 @@ it. The isolation rule is about what links together, not about who writes it;
 
 | Lane | Owner | Files |
 |---|---|---|
-| **Haptics** | Karan | `HapticEngineManager.swift`, `ProximityHaptics.swift`, `ChosenGuidanceModel` in `GuidanceModel.swift` |
-| **Audio & Speech** | Rishika | `DirectionalAudio.swift`, `SpeechQueue.swift` |
-| **Outcome Signals & Harness** *(officers)* | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer.swift`, `LiveFeedbackEngine.swift`, `Harness/` |
+| **Haptics** | Karan | `HapticEngineManager.swift`, `HapticPlayer.swift`, `ProximityHaptics.swift`, `GuidanceModel.swift` (models, `GuidanceTuning`, directional hint, `ChosenGuidanceModel`) |
+| **Audio & Speech** | Rishika | `DirectionalAudio.swift`, `DirectionalAudioEngine.swift`, `ToneEngine.swift`, `SpeechQueue.swift`, `AudioSessionConfig.swift` |
+| **Outcome Signals & Harness** *(officers)* | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer.swift`, `Earcon.swift`, `LiveFeedbackEngine.swift`, `Harness/` |
 
 `GuidanceModel.swift` is shared ground: the bake-off is a whole-team exercise,
 but `ChosenGuidanceModel.kind` sits with Haptics because that lane lives with the
@@ -83,13 +83,10 @@ macOS app. No iPhone, no camera, no tracking. Sliders for fingertip x/y, a
 picker for tracking quality, a target picker, four buttons for the four
 outcomes, and a "Walk to target" replay of the deterministic mock approach.
 
-To feel your own engine instead of the printing mock, change one line in
-`Harness/Harness/HarnessApp.swift`:
-
-```swift
-import ContourFeedback
-@State private var model = HarnessModel(engine: LiveFeedbackEngine())
-```
+An engine picker switches between the printing mock and `LiveFeedbackEngine`
+at runtime, with a guidance-model picker and toggles for the tone, speech and
+the directional hint. Switching stops the old engine first. A Mac has no
+haptics, but the tone, earcons and speech all play there.
 
 Then put on a blindfold and have someone else drive the sliders. That is the
 actual test, and you can run it in Week 1.
@@ -99,9 +96,33 @@ actual test, and you can run it in Week 1.
 From the project timeline, your deliverables:
 
 - [ ] **Run the guidance model bake-off (Week 2) and pick one** → `GuidanceModel` *(Haptics, whole team)*
-- [ ] **Prototype proximity haptics** → `ProximityHaptics` *(Haptics)*
-- [ ] **Prototype directional audio** → `DirectionalAudio`, `SpeechQueue` *(Audio & Speech)*
+  Both candidates are built (`continuousProximity`, `pulsedProximity`) and
+  switchable in the Harness and the Haptics debug screen. `ChosenGuidanceModel.kind`
+  is **provisionally** `continuousProximity`; the blindfold runs are still to do —
+  protocol and empty results table in [`docs/decisions/guidance-model.md`](../../docs/decisions/guidance-model.md).
+- [x] **Prototype proximity haptics** → `ProximityHaptics` *(Haptics)*
+  Pulses 600 ms → 70 ms, intensity 0.35 → 1, plus a sustained buzz for the
+  continuous model. Numbers in `GuidanceTuning`; on-phone tuning is #118.
+- [x] **Prototype directional audio** → `DirectionalAudio`, `SpeechQueue` *(Audio & Speech)*
+  Pan from dx, pitch from −dy (up is higher), louder when closer; the tone ducks
+  under speech; one shared `AudioSessionConfig`.
 - [ ] **Define success and lost-tracking feedback with Design** → `OutcomeAnnouncer` *(Outcome Signals & Harness)*
+  All four outcomes have haptics, an earcon and a spoken line. v1 spec in
+  [`docs/decisions/outcome-signals.md`](../../docs/decisions/outcome-signals.md),
+  **to be confirmed with Design (Kaylee)**.
+
+### Status
+
+| Piece | State |
+|---|---|
+| `LiveFeedbackEngine` | Live: model + tone + speech + optional directional hint. `LiveFeedbackEngine(model:audio:speech:directionalHint:)`, `stop()` ends a session. |
+| Guidance models | Continuous (sustained buzz, throbs near the target) and pulsed. Provisional pick: continuous. |
+| Directional audio | Live. One `ToneEngine` behind `DirectionalAudio` and the debug screen's `DirectionalAudioEngine`. |
+| Speech | `SpeechQueue` speaks outcome lines; `activityUpdates()` drives ducking. |
+| Outcome signals | Haptics + earcon + speech for all four; notFound ≠ lowConfidence on every channel. Pending Design sign-off. |
+| Directional haptic hint | Built, off by default (#119). Needs a blindfold comparison. |
+| Audio session | `AudioSessionConfig.configure()` once at launch; players follow its events. |
+| Still to do | Blindfold bake-off (#54), on-phone haptics tuning (#118), Design sign-off on outcomes (#55), on-device ducking check (#114). |
 
 These are four of Experience's six Weeks 2–3 deliverables; the other two are in
 [`ContourUI`](../ContourUI/README.md). That is a lot for one team — the lanes
@@ -136,14 +157,16 @@ Full convention: [`../ContourCore/COORDINATES.md`](../ContourCore/COORDINATES.md
 | File | What goes in it |
 |---|---|
 | `LiveFeedbackEngine.swift` | The conformance. Routes a `GuidanceState` to the channels below. |
-| `GuidanceModel.swift` | The bake-off: candidate models and the one you pick. |
-| `ProximityHaptics.swift` | How close, as something you feel. |
+| `GuidanceModel.swift` | The bake-off: candidate models, every tuning number, the directional hint, and the one you pick. |
+| `ProximityHaptics.swift` | How close, as something you feel: the pulses. |
+| `HapticPlayer.swift`, `HapticEngineManager.swift` | Pulses, the sustained buzz and taps, through one haptic engine. |
 | `DirectionalAudio.swift` | Which way, as something you hear. |
-| `OutcomeAnnouncer.swift` | The four terminal signals, agreed with Design. |
+| `ToneEngine.swift`, `DirectionalAudioEngine.swift` | The one AVAudioEngine graph, and the debug screen's face on it. |
+| `OutcomeAnnouncer.swift`, `Earcon.swift` | The four terminal signals, agreed with Design. |
 | `SpeechQueue.swift` | Whether an utterance is said now, later, or dropped as stale. |
+| `AudioSessionConfig.swift` | The one audio-session setup, and its interruption / route-change events. |
 
-Every body is `fatalError("unimplemented — owned by Experience / <lane>")`.
-Replace the bodies, keep the signatures.
+Keep the public signatures — other code compiles against them.
 
 ## Working
 
