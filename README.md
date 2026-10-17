@@ -240,8 +240,8 @@ expected — the four team packages are still empty rooms.
 ### Run the Harness
 
 The Harness is a **macOS app**. No iPhone, no camera, no tracking. It builds
-synthetic `TrackingFrame`s from sliders and pushes them into whatever
-`FeedbackEngine` you inject. Experience should live in it.
+synthetic `TrackingFrame`s from sliders and pushes them into the
+`FeedbackEngine` you pick in the window. Experience should live in it.
 
 1. Open `Contour.xcworkspace`.
 2. Select the **`Harness`** scheme and **My Mac**.
@@ -249,6 +249,12 @@ synthetic `TrackingFrame`s from sliders and pushes them into whatever
 
 You get:
 
+- **Engine picker**: `PrintingFeedbackEngine` (logs only) or `LiveFeedbackEngine`,
+  plus the **guidance model** (continuous buzz or pulses) and toggles for the
+  **directional tone and earcons**, **speech**, and the **directional haptic
+  hint**. Switching mid-run stops the old engine first, so nothing is left
+  buzzing or sounding. A Mac has no haptics, but the tone, earcons and speech
+  all play.
 - **Fingertip x/y sliders**, ranging past `0…1` so you can push the finger off
   the panel — a real case guidance has to handle.
 - **Tracking quality** picker: `good` / `degraded` / `lost`.
@@ -257,13 +263,9 @@ You get:
 - **Walk to target**, which replays the deterministic mock approach so you can
   feel a whole run rather than scrub one frame.
 
-To feel your own engine instead of the printing mock, change one line in
-`Harness/Harness/HarnessApp.swift`:
-
-```swift
-import ContourFeedback
-@State private var model = HarnessModel(engine: LiveFeedbackEngine())
-```
+To feel the real engine, pick **Live engine** in the window — no code change.
+(To start on it, `HarnessApp.swift` still takes
+`HarnessModel(engine: LiveFeedbackEngine())`.)
 
 Then put on a blindfold and have someone else drive the sliders. That is the
 actual test.

@@ -6,9 +6,10 @@
 //  Owned by the Outcome Signals & Harness lane.
 //
 //  Move the sliders, pick a tracking quality, fire an outcome — the rig builds
-//  a TrackingFrame, turns it into a GuidanceState, and hands it to whatever
-//  FeedbackEngine is injected below. Swap `PrintingFeedbackEngine()` for
-//  `LiveFeedbackEngine()` the day Experience has something to feel.
+//  a TrackingFrame, turns it into a GuidanceState, and hands it to a
+//  FeedbackEngine. The window's engine picker switches between the printing
+//  mock and LiveFeedbackEngine (and its model and channels) without a code
+//  change; the engine below is only what it starts with.
 //
 
 import ContourMocks
@@ -17,8 +18,9 @@ import SwiftUI
 @main
 struct HarnessApp: App {
 
-    // ── INJECTION POINT ──────────────────────────────────────────────────────
-    // This is the one line Experience edits. Everything downstream is the contract.
+    // ── STARTING ENGINE ──────────────────────────────────────────────────────
+    // The picker in the window switches engines at runtime. To start on the
+    // real one instead, inject it here:
     //
     //   import ContourFeedback
     //   @State private var model = HarnessModel(engine: LiveFeedbackEngine())
