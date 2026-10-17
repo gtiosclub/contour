@@ -17,7 +17,10 @@
 //  edge of the panel, sharp pulses every 70 ms on the button. Anything past the
 //  edge of the panel feels like the edge. Intensity never drops below 0.35, so
 //  even the far edge is something you can feel. These numbers are a first pass
-//  for the MVP; tune them in the Harness and on a phone.
+//  for the MVP; tune them in the Harness and on a phone (#118). They live in
+//  GuidanceTuning in GuidanceModel.swift, with every other guidance number.
+//
+//  This is the `pulsedProximity` bake-off model; GuidanceModel.swift wraps it.
 //
 //  On the phone, every pulse is the one continuous player in
 //  HapticEngineManager turned up for a pulse width and back down. See
@@ -105,28 +108,25 @@ public struct ProximityHaptics: Sendable {
 
     /// Time between pulses: 600 ms at the edge of the panel, 70 ms on target.
     static func pulseInterval(forDistance distance: Double) -> Duration {
-        .milliseconds(Int((70 + 530 * clampedDistance(distance)).rounded()))
+        let onTarget = GuidanceTuning.pulseIntervalOnTarget
+        let atEdge = GuidanceTuning.pulseIntervalAtEdge
+        return .milliseconds(Int((onTarget + (atEdge - onTarget) * GuidanceTuning.clamped(distance)).rounded()))
     }
 
     /// How long each pulse buzzes: half the time between pulses, capped at
     /// 60 ms, so even the 70 ms pulses on the button have a gap you can feel.
     static func pulseWidth(forDistance distance: Double) -> Duration {
-        min(pulseInterval(forDistance: distance) / 2, .milliseconds(60))
+        min(pulseInterval(forDistance: distance) / 2, GuidanceTuning.pulseWidthCap)
     }
 
     /// One pulse at this distance, or `nil` when the distance isn't a number.
     static func beat(forDistance distance: Double) -> HapticEvent? {
         guard !distance.isNaN else { return nil }
-        let closeness = 1 - clampedDistance(distance)
+        let closeness = 1 - GuidanceTuning.clamped(distance)
         return HapticEvent(
             time: .zero,
-            intensity: 0.35 + 0.65 * closeness,
-            sharpness: 0.3 + 0.6 * closeness
+            intensity: GuidanceTuning.value(in: GuidanceTuning.pulseIntensity, closeness: closeness),
+            sharpness: GuidanceTuning.value(in: GuidanceTuning.pulseSharpness, closeness: closeness)
         )
-    }
-
-    /// `0...1`, so a finger off the panel feels like the edge of it.
-    private static func clampedDistance(_ distance: Double) -> Double {
-        distance.isNaN ? 1 : min(max(distance, 0), 1)
     }
 }

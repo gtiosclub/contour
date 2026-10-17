@@ -43,6 +43,16 @@ func pulseSpacingAtTheEnds() {
     #expect(ProximityHaptics.pulseInterval(forDistance: 0) == .milliseconds(70))
 }
 
+@Test("pulse strength runs 0.35 → 1 and crispness 0.3 → 0.9, edge to button")
+func pulseStrengthAtTheEnds() throws {
+    let edge = try #require(ProximityHaptics.beat(forDistance: 1))
+    let button = try #require(ProximityHaptics.beat(forDistance: 0))
+    #expect(abs(edge.intensity - 0.35) < 1e-9)
+    #expect(abs(button.intensity - 1) < 1e-9)
+    #expect(abs(edge.sharpness - 0.3) < 1e-9)
+    #expect(abs(button.sharpness - 0.9) < 1e-9)
+}
+
 @Test("a pattern is one second of pulses, earliest first")
 func patternIsOneSecondInOrder() {
     for distance in [0, 0.25, 0.5, 0.75, 1] {
