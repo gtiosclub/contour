@@ -37,8 +37,11 @@
 //
 
 import ContourCore
+import CoreGraphics
 import Foundation
+import ImageIO
 import OSLog
+import UniformTypeIdentifiers
 
 /// The real Surface pipeline: panel, then buttons, then labels.
 ///
@@ -125,7 +128,7 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
         let reading: LabelReader.Reading
         do {
-            reading = try await LabelReader().read(in: photo, panel: panel, regions: regions)
+            reading = try await LabelReader().read(in: Self.labelPhoto(for: photo), panel: panel, regions: regions)
         } catch {
             try checkCancellation()
             return LabelReader.Reading(labels: Array(repeating: nil, count: regions.count), textButtons: [])
@@ -141,6 +144,31 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         return reading
     }
 
+    /// A 2x copy for LabelReader when the photo's short side is under 1000 px.
+    /// Saved as TIFF (a JPEG copy lost START on microwave-07). Returns the
+    /// original if the photo is big enough or anything fails.
+    static func labelPhoto(for photo: PanelPhoto) -> PanelPhoto {
+        guard let image = try? photo.cgImage(),   // already upright
+              min(image.width, image.height) < 1000 else { return photo }
+
+        let w = image.width * 2, h = image.height * 2
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return photo }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+
+        let data = NSMutableData()
+        guard let doubled = ctx.makeImage(),
+              let dest = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)
+        else { return photo }
+        CGImageDestinationAddImage(dest, doubled, nil)
+        guard CGImageDestinationFinalize(dest) else { return photo }
+
+        return PanelPhoto(data: data as Data, pixelSize: PixelSize(width: w, height: h),
+                          orientation: .up, timestamp: photo.timestamp)
+    }
+    
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
     /// the contract, so throw ours instead.
     private func checkCancellation() throws {
