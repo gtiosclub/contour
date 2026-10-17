@@ -2,8 +2,14 @@
 //  HarnessView.swift
 //  Harness
 //
-//  Sliders, a quality picker, a target picker, and four outcome buttons.
-//  That is the whole rig. No camera, no phone, no ARKit.
+//  An engine picker, sliders, a quality picker, a target picker, and four
+//  outcome buttons. That is the whole rig. No camera, no phone, no ARKit.
+//
+//  The engine section switches between the printing mock and the real
+//  LiveFeedbackEngine, picks the guidance model, and turns the tone, speech
+//  and the directional hint on and off — mid-run, without a code change. A Mac
+//  has no haptics, but the tone, earcons and speech all play, which is enough
+//  for an audio blindfold run.
 //
 //  COORDINATES: y increases DOWNWARD, so dragging the y slider right moves the
 //  fingertip toward the BOTTOM of the panel. The preview square below is drawn
@@ -11,6 +17,7 @@
 //
 
 import ContourCore
+import ContourFeedback
 import ContourMocks
 import SwiftUI
 
@@ -22,6 +29,8 @@ struct HarnessView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                Divider()
+                engineControls
                 Divider()
                 panelPreview
                 fingertipControls
@@ -45,6 +54,45 @@ struct HarnessView: View {
             Text("Synthetic TrackingFrames for feedback development. "
                  + "No iPhone, no camera, no tracking.")
                 .font(.callout)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var engineControls: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Feedback engine").font(.headline)
+
+            Picker("Engine", selection: $model.engineChoice) {
+                ForEach(HarnessModel.EngineChoice.allCases) { choice in
+                    Text(choice.title).tag(choice)
+                }
+            }
+            .pickerStyle(.segmented)
+            .accessibilityLabel("Feedback engine")
+
+            Group {
+                Picker("Guidance model", selection: $model.modelKind) {
+                    ForEach(GuidanceModelKind.allCases, id: \.self) { kind in
+                        Text(kind == ChosenGuidanceModel.kind ? "\(kind.displayName) (chosen)" : kind.displayName)
+                            .tag(kind)
+                    }
+                }
+                .accessibilityLabel("Guidance model")
+
+                Toggle("Directional tone and earcons", isOn: $model.audioOn)
+                Toggle("Speech", isOn: $model.speechOn)
+                Toggle("Directional haptic hint", isOn: $model.hintOn)
+
+                Button("Silence (end session)") { model.silence() }
+                    .accessibilityHint("Stops every sound and vibration and forgets the last outcome")
+            }
+            .disabled(!model.isLive)
+
+            Text(model.isLive
+                 ? "Switching stops the old engine first. A Mac has no haptics: the model and the "
+                   + "hint are felt on a phone, but the tone, earcons and speech play here."
+                 : "The printing mock logs each state to the console and plays nothing.")
+                .font(.caption)
                 .foregroundStyle(.secondary)
         }
     }

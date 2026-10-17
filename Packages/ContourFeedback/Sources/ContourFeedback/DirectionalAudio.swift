@@ -13,13 +13,24 @@
 //  way — and they cannot see that they are going the wrong way.
 //  See Packages/ContourCore/COORDINATES.md.
 //
-import AVFoundation
+//  THE MAPPING
+//    pan    from dx: hard left at dx = -1, hard right at dx = +1
+//    pitch  from -dy: 960 Hz when the target is straight up, 360 Hz straight down
+//    gain   from normalizedDistance: 1 on the target, `minimumGain` at
+//           `farDistance` (the far corner of the panel) and beyond
+//  All of it is pure and unit-tested. Playing it goes through ToneEngine, which
+//  this shares with DirectionalAudioEngine.
+//
 import ContourCore
 import Foundation
 
+/// One moment of the tone, described independently of AVAudioEngine.
 public struct AudioCue: Hashable, Sendable {
+    /// `-1` hard left ... `+1` hard right.
     public var pan: Double
+    /// Hz.
     public var pitch: Double
+    /// `0...1`.
     public var gain: Double
     public init(pan: Double, pitch: Double, gain: Double) {
         self.pan = pan; self.pitch = pitch; self.gain = gain
@@ -32,15 +43,25 @@ public struct DirectionalAudio: Sendable {
     public static let lowPitch: Double = 360    // target is straight DOWN
     public static let highPitch: Double = 960   // target is straight UP
 
-    /// Distance at (or beyond) which the cue is at its quietest, in the same units as
-    /// `GuidanceState`'s distance. ⚠️ Tune to your panel's units.
+    /// Distance at (or beyond) which the cue is at its quietest, in
+    /// `GuidanceVector.normalizedDistance` units: 1 is the far corner of the panel.
     public let farDistance: Double
     /// Floor so a far target is still audible; the user can't see that it's silent.
     public let minimumGain: Double
 
-    public init(farDistance: Double = 300, minimumGain: Double = 0.2) {
-        self.farDistance = farDistance
-        self.minimumGain = minimumGain
+    /// The tone this plays through. Shared by default, so every engine drives
+    /// the same one and switching engines can never leave a second tone running.
+    let tone: ToneEngine
+
+    public init(farDistance: Double = 1, minimumGain: Double = 0.2) {
+        self.init(farDistance: farDistance, minimumGain: minimumGain, tone: .guidance)
+    }
+
+    init(farDistance: Double = 1, minimumGain: Double = 0.2, tone: ToneEngine) {
+        // A zero or negative far distance would divide by zero in gain(forDistance:).
+        self.farDistance = farDistance.isFinite && farDistance > 0 ? farDistance : 1
+        self.minimumGain = minimumGain.isFinite ? min(max(minimumGain, 0), 1) : 0.2
+        self.tone = tone
     }
 
     // MARK: - Pure mapping (unit-tested)
@@ -73,176 +94,82 @@ public struct DirectionalAudio: Sendable {
         return minimumGain + (1 - minimumGain) * closeness
     }
 
+    /// The cue for one guidance state, or `nil` when the tone should be silent:
+    /// no vector, or the state is terminal. The only place that reads
+    /// GuidanceState's shape, and the exact cue `play(for:)` renders.
+    func cue(for state: GuidanceState) -> AudioCue? {
+        guard !state.isTerminal, let vector = state.vector else { return nil }
+        return cue(for: vector.direction, distance: vector.normalizedDistance)
+    }
+
     // MARK: - Rendering
 
     /// Retargets the tone and returns. Cheap enough to call on every guidance update.
+    /// A state with no vector, or a terminal one, fades the tone out.
     public func play(for state: GuidanceState) async {
-        guard let input = state.audioInput else {
-            await ToneRenderer.shared.stop()
-            return
-        }
-        await ToneRenderer.shared.render(cue(for: input.direction, distance: input.distance))
+        await render(state)
     }
 
     /// Fades out and halts. Safe to call when idle.
     public func stop() async {
-        await ToneRenderer.shared.stop()
+        await silence()
     }
-}
 
-// ⚠️ ADAPTER: the only place that depends on GuidanceState's shape. I assumed a struct
-// with `direction` and `distance`. If it's an enum (.guiding / .arrived / .lost), switch
-// on it here and return nil for the cases that should be silent.
-private extension GuidanceState {
-    var audioInput: (direction: PanelVector, distance: Double)? {
-        guard !isTerminal, let vector else { return nil }
-        return (vector.direction, vector.normalizedDistance)
+    /// Play an earcon once through the same engine, centred. Starts it and
+    /// returns. Does not stop the tone — an outcome does that itself.
+    public func play(_ earcon: Earcon) async {
+        await playEarcon(earcon)
     }
-}
 
-// MARK: - The loop buffer (internal so tests can inspect it)
+    // MARK: - Ducking under speech (#114)
 
-enum LoopTone {
-    static let sampleRate = 48_000.0
-    static let frequency = 480.0        // exactly 100 samples per cycle
-    static let frameCount: AVAudioFrameCount = 4_800   // exactly 100 cycles, so the loop point is seamless
+    /// The tone's level under an ordinary spoken line, as a fraction of normal.
+    public static let duckedGain = 0.25
 
-    static func makeBuffer() -> AVAudioPCMBuffer {
-        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1)!  // MONO, or pan does nothing
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount)!
-        buffer.frameLength = frameCount
-        let samples = buffer.floatChannelData![0]
-        for i in 0..<Int(frameCount) {
-            samples[i] = 0.5 * Float(sin(2 * Double.pi * frequency * Double(i) / sampleRate))
+    /// How much of the tone to keep while speech is doing `activity`: all of it
+    /// in silence, a quarter under an ordinary line so the words stay clear,
+    /// none under an interrupting line (an outcome), which must be heard.
+    ///
+    /// Pure, so it is pinned by tests.
+    public static func duckFactor(for activity: SpeechActivity) -> Double {
+        switch activity {
+        case .silent: 1
+        case .speaking(.interrupting): 0
+        case .speaking: duckedGain
         }
-        return buffer
-    }
-}
-
-// MARK: - Engine (one shared instance, since DirectionalAudio itself is a stateless struct)
-
-private actor ToneRenderer {
-    static let shared = ToneRenderer()
-
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private let varispeed = AVAudioUnitVarispeed()
-    private let format: AVAudioFormat
-    private let buffer: AVAudioPCMBuffer
-
-    private var targetPan: Float = 0
-    private var targetRate: Float = 1
-    private var targetGain: Float = 0
-    private var curPan: Float = 0
-    private var curRate: Float = 1
-    private var curGain: Float = 0
-    private var wantsToPlay = false
-    private var isWired = false
-    private var tickTask: Task<Void, Never>?
-    private var observer: NSObjectProtocol?
-
-    init() {
-        buffer = LoopTone.makeBuffer()
-        format = buffer.format
-        engine.attach(player)
-        engine.attach(varispeed)
     }
 
+    /// Duck the tone for `activity`. The level glides there; no click. Feed it
+    /// `SpeechQueue.activityUpdates()`.
+    public func duck(for activity: SpeechActivity) async {
+        await tone.setDuck(Float(Self.duckFactor(for: activity)))
+    }
+
+    // MARK: - Main-actor core
+    //
+    // The public methods above are each one hop to these. LiveFeedbackEngine
+    // calls them directly so a whole frame is applied in one step.
+
+    /// Head for the cue for `state`, or fade out if it has none.
+    @MainActor
+    func render(_ state: GuidanceState) {
+        guard let cue = cue(for: state) else { return silence() }
+        render(cue)
+    }
+
+    /// Head for `cue`, starting the tone if needed.
+    @MainActor
     func render(_ cue: AudioCue) {
-        guard cue.pan.isFinite, cue.pitch.isFinite, cue.gain.isFinite else { return }
-        targetPan = Float(min(max(cue.pan, -1), 1))
-        targetRate = Float(min(max(cue.pitch / LoopTone.frequency, 0.25), 4))  // varispeed range
-        targetGain = Float(min(max(cue.gain, 0), 1))
-        wantsToPlay = true
-        startIfNeeded()
+        tone.render(cue)
     }
 
-    func stop() {
-        wantsToPlay = false   // tick() fades to silence, then halts the engine
+    @MainActor
+    func silence() {
+        tone.stop()
     }
 
-    private func startIfNeeded() {
-        if engine.isRunning { startTicker(); return }
-        do {
-            try wireIfNeeded()
-            try engine.start()   // session category is NOT set here; Nancy's AudioSessionConfig owns it
-        } catch {
-            return               // wantsToPlay stays true, so the next render() retries
-        }
-        curPan = targetPan; curRate = targetRate; curGain = 0   // start at the target, fade in
-        apply()
-        player.stop()            // clear anything queued so we never double-schedule
-        player.scheduleBuffer(buffer, at: nil, options: .loops)
-        player.play()            // if Xcode warns on iOS 27: try player.playAudio()
-        startTicker()
-        installObserver()
-    }
-
-    private func wireIfNeeded() throws {
-        guard !isWired else { return }
-        try connect(player, to: varispeed)
-        try connect(varispeed, to: engine.mainMixerNode)
-        isWired = true
-    }
-
-    private func connect(_ a: AVAudioNode, to b: AVAudioNode) throws {
-        // connectNode(_:to:format:) is the throwing iOS 27 replacement. The
-        // compiler check keeps this building on the Xcode 26 toolchain too.
-        #if compiler(>=6.4)
-        if #available(iOS 27, macOS 27, *) {
-            try engine.connectNode(a, to: b, format: format)
-            return
-        }
-        #endif
-        engine.connect(a, to: b, format: format)
-    }
-
-    private func startTicker() {
-        guard tickTask == nil else { return }
-        tickTask = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.tick()
-                try? await Task.sleep(for: .milliseconds(16))   // ~60 Hz
-            }
-        }
-    }
-
-    /// Moves current values a fraction of the way to their targets: no zipper noise on fast changes.
-    private func tick() {
-        let k: Float = 0.25   // tune by ear
-        curPan += (targetPan - curPan) * k
-        curRate += (targetRate - curRate) * k
-        curGain += ((wantsToPlay ? targetGain : 0) - curGain) * k
-        apply()
-        if !wantsToPlay && curGain < 0.002 { halt() }
-    }
-
-    private func apply() {
-        player.pan = curPan
-        varispeed.rate = curRate
-        player.volume = curGain
-    }
-
-    private func halt() {
-        player.stop()
-        engine.stop()
-        tickTask?.cancel()
-        tickTask = nil
-        curGain = 0
-    }
-
-    /// Headphone plug/unplug stops the engine itself; restart if we still want sound.
-    private func installObserver() {
-        guard observer == nil else { return }
-        observer = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
-        ) { [weak self] _ in
-            Task { await self?.restartIfNeeded() }
-        }
-    }
-
-    private func restartIfNeeded() {
-        guard wantsToPlay, !engine.isRunning else { return }
-        startIfNeeded()
+    @MainActor
+    func playEarcon(_ earcon: Earcon) {
+        tone.play(earcon)
     }
 }

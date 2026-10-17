@@ -25,6 +25,12 @@
 //  `present(_:)` is called at camera rate, so every method here must start work
 //  and return. Never await an utterance to finish.
 //
+//  OTHERS CAN LISTEN
+//  `activityUpdates()` says when a line starts and stops, and how urgent it is,
+//  so the directional tone can duck under the words. Interruptions and route
+//  changes arrive through AudioSessionConfig.events(); this never touches the
+//  session category itself.
+//
 
 import AVFoundation
 import ContourCore
@@ -68,11 +74,34 @@ public struct Utterance: Hashable, Sendable {
     /// is right for outcomes and wrong for almost everything else.
     public var expiresAfter: Duration?
 
-    public init(text: String, priority: SpeechPriority, expiresAfter: Duration? = nil) {
+    /// Silence before the words once the line starts, so an earcon can finish
+    /// before the first word lands on top of it. Zero for most lines.
+    public var leadIn: Duration
+
+    public init(
+        text: String,
+        priority: SpeechPriority,
+        expiresAfter: Duration? = nil,
+        leadIn: Duration = .zero
+    ) {
         self.text = text
         self.priority = priority
         self.expiresAfter = expiresAfter
+        self.leadIn = leadIn
     }
+}
+
+/// What the speech channel is doing right now, for anything that has to get out
+/// of its way — the directional tone ducks under it.
+public enum SpeechActivity: Hashable, Sendable {
+
+    /// Nothing is being said.
+    case silent
+
+    /// A line is being said, at this priority.
+    case speaking(SpeechPriority)
+
+    public var isSpeaking: Bool { self != .silent }
 }
 
 /// Owns the one AVSpeechSynthesizer and tracks which utterance is "current".
@@ -97,8 +126,10 @@ private final class SynthesizerDriver: NSObject, AVSpeechSynthesizerDelegate, @u
         return current != nil
     }
 
-    func speak(_ text: String) {
+    func speak(_ text: String, leadIn: Duration = .zero) {
         let utterance = AVSpeechUtterance(string: text)
+        let parts = leadIn.components
+        utterance.preUtteranceDelay = max(0, Double(parts.seconds) + Double(parts.attoseconds) * 1e-18)
         lock.lock()
         let wasSpeaking = current != nil
         current = utterance               // replace BEFORE stopping, so the old
@@ -110,6 +141,11 @@ private final class SynthesizerDriver: NSObject, AVSpeechSynthesizerDelegate, @u
     func stop() {
         lock.lock(); current = nil; lock.unlock()
         synthesizer.stopSpeaking(at: .immediate)   // harmless when idle
+    }
+
+    /// Pick up a line the system paused (an interruption, a route change).
+    func resumeIfPaused() {
+        if synthesizer.isPaused { synthesizer.continueSpeaking() }
     }
 
     private func finishIfCurrent(_ utterance: AVSpeechUtterance) {
@@ -142,11 +178,46 @@ public actor SpeechQueue {
     private var entries: [Entry] = []
     private let clock = ContinuousClock()
     private let driver = SynthesizerDriver()
+    private var activity: SpeechActivity = .silent
+    private var listeners: [UUID: AsyncStream<SpeechActivity>.Continuation] = [:]
 
     public init() {
         driver.onFinished = { [weak self] in
-            Task { await self?.pump() }
+            Task { await self?.finished() }
         }
+        Task { [weak self] in
+            for await event in await AudioSessionConfig.events() {
+                guard let self else { return }   // the queue is gone: stop listening
+                await self.handle(event)
+            }
+        }
+    }
+
+    deinit {
+        for listener in listeners.values { listener.finish() }
+    }
+
+    /// Whether a line is being said right now.
+    public var isSpeaking: Bool { activity.isSpeaking }
+
+    /// Every change in what the speech channel is doing, starting with what it
+    /// is doing now. Each call returns its own stream; it finishes when the
+    /// queue goes away. Only the latest value is buffered, so a slow listener
+    /// never acts on a stale one.
+    ///
+    /// Back-to-back lines report one continuous `.speaking`, not a blip of
+    /// `.silent` in between, so a ducked tone does not pop up between them.
+    public nonisolated func activityUpdates() -> AsyncStream<SpeechActivity> {
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: SpeechActivity.self,
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        let id = UUID()
+        continuation.onTermination = { [weak self] _ in
+            Task { await self?.removeListener(id) }
+        }
+        Task { await self.addListener(continuation, id: id) }
+        return stream
     }
 
     public func enqueue(_ utterance: Utterance) async {
@@ -174,9 +245,11 @@ public actor SpeechQueue {
         return live.first(where: { $0.utterance.priority == top })?.utterance
     }
 
+    /// Drop everything queued and cut off the line being said. Safe when idle.
     public func stop() async {
         entries.removeAll()
         driver.stop()
+        setActivity(.silent)
     }
 
     // MARK: - Internals
@@ -201,6 +274,39 @@ public actor SpeechQueue {
         else { return }
 
         entries.remove(at: index)
-        driver.speak(chosen.text)         // one line at a time; stops the old one if needed
+        driver.speak(chosen.text, leadIn: chosen.leadIn)   // one line at a time; stops the old one if needed
+        setActivity(.speaking(chosen.priority))
+    }
+
+    /// The current line ended. Start the next one before reporting silence, so
+    /// listeners see one unbroken `.speaking` across back-to-back lines.
+    private func finished() {
+        pump()
+        if !driver.isSpeaking { setActivity(.silent) }
+    }
+
+    private func handle(_ event: AudioSessionConfig.Event) {
+        switch event {
+        case .interruptionBegan:
+            break                         // the system pauses or cancels the line itself
+        case .interruptionEnded, .routeChanged:
+            driver.resumeIfPaused()
+            pump()
+        }
+    }
+
+    private func setActivity(_ new: SpeechActivity) {
+        guard new != activity else { return }
+        activity = new
+        for listener in listeners.values { listener.yield(new) }
+    }
+
+    private func addListener(_ continuation: AsyncStream<SpeechActivity>.Continuation, id: UUID) {
+        listeners[id] = continuation
+        continuation.yield(activity)
+    }
+
+    private func removeListener(_ id: UUID) {
+        listeners[id] = nil
     }
 }
