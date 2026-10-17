@@ -1,7 +1,7 @@
 # Tracking visual diagnostics
 
-Run the Debug app on an iPhone and keep it upright. Open Developer tools →
-Tracking Diagnostics. With no usable reference, it shows fingertip-only detection.
+Run the Debug app on an iPhone and keep it upright. Tap the ladybug (top right)
+to open the debug menu → Tracking Diagnostics. With no usable reference, it shows fingertip-only detection.
 With a scanned or manually prepared reference, it runs the production panel,
 finger, homography, and quality pipeline.
 If the combined tracker cannot use the panel, Diagnostics independently checks
@@ -28,7 +28,7 @@ To bypass the Surface detector:
 5. Remove the hand or hide the panel. Unusable results should disappear; an old
    dot or outline must not remain frozen. Leave/reopen Diagnostics and background/
    foreground the app to check responsiveness and subscription recovery.
-6. Return to the pipeline and guide to the manual target to test guidance/haptics.
+6. Open the debug menu's **Manual Tracking Test** and guide to the manual target to test guidance/haptics.
 
 The manual target is a small approximate region around the marked point, not
 automatic button recognition. The Advanced fixture option is appropriate only
@@ -40,9 +40,9 @@ with the registered panel and returned controls/labels. A full-image Surface
 fallback remains visible here, and still cannot start live guidance. This view
 helps identify unwanted detections without changing the Surface algorithm.
 
-The former **Enter LiveCameraView** link is now **Camera and speech prototype**.
-That is the separate Experience prototype, not a prerequisite for the integrated
-scan/guide flow.
+The former **Enter LiveCameraView** link is now **Camera & Speech Prototype** in
+the debug menu. That is the separate Experience prototype, not a prerequisite for
+the integrated scan/guide flow.
 
 ## Responsiveness changes and verification limits
 

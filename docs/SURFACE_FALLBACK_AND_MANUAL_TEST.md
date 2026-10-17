@@ -32,9 +32,10 @@ not yet confirmed which one occurs in Remy's real microwave scans.
 
 ## Manual tracking test (Debug builds, physical phone)
 
-1. Aim the preview at the actual panel, with all its outer corners visible.
-2. Tap **Manual tracking test**. This captures a fresh frame from the same camera
-   used by live tracking and bypasses Surface entirely.
+1. Open the debug menu (ladybug, top right) → **Manual Tracking Test**. Aim the
+   preview at the actual panel, with all its outer corners visible.
+2. Tap **Capture panel and mark target**. This captures a fresh frame from the
+   same camera used by live tracking and bypasses Surface entirely.
 3. On the captured image, mark TL, TR, BR, BL, then the center of the button you
    want to reach. The displayed image is aspect-fit; marks use its full image
    coordinates rather than preview crop coordinates.

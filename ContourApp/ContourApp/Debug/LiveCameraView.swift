@@ -1,10 +1,15 @@
 //
-//  liveCameraView.swift
-//  ContourApp
+//  LiveCameraView.swift
+//  ContourApp — Debug
+//
+//  "Camera & Speech Prototype" in the debug menu: Evan's original camera and
+//  on-device speech experiment, kept as a reference. The shipping flow is
+//  ContentView + ContourUI's screens; voice requests there use VoiceRequest.
 //
 //  Created by Evan on 9/26/26.
 //
 
+#if DEBUG
 import SwiftUI
 import AVFoundation
 import Speech
@@ -155,4 +160,4 @@ struct LiveCameraView: View {
 #Preview {
     LiveCameraView()
 }
-
+#endif

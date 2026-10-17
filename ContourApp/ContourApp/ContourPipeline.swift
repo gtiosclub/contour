@@ -43,6 +43,17 @@ final class ContourPipeline {
     private(set) var panelReference: PanelReference?
     private(set) var trackingError: String?
     private(set) var hybridStatus: HybridTrackingDiagnostics?
+
+    /// The guidance state most recently presented to the feedback engine, for
+    /// the guide screen's ring and arrow. Cleared when a new guidance session
+    /// starts; kept after it ends so the screen can show where it stopped.
+    private(set) var latestGuidance: GuidanceState?
+
+    /// The last outcome presented in the current or most recent guidance
+    /// session: `.arrived` once the finger got there, otherwise whatever was
+    /// last announced (`.lostTracking`, `.lowConfidence`), or `nil`.
+    private(set) var lastOutcome: OutcomeSignal?
+
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
@@ -53,8 +64,8 @@ final class ContourPipeline {
     }
 
     /// Which of the three are real implementations rather than mocks. Rendered
-    /// on the placeholder screen so the state of the project is visible at a
-    /// glance on day one.
+    /// in the debug menu's Pipeline Status so the state of the project is
+    /// visible at a glance.
     let liveComponents: Set<Component>
 
     enum Component: String, CaseIterable, Sendable {
@@ -91,11 +102,13 @@ final class ContourPipeline {
 
     // MARK: Configurations
 
-    /// Everything mocked. This is what the app runs on until Week 4.
+    /// Everything mocked. This is what the app runs on until Week 4, and what
+    /// the Simulator runs: the mock finger walks, at a watchable pace, toward
+    /// whichever control is chosen.
     static func mock() -> ContourPipeline {
         ContourPipeline(
             surfaceUnderstanding: MockSurfaceUnderstanding(),
-            tracking: MockTrackingSource(),
+            tracking: AimableMockTracking(),
             feedback: PrintingFeedbackEngine(),
             liveComponents: []
         )
@@ -205,6 +218,8 @@ final class ContourPipeline {
     func guide(to target: SurfaceMap.Button) async {
         generation &+= 1
         let session = generation
+        latestGuidance = nil
+        lastOutcome = nil
         await cancelGuidance()
         guard generation == session, !Task.isCancelled else { return }
         if let reference = panelReference {
@@ -230,6 +245,9 @@ final class ContourPipeline {
         var announced: OutcomeSignal?
         var lostSince: Date?
         var arrived = false
+        // A scripted source (the Simulator's mock walk) walks toward the
+        // control actually chosen, not a fixed one.
+        if let aimable = tracking as? any TargetAwareTrackingSource { await aimable.aim(at: target) }
         for await frame in tracking.frames() {
             if Task.isCancelled || generation != session { break }
             if let live = tracking as? any GuidanceTrackingSession {
@@ -262,6 +280,10 @@ final class ContourPipeline {
 
             if let outcome = state.outcome, outcome == announced { continue }
             announced = state.outcome
+            if generation == session {
+                latestGuidance = state
+                if let outcome = state.outcome { lastOutcome = outcome }
+            }
             await feedback.present(state)
             if state.outcome == .arrived {
                 arrived = true

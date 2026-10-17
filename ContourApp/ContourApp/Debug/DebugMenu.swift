@@ -1,30 +1,45 @@
+//
 //  DebugMenu.swift
-//  ContourApp
+//  ContourApp — Debug
 //
-//  Created by Anushka Prabhu on 9/28/26.
+//  Every developer screen, in one list, named for what it does. DEBUG builds
+//  only; reached from the ladybug button on the main screen. Add one line per
+//  new screen — and name it after the job, not the person who wrote it.
 //
-
-
-//  DebugMenu.swift
-//  ContourApp/Debug
+//  While this menu is open the main flow stands down (ExperienceModel
+//  .pauseForDebugTools), so these tools have the pipeline and camera to
+//  themselves. Closing it returns the app to the camera.
 //
-//  Created to provide a DEBUG-only menu for developer screens.
-//  Everyone adds one line for their debug screen here. See the onboarding ticket.
 
 #if DEBUG
+import ContourFeedback
 import SwiftUI
 
-/// The app's debug/developer menu. Only present in DEBUG builds.
-/// - Usage: Add a NavigationLink or Button for your debug screen here — one line per debug screen.
-public struct DebugMenu: View {
-    public init() {}
-    public var body: some View {
+struct DebugMenu: View {
+    let pipeline: ContourPipeline
+    let camera: CameraService
+
+    var body: some View {
         List {
-            // Add your debug screens here:
-            NavigationLink("Directional Audio") { AudioDebugView() }
-            NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
-            //NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: CameraService()) }
-            // Example: NavigationLink("My Debug Tool") { MyDebugToolView() }
+            Section("Pipeline") {
+                NavigationLink("Pipeline Status") { PipelineStatusView(pipeline: pipeline) }
+                NavigationLink("Captured Panel Review") { CapturedPanelReviewScreen(pipeline: pipeline) }
+            }
+            Section("Tracking") {
+                NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: camera, pipeline: pipeline) }
+                NavigationLink("Manual Tracking Test") { ManualTrackingTestView(pipeline: pipeline, camera: camera) }
+            }
+            Section("Feedback") {
+                NavigationLink("Haptics") { HapticsDebugView() }
+                NavigationLink("Directional Audio") { AudioDebugView() }
+                NavigationLink("Speech Queue") { SpeechDebugView(queue: SpeechQueue()) }
+            }
+            Section("Surface Understanding") {
+                NavigationLink("Model Image Spike (Surface)") { ModelImageSpikeView() }
+            }
+            Section("Prototypes") {
+                NavigationLink("Camera & Speech Prototype") { LiveCameraView() }
+            }
         }
         .navigationTitle("Debug Menu")
     }

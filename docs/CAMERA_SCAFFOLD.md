@@ -31,4 +31,4 @@ an identity transform and real panel confidence. See `PANEL_TRACKING.md` and
 For current device testing instructions, see
 [Tracking visual diagnostics](TRACKING_VISUAL_DIAGNOSTICS.md). Developer navigation
 is available only in Debug builds. The separate camera/speech prototype retains
-its own original implementation and is labelled accordingly in Developer tools.
+its own original implementation and is labelled accordingly in the debug menu.
