@@ -25,12 +25,17 @@ import Foundation
 
 /// Placeholder composition of `TrackingFrame` + target into `GuidanceState`.
 ///
-/// Pure and deterministic: no state, no clock, no randomness.
+/// Pure and deterministic: no state, no clock, no randomness. The geometry is
+/// `GuidanceMath`'s; this type adds only its historical policy on top:
+/// unclamped distance, `.lowConfidence` below a pose-confidence floor, and a
+/// `nil` fingertip on a non-lost frame reported as "no guidance" rather than
+/// `.lostTracking`. New code that wants issue #12's semantics should call
+/// `GuidanceMath.compute(frame:target:)` directly.
 public enum MockGuidance {
 
     /// The panel's diagonal, which is what `normalizedDistance` is measured
     /// against so that `1.0` means "opposite corner".
-    public static let panelDiagonal = 2.0.squareRoot()
+    public static let panelDiagonal = GuidanceMath.panelDiagonal
 
     /// Guidance for a fingertip heading toward a point.
     ///
@@ -49,23 +54,14 @@ public enum MockGuidance {
             return GuidanceState(timestamp: timestamp, vector: nil)
         }
 
-        let raw = fingertip.vector(to: target)
-        let distance = raw.magnitude
-
-        if distance <= arrivalRadius {
-            return GuidanceState(
-                timestamp: timestamp,
-                vector: .onTarget,
-                outcome: .arrived
-            )
-        }
-
-        return GuidanceState(
+        // The geometry lives in GuidanceMath. MockGuidance keeps its historical
+        // unclamped distance, so off-panel fingertips still read above 1.
+        return GuidanceMath.state(
+            from: fingertip,
+            to: target,
             timestamp: timestamp,
-            vector: GuidanceVector(
-                direction: raw.normalized ?? .zero,
-                normalizedDistance: distance / panelDiagonal
-            )
+            arrivalRadius: arrivalRadius,
+            clampsDistance: false
         )
     }
 
