@@ -107,6 +107,9 @@ public struct TargetMatcher: Sendable {
         "pause": ["stop"],
         "cancel": ["stop"],
     ]
+    
+    /// A label taller than this share of the panel is several keys read as one.
+    private let maxLabelHeight = 0.25
 
     // MARK: - Text helpers
 
@@ -170,7 +173,7 @@ public struct TargetMatcher: Sendable {
         let wantsNumber = wanted.allSatisfy { $0.allSatisfy(\.isNumber) }
         if wantsNumber && have != wanted { return nil }
         // "start" never means Delay Start or Time Start.
-        if wanted.contains("start"), have.contains("delay") || have.contains("time") { return nil }
+        if wanted.contains("start"), have.contains("delay") || have.contains("time") || have.contains("cancel") { return nil }
         return have
     }
 
@@ -194,7 +197,7 @@ public struct TargetMatcher: Sendable {
 
         var matches: [TargetMatch] = []
         for button in map.buttons {
-            guard let label = button.label else { continue }
+            guard let label = button.label, button.bounds.height <= maxLabelHeight else { continue }
             let whole = normalize(label)
             guard !whole.isEmpty, canonical(whole) == wanted else { continue }
             let confidence = (whole == normalizedRequest) ? 1.0 : 0.9
@@ -210,7 +213,8 @@ public struct TargetMatcher: Sendable {
 
         var candidates: [(button: SurfaceMap.Button, extra: Int)] = []
         for button in map.buttons {
-            guard let label = button.label, let have = keyWords(label, for: wanted) else { continue }
+            guard let label = button.label, button.bounds.height <= maxLabelHeight,
+                  let have = keyWords(label, for: wanted) else { continue }
             guard Set(wanted).isSubset(of: Set(have)) else { continue }
             candidates.append((button: button, extra: have.count - wanted.count))
         }
