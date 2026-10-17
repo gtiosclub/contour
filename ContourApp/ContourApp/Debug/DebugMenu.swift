@@ -38,8 +38,7 @@ struct DebugMenu: View {
                 NavigationLink("Model Image Spike (Surface)") { ModelImageSpikeView() }
             }
             Section("Prototypes") {
-                NavigationLink("Camera and speech prototype") { LiveCameraView() }
-                NavigationLink("Anushka's Debug Tool") { AnushkaDebugView() }
+                NavigationLink("Camera & Speech Prototype") { LiveCameraView() }
             }
         }
         .navigationTitle("Debug Menu")
