@@ -402,8 +402,12 @@ struct DirectionalHint: Sendable {
 /// from this decision.
 public enum ChosenGuidanceModel {
 
-    /// `nil` until the Week 2 gate. CI does not enforce that — your lead does.
-    public static let kind: GuidanceModelKind? = nil
+    /// ⚠️ PROVISIONAL, pending the blindfold runs (#54). No trials have been run
+    /// yet; this is the pick from the feel spec and testers' feedback on #120
+    /// ("testers want a phone-call style buzz"). The protocol and an empty
+    /// results table are in docs/decisions/guidance-model.md — fill it in, then
+    /// confirm or change this line.
+    public static let kind: GuidanceModelKind? = .continuousProximity
 
     /// What runs while `kind` is `nil`: the pulses the MVP shipped with.
     public static let fallback: GuidanceModelKind = .pulsedProximity
