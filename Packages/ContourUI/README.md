@@ -39,16 +39,57 @@ producer. What you owe the app:
 
 ```swift
 public struct CaptureFlow: Sendable {
+    init(capture: @escaping @Sendable () async throws -> PanelPhoto)
     func capturePanelPhoto() async throws -> PanelPhoto
 }
 
 public struct TargetSelection: Sendable {
-    func selectTarget(in map: SurfaceMap) async -> SurfaceMap.Button?
+    init(listen: @escaping @Sendable (SurfaceMap) async throws -> SurfaceMap.Button?)
+    func selectTarget(in map: SurfaceMap) async -> SurfaceMap.Button?   // suspends until chosen
+    func choose(_ button: SurfaceMap.Button) -> Bool                    // a tap resolves it
+    func listenForTarget() async throws -> SurfaceMap.Button?           // a spoken request resolves it
+    func backOut() -> Bool                                               // nil
+}
+
+public struct GuidanceFlow: Sendable {
+    init(announce: @escaping @Sendable (String) async -> Void)
+    func currentStage() async -> GuidanceFlowStage
+    func advance(to stage: GuidanceFlowStage) async
+    func advanceIfLegal(to stage: GuidanceFlowStage) async -> Bool
+    func cancel() async -> Bool
+    func stages() -> AsyncStream<GuidanceFlowStage>
+    func announcement(for stage: GuidanceFlowStage) -> String
 }
 ```
 
 A `PanelPhoto` up to the app, which hands you back a `SurfaceMap`, from which
-the user picks a `Button`.
+the user picks a `Button`. The transition table is at the top of
+`GuidanceFlow.swift`.
+
+### Ownership: the app keeps the camera and voice matching
+
+Two things a "camera experience" package might be expected to own stay in
+`ContourApp`, on purpose:
+
+- **The camera.** Tracking follows the same `CameraService` stream the scan
+  photo comes from, and the reference photo and the live frames must share one
+  size and orientation or Vision's tracker fails (see
+  `ContourApp/ContourApp/Camera/PanelPhotoCapture.swift`). One camera, owned by
+  the app, handed to both. So `CaptureFlow` is given a capture closure;
+  `CaptureFlow()` with no camera throws `CaptureFlowError.noCamera`. The live
+  preview is likewise passed into the screens as a view.
+- **Voice matching.** Turning "the start one" into a button is Surface
+  Understanding's `TargetMatcher`, which this package cannot import. The app
+  records the request and resolves it; `TargetSelection` is given a `listen`
+  closure that returns the matched button.
+
+`ContourUI` owns everything else the user perceives on screen and hears from
+the flow: the stage machine, every announcement, and the screens themselves
+(`AcquireScreen`, `DetectingScreen`, `SelectScreen`, `GuideScreen`,
+`OutcomeScreen`). The screens take plain data and closures, so they render the
+same against `MockSurfaceMaps.microwave` in a test or a preview as against a
+real panel. Colours, type, spacing and radii all live in `ContourTheme.swift`
+so the team can restyle to the Figma designs in one place.
 
 ### You never call another package, including your own team's
 
