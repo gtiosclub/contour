@@ -6,6 +6,15 @@
 //  timer and finishes. Fully deterministic: the whole sequence is a pure
 //  function of the initialiser arguments, including the timestamps.
 //
+//  Two ways to drive it:
+//  - the original linear walk, `MockTrackingSource(start:target:steps:...)`,
+//    which the app, the Harness and other teams' tests pin; and
+//  - a `MockRun` script, `MockTrackingSource(run:map:)` (issue #12): 30 Hz,
+//    ease-in-out with a small wobble, optional overshoot and dropout, then a
+//    2 s hold on the target.
+//  Both stream on a ContinuousClock, sleeping until each tick's deadline so
+//  the frame rate does not drift.
+//
 //  COORDINATES: `fingertip` is in normalized panel space, (0,0) top-left,
 //  (1,1) bottom-right, y DOWNWARD. See Packages/ContourCore/COORDINATES.md.
 //
@@ -62,6 +71,10 @@ public struct MockTrackingSource: TrackingSource {
     /// Seed for `jitter`. Change it to get a different — but still fixed — walk.
     public let seed: UInt64
 
+    /// The script driving this source, if it was made with `init(run:map:)`.
+    /// `nil` for the original linear walk.
+    public let run: MockRun?
+
     public init(
         start: PanelPoint = PanelPoint(x: 0.12, y: 0.14),
         target: PanelPoint = MockSurfaceMaps.microwaveStartButton.bounds.center,
@@ -83,6 +96,35 @@ public struct MockTrackingSource: TrackingSource {
         self.qualityOverrides = qualityOverrides
         self.jitter = jitter
         self.seed = seed
+        self.run = nil
+    }
+
+    /// A 30 Hz source that plays `run` toward its target button in `map`.
+    ///
+    /// `start` is the run's start, `target` the button's centre, `steps` the
+    /// run's `lastTick` (travel plus the hold) and `interval` 1/30 s.
+    /// `qualityOverrides` and `jitter` do not apply; the run's own `dropout`
+    /// and wobble do.
+    ///
+    /// - Precondition: `run.targetButtonID` is a button in `map`.
+    public init(
+        run: MockRun,
+        map: SurfaceMap = MockSurfaceMaps.microwaveKeypad,
+        baseTimestamp: Date = MockTrackingSource.fixedEpoch
+    ) {
+        guard let button = map.buttons.first(where: { $0.id == run.targetButtonID }) else {
+            preconditionFailure("MockRun target \(run.targetButtonID) is not a button in the map")
+        }
+        self.start = run.start
+        self.target = button.bounds.center
+        self.steps = run.lastTick
+        self.interval = .seconds(1) / MockRun.framesPerSecond
+        self.baseTimestamp = baseTimestamp
+        self.quality = .good
+        self.qualityOverrides = [:]
+        self.jitter = 0
+        self.seed = SeededGenerator.contourSeed
+        self.run = run
     }
 
     /// 2026-01-01 00:00:00 UTC. An arbitrary fixed instant, so that mock
@@ -94,6 +136,10 @@ public struct MockTrackingSource: TrackingSource {
     /// Exposed so tests can assert on a frame without draining the stream, and
     /// so the Harness can scrub rather than play.
     public func frame(atStep step: Int) -> TrackingFrame {
+        if let run {
+            return run.frame(atTick: step, target: target, baseTimestamp: baseTimestamp)
+        }
+
         let clamped = min(max(step, 0), steps)
         let frameQuality = qualityOverrides[clamped] ?? quality
         let timestamp = baseTimestamp.addingTimeInterval(
@@ -131,14 +177,32 @@ public struct MockTrackingSource: TrackingSource {
         )
     }
 
+    /// Every frame this source emits, `0...steps`, computed directly with no
+    /// clock. This is what determinism tests should compare.
+    public func allFrames() -> [TrackingFrame] {
+        (0...steps).map(frame(atStep:))
+    }
+
+    /// Streams `allFrames()` in real time, `interval` apart.
+    ///
+    /// Tick `n` is yielded at `start + n * interval` on a `ContinuousClock`;
+    /// sleeping until each absolute deadline rather than for a fixed gap means
+    /// a slow tick does not push every later tick back. Cancelling the
+    /// consumer (or dropping the stream) cancels the producing task.
     public func frames() -> AsyncStream<TrackingFrame> {
-        AsyncStream { continuation in
+        let source = self
+        return AsyncStream { continuation in
             let task = Task {
-                for step in 0...steps {
+                let clock = ContinuousClock()
+                let origin = clock.now
+                for step in 0...source.steps {
                     if Task.isCancelled { break }
-                    continuation.yield(frame(atStep: step))
-                    if step < steps {
-                        do { try await Task.sleep(for: interval) } catch { break }
+                    continuation.yield(source.frame(atStep: step))
+                    guard step < source.steps else { break }
+                    do {
+                        try await clock.sleep(until: origin.advanced(by: source.interval * (step + 1)))
+                    } catch {
+                        break
                     }
                 }
                 continuation.finish()

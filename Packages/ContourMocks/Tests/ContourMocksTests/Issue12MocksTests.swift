@@ -154,3 +154,155 @@ struct GuidanceMathTests {
         }
     }
 }
+
+@Suite("MockRun-driven tracking")
+struct MockRunTrackingTests {
+
+    private let startCentre = MockSurfaceMaps.keypadButton(.start).bounds.center
+
+    @Test("the same preset yields identical frames every time", arguments: MockRun.Preset.allCases)
+    func deterministic(preset: MockRun.Preset) {
+        let a = MockTrackingSource(run: preset.run).allFrames()
+        let b = MockTrackingSource(run: preset.run).allFrames()
+        let c = preset.run.frames(target: startCentre, baseTimestamp: MockTrackingSource.fixedEpoch)
+
+        #expect(a.count == 121, "2 s travel + 2 s hold at 30 Hz, both ends inclusive")
+        #expect(a == b)
+        #expect(a == c)
+    }
+
+    @Test("30 Hz from the fixed epoch", arguments: MockRun.Preset.allCases)
+    func timing(preset: MockRun.Preset) {
+        let source = MockTrackingSource(run: preset.run)
+        #expect(source.interval == .seconds(1) / 30)
+        #expect(source.steps == 120)
+        for (tick, frame) in source.allFrames().enumerated() {
+            #expect(frame.timestamp == MockTrackingSource.fixedEpoch.addingTimeInterval(Double(tick) / 30))
+        }
+    }
+
+    @Test("straight: starts at start, arrives at tick 60, holds for 2 s")
+    func straight() {
+        let source = MockTrackingSource(run: .straight)
+        let frames = source.allFrames()
+
+        #expect(source.target == startCentre)
+        #expect(frames[0].fingertip == MockRun.straight.start)
+        #expect(frames[59].fingertip != startCentre)
+        #expect(frames[60...].allSatisfy { $0.fingertip == startCentre })
+        #expect(frames.allSatisfy { $0.trackingQuality == .good })
+    }
+
+    @Test("the wobble stays within 0.01 of the straight line")
+    func wobble() {
+        let run = MockRun.straight
+        let path = run.start.vector(to: startCentre)
+        let normal = PanelVector(dx: -path.dy, dy: path.dx).normalized!
+        var largest = 0.0
+        for frame in MockTrackingSource(run: run).allFrames() {
+            let offset = run.start.vector(to: frame.fingertip!)
+            largest = max(largest, abs(offset.dx * normal.dx + offset.dy * normal.dy))
+        }
+        #expect(largest <= MockRun.wobbleAmplitude + 1e-12)
+        #expect(largest > MockRun.wobbleAmplitude / 2, "there is a visible wobble")
+    }
+
+    @Test("overshoot passes 0.1 beyond the target, then returns")
+    func overshoot() {
+        let run = MockRun.overshoot
+        let frames = MockTrackingSource(run: run).allFrames()
+        let path = run.start.vector(to: startCentre).normalized!
+
+        let peak = frames[45].fingertip!  // 75% of the 60 travel ticks
+        let past = startCentre.vector(to: peak)
+        #expect(abs(past.dx * path.dx + past.dy * path.dy - 0.1) < 1e-9, "0.1 beyond, along the path")
+        #expect(frames[60...].allSatisfy { $0.fingertip == startCentre })
+    }
+
+    @Test("withDropout: 0.5 s lost in the middle of the reach")
+    func dropout() {
+        let frames = MockTrackingSource(run: .withDropout).allFrames()
+        let lostTicks = frames.indices.filter { frames[$0].trackingQuality == .lost }
+
+        #expect(lostTicks == Array(23...37), "15 frames = 0.5 s at 30 Hz")
+        #expect(lostTicks.allSatisfy { frames[$0].fingertip == nil })
+        #expect(frames[22].fingertip != nil && frames[38].fingertip != nil)
+        // Outside the window it is the straight run, frame for frame.
+        let straight = MockTrackingSource(run: .straight).allFrames()
+        for tick in frames.indices where !lostTicks.contains(tick) {
+            #expect(frames[tick] == straight[tick])
+        }
+    }
+
+    @Test("the legacy walk is untouched by the new init")
+    func legacyUnchanged() {
+        let legacy = MockTrackingSource()
+        #expect(legacy.run == nil)
+        #expect(legacy.steps == 30)
+        #expect(legacy.frame(atStep: 0).fingertip == PanelPoint(x: 0.12, y: 0.14))
+        #expect(legacy.frame(atStep: 30).fingertip == MockSurfaceMaps.microwaveStartButton.bounds.center)
+        #expect(legacy.allFrames().count == 31)
+    }
+
+    @Test("streaming yields allFrames() and never runs early")
+    func streams() async {
+        let run = MockRun(start: .center, targetButtonID: Key.stop.id, duration: 0.2, hold: 0.1)
+        let source = MockTrackingSource(run: run)
+
+        let clock = ContinuousClock()
+        let began = clock.now
+        var streamed: [TrackingFrame] = []
+        for await frame in source.frames() { streamed.append(frame) }
+
+        #expect(streamed == source.allFrames())
+        #expect(began.duration(to: clock.now) >= source.interval * source.steps)
+    }
+
+    @Test("dropping out of the stream early stops it")
+    func cancels() async {
+        var count = 0
+        for await _ in MockTrackingSource(run: .straight).frames() {
+            count += 1
+            if count == 2 { break }
+        }
+        #expect(count == 2)
+    }
+}
+
+@Suite("MockGuidanceSource")
+struct MockGuidanceSourceTests {
+
+    @Test("states are GuidanceMath over the run's frames", arguments: MockRun.Preset.allCases)
+    func chained(preset: MockRun.Preset) {
+        let source = MockGuidanceSource(run: preset.run)
+        let frames = source.tracking.allFrames()
+        let states = source.allStates()
+
+        #expect(states.count == frames.count)
+        #expect(states == frames.map { GuidanceMath.compute(frame: $0, target: source.target) })
+        #expect(states == MockGuidanceSource(run: preset.run).allStates(), "deterministic")
+        #expect(states.last?.outcome == .arrived)
+        #expect(source.state(atStep: 0) == states[0])
+    }
+
+    @Test("the first state points down-right toward Start; dropout reads lostTracking")
+    func content() {
+        let first = MockGuidanceSource(run: .straight).state(atStep: 0)
+        #expect(first.outcome == nil)
+        #expect(PrintingFeedbackEngine.compass(first.vector!.direction) == "down-right")
+
+        let dropout = MockGuidanceSource(run: .withDropout).allStates()
+        #expect(dropout[23...37].allSatisfy { $0.outcome == .lostTracking })
+    }
+
+    @Test("streams one state per frame, then finishes")
+    func streams() async {
+        let run = MockRun(start: .center, targetButtonID: Key.popcorn.id, duration: 0.1, hold: 0.1)
+        let source = MockGuidanceSource(run: run)
+
+        var streamed: [GuidanceState] = []
+        for await state in source.states() { streamed.append(state) }
+
+        #expect(streamed == source.allStates())
+    }
+}
