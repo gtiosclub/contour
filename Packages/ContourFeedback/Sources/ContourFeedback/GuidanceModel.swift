@@ -35,6 +35,13 @@
 //  switch, #119), continuousAudioField (now the audio switch) and
 //  spokenCorrections (dropped: speech is the slowest channel — see SpeechQueue).
 //
+//  THE DIRECTIONAL HINT (#119), behind a switch, off by default
+//  Hot/cold says how far, not which way. Without headphones, or in a loud
+//  kitchen, nothing else says which way either. The hint fires an occasional
+//  haptic correction for the dominant axis only — up, down, left or right —
+//  rate-limited so it never chatters, and silent in the last stretch where the
+//  proximity signal takes over. It plays on top of whichever model is running.
+//
 //  Both models play through one HapticPlayer and so one HapticEngineManager.
 //  Switching models mid-run stops the old one first, and the player only ever
 //  runs one guidance vibration at a time, so nothing is left buzzing.
@@ -85,6 +92,24 @@ struct GuidanceTuning {
     /// The weak half of a throb, as a fraction of the strong half. Never 0: the
     /// buzz stays sustained, it does not turn into taps.
     static let throbDip = 0.5
+
+    // Directional hint (#119).
+
+    /// The same direction is repeated at most this often, seconds.
+    static let hintRepeatInterval = 1.5
+    /// Never two hints closer together than this, even when the direction
+    /// changes, seconds.
+    static let hintMinimumGap = 0.4
+    /// After an outcome, wait this long before hinting again, so a hint never
+    /// cuts off the outcome's taps, seconds.
+    static let hintHoldAfterOutcome = 1.5
+    /// Closer than this, no hint: the proximity signal is doing the work.
+    static let hintDeadZone = 0.05
+    /// To switch axis, the other axis must be this much bigger than the one the
+    /// last hint used, so a diagonal approach doesn't flip-flop.
+    static let hintAxisSwitchRatio = 1.25
+    /// Gap between the taps of one hint, ms.
+    static let hintTapSpacing = 80
 
     /// `0...1`, so a finger off the panel feels like the edge. NaN reads as the edge.
     static func clamped(_ distance: Double) -> Double {
@@ -244,6 +269,96 @@ public struct PulsedProximityModel: GuidanceModel {
 
     public func stop() async {
         await proximity.stop()
+    }
+}
+
+// MARK: - The directional hint
+
+/// Which way the directional hint tells the finger to move.
+///
+/// Panel space: `.up` is NEGATIVE dy. See Packages/ContourCore/COORDINATES.md.
+enum HintDirection: String, Hashable, Sendable, CaseIterable {
+    case up, down, left, right
+}
+
+/// Occasional haptic corrections for the dominant axis (#119).
+///
+/// The mapping and the signatures are pure; the one piece of state is when the
+/// last hint fired, measured on `GuidanceState.timestamp` so tests are
+/// deterministic and a replayed walk feels the same every time.
+struct DirectionalHint: Sendable {
+
+    private var last: (direction: HintDirection, time: Date)?
+    private var holdUntil: Date?
+
+    /// The hint to fire for `state`, or `nil` to stay quiet: no vector, a
+    /// terminal state, inside the dead zone, or too soon after the last one.
+    mutating func next(for state: GuidanceState) -> HintDirection? {
+        guard !state.isTerminal,
+              let vector = state.vector,
+              let direction = Self.direction(for: vector, previous: last?.direction)
+        else { return nil }
+        if let holdUntil, state.timestamp < holdUntil { return nil }
+        if let last {
+            let elapsed = state.timestamp.timeIntervalSince(last.time)
+            let due = direction == last.direction
+                ? GuidanceTuning.hintRepeatInterval
+                : GuidanceTuning.hintMinimumGap
+            // A clock that went backwards (a new session) counts as due. The
+            // millisecond of slack absorbs Date's rounding.
+            if elapsed >= 0 && elapsed < due - 0.001 { return nil }
+        }
+        last = (direction, state.timestamp)
+        return direction
+    }
+
+    /// An outcome just played: forget the last hint and hold off for a moment.
+    mutating func outcomeHappened(at time: Date) {
+        last = nil
+        holdUntil = time.addingTimeInterval(GuidanceTuning.hintHoldAfterOutcome)
+    }
+
+    /// The dominant axis of `vector`, or `nil` when there is no sensible hint.
+    ///
+    /// ⚠️ +dy is DOWN: a negative dy is `.up`.
+    static func direction(for vector: GuidanceVector, previous: HintDirection?) -> HintDirection? {
+        let dx = vector.direction.dx, dy = vector.direction.dy
+        guard dx.isFinite, dy.isFinite, vector.normalizedDistance.isFinite,
+              vector.normalizedDistance >= GuidanceTuning.hintDeadZone,
+              dx != 0 || dy != 0
+        else { return nil }
+
+        let horizontal: HintDirection = dx < 0 ? .left : .right
+        let vertical: HintDirection = dy < 0 ? .up : .down
+        let ratio = GuidanceTuning.hintAxisSwitchRatio
+        switch previous {
+        case .left?, .right?:
+            return abs(dy) > abs(dx) * ratio ? vertical : horizontal
+        case .up?, .down?:
+            return abs(dx) > abs(dy) * ratio ? horizontal : vertical
+        case nil:
+            return abs(dx) > abs(dy) ? horizontal : vertical
+        }
+    }
+
+    /// What each direction feels like. Up and down are both two taps, told
+    /// apart by contour and touch; left and right by count.
+    ///
+    ///     up     two crisp taps, rising     — a lift
+    ///     down   two dull taps, falling     — a drop
+    ///     left   one firm tap
+    ///     right  three quick taps
+    static func signature(for direction: HintDirection) -> [HapticEvent] {
+        let spacing = GuidanceTuning.hintTapSpacing
+        func tap(_ index: Int, _ intensity: Double, _ sharpness: Double) -> HapticEvent {
+            HapticEvent(time: .milliseconds(index * spacing), intensity: intensity, sharpness: sharpness)
+        }
+        switch direction {
+        case .up: return [tap(0, 0.5, 0.9), tap(1, 1.0, 0.9)]
+        case .down: return [tap(0, 1.0, 0.15), tap(1, 0.5, 0.15)]
+        case .left: return [tap(0, 0.8, 0.5)]
+        case .right: return [tap(0, 0.7, 0.5), tap(1, 0.7, 0.5), tap(2, 0.7, 0.5)]
+        }
     }
 }
 
