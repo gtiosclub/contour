@@ -108,8 +108,12 @@ public struct TargetMatcher: Sendable {
         "cancel": ["stop"],
     ]
     
-    /// A label taller than this share of the panel is several keys read as one.
-    private let maxLabelHeight = 0.25
+    /// Labels over 2.5x the panel's median label height are merged keys.
+    /// Real Start keys are 1.0–1.9x; merged labels 2.9–3.5x.
+    private func heightLimit(_ map: SurfaceMap) -> Double {
+        let heights = map.buttons.filter { $0.label != nil }.map(\.bounds.height).sorted()
+        return heights.isEmpty ? 1 : 2.5 * heights[heights.count / 2]
+    }
 
     // MARK: - Text helpers
 
@@ -196,6 +200,8 @@ public struct TargetMatcher: Sendable {
         let wanted = canonical(normalizedRequest)
 
         var matches: [TargetMatch] = []
+        let maxLabelHeight = heightLimit(map)
+
         for button in map.buttons {
             guard let label = button.label, button.bounds.height <= maxLabelHeight else { continue }
             let whole = normalize(label)
@@ -212,6 +218,8 @@ public struct TargetMatcher: Sendable {
         guard !wanted.isEmpty else { return [] }
 
         var candidates: [(button: SurfaceMap.Button, extra: Int)] = []
+        let maxLabelHeight = heightLimit(map)
+
         for button in map.buttons {
             guard let label = button.label, button.bounds.height <= maxLabelHeight,
                   let have = keyWords(label, for: wanted) else { continue }
