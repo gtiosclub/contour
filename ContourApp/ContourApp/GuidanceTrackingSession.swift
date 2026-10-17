@@ -39,3 +39,9 @@ enum GuidanceSessionFactories {
         return LiveTrackingSource(camera: camera, onSample: onSample)
     }
 }
+
+/// A scripted source that can be pointed at the chosen control before it
+/// emits frames. Real tracking never needs this: it sees the real finger.
+nonisolated protocol TargetAwareTrackingSource: TrackingSource {
+    func aim(at target: SurfaceMap.Button) async
+}

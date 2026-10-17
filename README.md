@@ -125,7 +125,7 @@ so that "who is doing the haptics" has an answer that isn't "Experience".
 | Experience | Audio & Speech | Rishika | `DirectionalAudio`, `SpeechQueue` |
 | Experience | App Flow | Asav | `CaptureFlow`, `GuidanceFlow` |
 | Experience | Outcome Signals & Harness | Ashwanth, Nancy, Anushka | `OutcomeAnnouncer`, `LiveFeedbackEngine`, `Harness/` |
-| Experience | Accessibility & Launch | Ashwanth, Nancy, Anushka | `PlaceholderViews`, `ContourApp/ContentView` |
+| Experience | Accessibility & Launch | Ashwanth, Nancy, Anushka | `ContourTheme`, `Screens/`, `ContourApp/ContentView` |
 | Experience | Mocks & Integration | Ashwanth, Nancy, Anushka | `Packages/ContourMocks`, `ContourApp/ContourPipeline` |
 
 Each source file's header names its lane. The PR template asks which lane a
@@ -233,9 +233,12 @@ pointing at a microwave.
 4. Run. First launch on a free account needs
    *Settings → General → VPN & Device Management → Trust*.
 
-What you'll see on day one is a status screen listing which components are live
-and which are mocked, plus buttons to run the mock pipeline end to end. That's
-expected — the four team packages are still empty rooms.
+The app opens straight into the camera: point at a panel, tap **Scan panel**
+(the whole bottom third of the screen), say or pick a button, and follow the
+guidance. In Debug builds the ladybug button (top right) opens the debug menu:
+which components are live or mocked, the captured photo, tracking diagnostics,
+the manual tracking test, and the feedback rigs. The Simulator runs everything
+mocked, with a drawn panel in place of the camera.
 
 ### Run the Harness
 

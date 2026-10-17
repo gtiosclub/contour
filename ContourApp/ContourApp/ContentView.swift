@@ -2,11 +2,25 @@
 //  ContentView.swift
 //  ContourApp — Experience / Accessibility & Launch
 //
-//  Scaffolding placeholder. Experience replaces this with the real camera
-//  experience — ContourUI.ContourCameraView is where that starts.
+//  The app's root: it launches straight into the camera. Point at a panel →
+//  Scan → say (or pick) a button → guidance → outcome. VoiceOver-first: every
+//  stage change is announced by ContourUI's GuidanceFlow, and each screen's
+//  most important action is also the Magic Tap.
 //
-//  It shows which packages are live and which are still mocked, and runs the
-//  mock pipeline end to end so that a fresh clone demonstrably works on device.
+//  The screens are ContourUI's (they take plain data and closures); the
+//  decisions are ExperienceModel's; this view only picks the screen for the
+//  stage and hands each one the camera preview, which lives in the app.
+//
+//  DEVELOPER TOOLS (DEBUG only): the ladybug in the top-right corner opens
+//  Debug/DebugMenu.swift — pipeline status, manual tracking test, captured
+//  panel review, tracking diagnostics and the rest. None of it is in the flow.
+//
+//  SCREENSHOTS / DEMOS (DEBUG only): launch with
+//      -ContourDemoStage acquire | detecting | select | guide
+//                      | arrived | lostTracking | notFound | lowConfidence
+//  to open on that stage with the mock six-button microwave (see DemoStage in
+//  Experience/ExperienceSupport.swift). The Simulator runs the mock pipeline
+//  with no camera, so the viewfinder shows a drawn panel instead.
 //
 
 import ContourCore
@@ -20,350 +34,146 @@ struct ContentView: View {
     /// Shared with the pipeline, so live tracking follows the camera you aim.
     let camera: CameraService
 
-    @State private var map: SurfaceMap?
-    @State private var lastError: String?
-    @State private var guidanceTask: Task<Void, Never>?
-    @State private var guidanceID: UUID?
-    @State private var scanTask: Task<Void, Never>?
-    @State private var scanID: UUID?
-    @State private var listenTask: Task<Void, Never>?
-    @State private var listenID: UUID?
-    @State private var heard: String?
-    #if DEBUG
-    @State private var showManualTracking = false
-    @State private var manualPhoto: PanelPhoto?
-    @State private var manualTargetID: UUID?
-    #endif
+    @State private var model: ExperienceModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    #if DEBUG
+    @State private var showDebugMenu = false
+    #endif
+
+    init(pipeline: ContourPipeline, camera: CameraService) {
+        self.pipeline = pipeline
+        self.camera = camera
+        _model = State(initialValue: ExperienceModel(pipeline: pipeline, camera: camera))
+    }
 
     var body: some View {
+        #if DEBUG
         NavigationStack {
-            List {
-                #if DEBUG
-                Section("Developer tools") {
-                    NavigationLink("Directional Audio") {
-                        AudioDebugView()
-                    }
-                    NavigationLink("Tracking Diagnostics") {
-                        TrackingDebugView(camera: camera, pipeline: pipeline)
-                    }
-                    NavigationLink("Model image spike (Surface)") {
-                        ModelImageSpikeView()
-                    }
-                    NavigationLink("Haptics") {
-                        HapticsDebugView()
-                    }
-                }
-                #endif
-
-                
-                #if DEBUG
-                Section("Experience prototype") {
-                    NavigationLink("Camera and speech prototype") {
-                        LiveCameraView()
-                    }
-                    Text("Evan's separate UI and speech prototype. Use the pipeline controls below for integrated tracking and guidance.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                #endif
-                
-                
-                Section("Pipeline") {
-                    ForEach(ContourPipeline.Component.allCases, id: \.self) { component in
-                        LabeledContent(component.rawValue) {
-                            Text(pipeline.liveComponents.contains(component) ? "live" : "mocked")
-                                .foregroundStyle(
-                                    pipeline.liveComponents.contains(component) ? .green : .secondary
-                                )
+            flow
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showDebugMenu = true } label: {
+                            Image(systemName: "ladybug")
                         }
-                        .accessibilityLabel(
-                            "\(component.rawValue), owned by \(component.team), "
-                            + (pipeline.liveComponents.contains(component) ? "live" : "mocked")
-                        )
+                        .accessibilityLabel("Developer tools")
+                        .accessibilityHint("Opens the debug menu. Debug builds only.")
                     }
                 }
-
-                Section("Detected panel") {
-                    if let map {
-                        LabeledContent(
-                            "Panel confidence",
-                            value: map.confidence.formatted(.number.precision(.fractionLength(2)))
-                        )
-                        ForEach(map.buttons) { button in
-                            LabeledContent(button.label ?? "Unlabelled") {
-                                Text(button.confidence.formatted(.number.precision(.fractionLength(2))))
-                                    .monospacedDigit()
-                            }
-                        }
-                    } else {
-                        Text("Not scanned yet.").foregroundStyle(.secondary)
-                    }
-
-                    if let lastError {
-                        Text(lastError).foregroundStyle(.red)
-                    }
-                    if let trackingError = pipeline.trackingError {
-                        Text(trackingError).foregroundStyle(.red)
-                    }
-                }
-
-                if let reference = pipeline.panelReference, !reference.photo.data.isEmpty {
-                    Section("Captured image and returned controls") {
-                        DisclosureGroup("Review exact capture") {
-                            CapturedPanelReviewView(reference: reference)
-                        }
-                    }
-                }
-
-                Section("Run the pipeline") {
-                    if surfaceIsLive {
-                        // What the scan will capture, so you can aim at the panel.
-                        CameraPreview(session: camera.session)
-                            .frame(height: 360)
-                            .task { try? await camera.start() }
-                    }
-                    Button("Scan panel") { scan() }
-                    #if DEBUG
-                    if pipeline.liveComponents.contains(.tracking) {
-                        Button("Manual tracking test") { captureManualReference() }
-                            .disabled(scanTask != nil)
-                    }
-                    #endif
-                    Button(guidanceTask == nil ? guidanceTitle : "Stop") { toggleGuidance() }
-                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil)
-                    Button(listenTask == nil ? "Say a button" : "Listening…") { sayAButton() }
-                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil
-                                  || listenTask != nil || guidanceTask != nil)
-                    if let heard {
-                        Text(heard).foregroundStyle(.secondary)
-                    }
-                    Text(pipeline.liveComponents.contains(.tracking)
-                         ? "Keep the panel in view and move your finger toward the selected target. "
-                           + "It vibrates faster as you get closer."
-                         : pipeline.liveComponents.contains(.feedback)
-                         ? "Guidance vibrates. Tracking is still simulated, so the "
-                           + "phone acts out a finger moving to Start."
-                         : "Guidance output goes to the console. Experience's rig "
-                           + "is the Harness scheme on macOS.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Experience — ContourUI") {
-                    ContourCameraView()
-                    if let map {
-                        TargetSelectionView(map: map)
-                    }
-                }
-            }
-            .navigationTitle("Contour")
         }
-        #if DEBUG
-        .sheet(isPresented: $showManualTracking) {
+        .sheet(isPresented: $showDebugMenu, onDismiss: { model.resumeAfterDebugTools() }) {
             NavigationStack {
-                if let photo = manualPhoto {
-                    ManualTrackingSetupView(photo: photo) { reference in
-                        await pipeline.replaceReference(with: reference)
-                        guard pipeline.panelReference?.photo.id == reference.photo.id,
-                              !Task.isCancelled else { throw CancellationError() }
-                        manualTargetID = reference.detection.map.buttons.first?.id
-                        map = reference.detection.map
-                        lastError = nil
+                DebugMenu(pipeline: pipeline, camera: camera)
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showDebugMenu = false }
+                        }
                     }
-                }
             }
         }
+        .onChange(of: showDebugMenu) { _, showing in
+            if showing { model.pauseForDebugTools() }
+        }
+        #else
+        flow
         #endif
-        .onChange(of: pipeline.panelReference?.photo.id) { _, _ in
-            map = pipeline.panelReference?.detection.map
-            #if DEBUG
-            // Diagnostics can prepare a new manual target too. Never retain
-            // the previous reference's button ID when returning to this screen.
-            manualTargetID = map?.buttons.count == 1 && map?.buttons.first?.label == "Manual target"
-                ? map?.buttons.first?.id : nil
-            #endif
-        }
-        .onDisappear { stopWork() }
-        .onChange(of: scenePhase) { _, phase in
-            if phase != .active {
-                stopWork()
-                Task { await camera.stop() }
-            } else if surfaceIsLive {
-                Task { try? await camera.start() }
+    }
+
+    private var flow: some View {
+        screen
+            .animation(ContourTheme.Motion.stageChange(reduceMotion: reduceMotion), value: model.stage.kind)
+            .preferredColorScheme(.dark)
+            .task { await model.run() }
+            .onChange(of: scenePhase) { _, phase in
+                model.scenePhaseChanged(isActive: phase == .active)
             }
+            .onChange(of: pipeline.latestGuidance) { _, _ in
+                model.guidanceChanged()
+            }
+    }
+
+    @ViewBuilder
+    private var screen: some View {
+        switch model.stage {
+        case .idle, .acquiringPanel: acquire
+        case .detecting: detecting
+        case .selectingTarget(let map): select(map)
+        case .guiding(let target): guide(target)
+        case .finished(let outcome): finished(outcome)
         }
     }
 
-    private func scan() {
-        #if DEBUG
-        manualTargetID = nil
-        #endif
-        scanTask?.cancel()
-        guidanceTask?.cancel()
-        guidanceTask = nil
-        guidanceID = nil
-        listenTask?.cancel()
-        listenTask = nil
-        listenID = nil
-        map = nil
-        lastError = nil
-        let id = UUID()
-        scanID = id
-        scanTask = Task {
-            defer { if scanID == id { scanTask = nil } }
-            do {
-                await pipeline.stopGuidance()
-                try Task.checkCancellation()
-                let photo = try await photoToScan()
-                let detected = try await pipeline.detectPanel(in: photo)
-                guard scanID == id, !Task.isCancelled else { return }
-                map = detected
-                if !pipeline.canGuide {
-                    #if DEBUG
-                    lastError = "Surface did not return a trackable panel outline. Try showing the full panel, or use Manual tracking test to test tracking independently."
-                    #else
-                    lastError = "Surface did not return a trackable panel outline. Try showing the full panel, then scan again."
-                    #endif
+    private var acquire: some View {
+        AcquireScreen(message: model.message ?? model.cameraError, isCapturing: model.isCapturing,
+                      onScan: { model.scan() }) {
+            viewfinder(highlighting: nil)
+        }
+        .transition(.opacity)
+    }
+
+    private var detecting: some View {
+        DetectingScreen(photo: model.photo, sample: model.usesCamera ? nil : DemoPanel.map,
+                        onCancel: { model.cancelScan() }) {
+            viewfinder(highlighting: nil)
+        }
+        .transition(.opacity)
+    }
+
+    private func select(_ map: SurfaceMap) -> some View {
+        SelectScreen(map: map, photo: model.photo, quad: model.quad,
+                     canListen: model.selection.canListen, isListening: model.isListening,
+                     heard: model.heard, message: model.message,
+                     onChoose: { model.choose($0) }, onSay: { model.sayAButton() },
+                     onRescan: { model.rescan() })
+        .transition(.opacity)
+    }
+
+    private func guide(_ target: SurfaceMap.Button) -> some View {
+        GuideScreen(target: target, targetName: model.targetName, guidance: model.guidance,
+                    onStop: { model.stopGuiding() }) {
+            viewfinder(highlighting: target)
+        }
+        .transition(.opacity)
+    }
+
+    private func finished(_ outcome: OutcomeSignal) -> some View {
+        let guideAgain: (() -> Void)? = model.canGuideAgain ? { model.guideAgain() } : nil
+        let chooseAnother: (() -> Void)? = model.map == nil ? nil : { model.chooseAnother() }
+        return OutcomeScreen(outcome: outcome, targetName: model.targetName, detail: model.outcomeDetail,
+                             onGuideAgain: guideAgain, onChooseAnother: chooseAnother,
+                             onScanNew: { model.rescan() })
+        .transition(.opacity)
+    }
+
+    /// The live camera when the pipeline uses it and it started; otherwise a
+    /// drawn stand-in, so the Simulator and screenshots still read as "camera".
+    @ViewBuilder
+    private func viewfinder(highlighting target: SurfaceMap.Button?) -> some View {
+        if model.usesCamera && model.cameraError == nil {
+            CameraPreview(session: camera.session)
+        } else {
+            let sample = model.usesCamera ? nil : (model.map ?? DemoPanel.map)
+            ViewfinderPlaceholder(
+                sample: sample,
+                message: model.cameraError ?? DemoPanel.noCameraMessage,
+                highlightedID: target?.id,
+                fingertip: target.flatMap {
+                    ExperiencePolicy.approximateFingertip(target: $0, guidance: model.guidance)
                 }
-            } catch is CancellationError {
-                // A replacement scan or navigation ended this request.
-            } catch {
-                if scanID == id { lastError = String(describing: error) }
-            }
+            )
         }
     }
+}
 
-    private var guidanceTitle: String {
-        #if DEBUG
-        if manualTargetID != nil { return "Guide to manual target" }
+/// What the viewfinder shows when the mock pipeline runs without a camera.
+private enum DemoPanel {
+    static let map = MockSurfaceMaps.microwave
+    static var noCameraMessage: String {
+        #if targetEnvironment(simulator)
+        "Camera unavailable in Simulator"
+        #else
+        "Camera not in use: Surface Understanding is mocked"
         #endif
-        return "Guide to Start"
-    }
-
-    #if DEBUG
-    private func captureManualReference() {
-        scanTask?.cancel()
-        guidanceTask?.cancel()
-        guidanceTask = nil
-        guidanceID = nil
-        listenTask?.cancel()
-        listenTask = nil
-        listenID = nil
-        lastError = nil
-        let id = UUID()
-        scanID = id
-        scanTask = Task {
-            defer { if scanID == id { scanTask = nil } }
-            do {
-                await pipeline.stopGuidance()
-                try Task.checkCancellation()
-                let photo = try await camera.capturePanelPhoto()
-                guard scanID == id, !Task.isCancelled else { return }
-                manualPhoto = photo
-                showManualTracking = true
-            } catch is CancellationError {
-            } catch {
-                if scanID == id { lastError = error.localizedDescription }
-            }
-        }
-    }
-    #endif
-
-    private func stopWork() {
-        scanTask?.cancel()
-        scanTask = nil
-        scanID = nil
-        guidanceTask?.cancel()
-        guidanceTask = nil
-        guidanceID = nil
-        listenTask?.cancel()
-        listenTask = nil
-        listenID = nil
-        Task { await pipeline.stopGuidance() }
-    }
-
-    private var surfaceIsLive: Bool {
-        pipeline.liveComponents.contains(.surfaceUnderstanding)
-    }
-
-    /// A frame from the camera when Surface Understanding is live. The mock
-    /// ignores the photo entirely, so it gets a zero-byte one. Experience
-    /// replaces this with a real capture from CaptureFlow.
-    private func photoToScan() async throws -> PanelPhoto {
-        if surfaceIsLive {
-            return try await camera.capturePanelPhoto()
-        }
-        return PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
-    }
-
-    private func toggleGuidance() {
-        if let guidanceTask {
-            guidanceTask.cancel()
-            self.guidanceTask = nil
-            guidanceID = nil
-            return
-        }
-        guard pipeline.canGuide, let map, let target = guidanceTarget(in: map) else {
-            lastError = "No Start button found on the panel."
-            return
-        }
-        startGuidance(to: target)
-    }
-
-    /// Guide to Start and Say a button both start guidance here. Any guidance
-    /// still running is cancelled, and the pipeline waits for it to end before
-    /// the new one begins.
-    private func startGuidance(to target: SurfaceMap.Button) {
-        guidanceTask?.cancel()
-        let id = UUID()
-        guidanceID = id
-        guidanceTask = Task {
-            await pipeline.guide(to: target)
-            if guidanceID == id {
-                guidanceTask = nil
-                guidanceID = nil
-            }
-        }
-    }
-
-    private func guidanceTarget(in map: SurfaceMap) -> SurfaceMap.Button? {
-        #if DEBUG
-        if let manualTargetID { return map.buttons.first { $0.id == manualTargetID } }
-        #endif
-        return ButtonLookup.button(for: "start", in: map)
-    }
-
-    /// Listen for a button's name, then guide to it the way Guide to Start does.
-    private func sayAButton() {
-        guard let map else { return }
-        lastError = nil
-        heard = nil
-        let id = UUID()
-        listenID = id
-        listenTask = Task {
-            defer { if listenID == id { listenTask = nil } }
-            do {
-                let result = try await VoiceRequest().listen(for: map)
-                guard listenID == id, !Task.isCancelled else { return }
-                guard !result.text.isEmpty else {
-                    heard = "Didn't hear anything."
-                    return
-                }
-                heard = "Heard \u{201C}\(result.text)\u{201D}"
-                // The diagnostics screen can replace the panel while this listens.
-                guard pipeline.canGuide, let button = result.button,
-                      self.map?.buttons.contains(where: { $0.id == button.id }) == true else {
-                    lastError = "No button matching \u{201C}\(result.text)\u{201D} on this panel."
-                    return
-                }
-                heard = "Heard \u{201C}\(result.text)\u{201D}: guiding to \(button.label ?? "it")"
-                startGuidance(to: button)
-            } catch is CancellationError {
-                // Scanning again or leaving the screen ended the request.
-            } catch {
-                if listenID == id { lastError = error.localizedDescription }
-            }
-        }
     }
 }
 

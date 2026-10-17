@@ -25,7 +25,7 @@ You do not own detection or tracking.
 | Lane | Owner | Files |
 |---|---|---|
 | **App Flow** | Asav | `CaptureFlow.swift`, `GuidanceFlow.swift` |
-| **Accessibility & Launch** *(officers)* | Ashwanth, Nancy, Anushka | `PlaceholderViews.swift`, `ContourApp/ContourApp/ContentView.swift` |
+| **Accessibility & Launch** *(officers)* | Ashwanth, Nancy, Anushka | `ContourTheme.swift`, `PanelLayout.swift`, `Screens/`, `ContourApp/ContourApp/ContentView.swift` |
 | **Mocks & Integration** *(officers)* | Ashwanth, Nancy, Anushka | `Packages/ContourMocks`, `ContourApp/ContourApp/ContourPipeline.swift` |
 
 Accessibility is not a lane that reviews the others' work at the end — it is the
@@ -104,7 +104,7 @@ back. If you find yourself wanting to `import SurfaceUnderstanding` or
 
 From the project timeline, your deliverables:
 
-- [ ] **Live camera experience** → `CaptureFlow`, `ContourCameraView` *(App Flow)*
+- [x] **Live camera experience** → `CaptureFlow`, `AcquireScreen` *(App Flow)*
 - [ ] **Basic target selection and guidance flow** → `TargetSelection`, `GuidanceFlow` *(App Flow)*
 - [ ] **Mocks for all three interfaces, shipped Monday Sep 21** → `Packages/ContourMocks` *(Mocks & Integration)* ✅ *already in the repo — keep it deterministic*
 - [ ] **First integration build Friday Oct 2**, even if it's mostly mocks *(Mocks & Integration)*
@@ -148,12 +148,24 @@ Full convention: [`../ContourCore/COORDINATES.md`](../ContourCore/COORDINATES.md
 
 | File | What goes in it |
 |---|---|
-| `CaptureFlow.swift` | Camera session, shutter, and the still that comes out. |
-| `GuidanceFlow.swift` | The state machine from "app opened" to "finger on button". |
-| `PlaceholderViews.swift` | Throwaway placeholders so the app has something to present. Delete these. |
+| `CaptureFlow.swift` | `CaptureFlow` (capture through the app's camera) and `TargetSelection` (suspends until a tap or a spoken request resolves it). |
+| `GuidanceFlow.swift` | The state machine from "app opened" to "finger on button", its transition table, and every announcement. |
+| `PanelLayout.swift` | Reading order, rows/columns, "top left", confidence wording, and guidance in words (+dy is down). |
+| `ContourTheme.swift` | Every colour, size, radius, font and animation. Restyle here. |
+| `Screens/AcquireScreen.swift` | Full-bleed camera, instruction, the bottom third is the shutter. |
+| `Screens/DetectingScreen.swift` | The frozen, dimmed photo while the panel is read; Cancel. |
+| `Screens/SelectScreen.swift` | The photo with controls drawn on it, the control list (rotor-friendly), Say a button. |
+| `Screens/GuideScreen.swift` | Target name, proximity ring, direction arrow, Stop. |
+| `Screens/OutcomeScreen.swift` | One full-screen result per `OutcomeSignal`, with next steps. |
+| `Screens/PanelPicture.swift` | Panel space → photo space (the quad's homography) and the overlay; draws the panel from its map when there is no photo. |
+| `Screens/ViewfinderPlaceholder.swift` | Stands in for the camera in the Simulator and screenshots. |
+| `Screens/ContourControls.swift` | Shared glass actions, cards, banners and corner guides. |
 
-Every body is `fatalError("unimplemented — owned by Experience / App Flow")`.
-Replace the bodies, keep the signatures.
+Every screen takes plain data and closures — the camera preview is passed in
+as a view — so all of them build and test against `MockSurfaceMaps.microwave`.
+In the app, `ContentView` launches straight into them; launch with
+`-ContourDemoStage acquire|detecting|select|guide|arrived|lostTracking|notFound|lowConfidence`
+(DEBUG) to open on any stage for screenshots.
 
 ## Working
 
