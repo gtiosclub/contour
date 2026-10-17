@@ -1,158 +1,99 @@
-//
-//  liveCameraView.swift
-//  ContourApp
-//
-//  Created by Evan on 9/26/26.
-//
-
+import ContourCore
 import SwiftUI
-import AVFoundation
-import Speech
-
+import UIKit
 
 struct LiveCameraView: View {
-    // The app's shared camera setup: starts the session off the main thread
-    // and asks for camera permission first.
-    @State private var camera = CameraService()
-    @State private var isStarted: Bool = false
+    let camera: CameraService
+    let pipeline: ContourPipeline
+    let experience: CameraLaunchModel
+    @AccessibilityFocusState private var statusFocused: Bool
+
+    private var primaryTitle: String {
+        if experience.busy { return "Stop" }
+        if !experience.ready { return "Retry camera" }
+        return experience.map == nil || !pipeline.canGuide || experience.map?.buttons.isEmpty == true
+            ? "Scan panel" : "Say a button"
+    }
+
     var body: some View {
-        VStack {
-            ZStack{
-
-                // Shows through when there's no camera (e.g. the simulator).
-                Color.black
-                    .ignoresSafeArea()
-
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if experience.usesCamera {
                 CameraPreview(session: camera.session)
-                    .ignoresSafeArea()
-                    .task {
-                        try? await camera.start()
-                    }
-                    .onDisappear {
-                        Task { await camera.stop() }
-                    }
-
-                
-                VStack{
-                    Spacer()
-                    Text("Hello, World!")
-                        .padding()
-                    
-                    
-                    Button{
-                        
-                    } label: {
-                        Circle()
-                            .glassEffect(.clear)
-                            .foregroundStyle(.clear)
-                            .frame(width: 250, height: 250)
-                            .overlay{
-                                Text("Button")
-                                    .accessibilityIdentifier("Button")
-                                    .bold()
-                                    .font(.largeTitle)
-                                    .foregroundColor(.primary)
-                                //.foregroundStyle(.blue)
-                            }
-                    }
-                    
-                    
-                    
-                    .padding()
-                    Text(String(isStarted))
-                }
-                
+                    .ignoresSafeArea().accessibilityHidden(true)
             }
-            
-            ZStack{
-                Toggle(isOn: $isStarted){
-                    Text("Start View")
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text(experience.status)
+                        .font(.title2.bold())
+                        .accessibilityFocused($statusFocused)
+                        .accessibilitySortPriority(3)
+                    if !experience.usesCamera {
+                        Text("Simulator demo: panel detection and finger movement are simulated.")
+                            .font(.callout)
+                    }
+                    if let error = experience.error { Text(error).foregroundStyle(.yellow) }
+                    Button {
+                        if experience.busy { experience.stop() }
+                        else if !experience.ready { experience.setActive(true) }
+                        else if primaryTitle == "Scan panel" { experience.scan() }
+                        else { experience.sayAButton() }
+                    } label: {
+                        Text(primaryTitle)
+                            .font(.title.bold()).multilineTextAlignment(.center)
+                            .padding(24)
+                            .frame(width: 210, height: 210)
+                            .background(.ultraThickMaterial, in: Circle())
+                    }
+                    .accessibilityLabel(primaryTitle)
+                    .accessibilityHint(experience.busy ? "Cancels the current scan, microphone, or guidance."
+                        : !experience.ready ? "Tries to start the camera again."
+                        : primaryTitle == "Scan panel" ? "Photographs and identifies the panel's buttons."
+                        : "Listens for a button name for up to eight seconds.")
+                    .accessibilitySortPriority(2)
+                    if let map = experience.map, pipeline.canGuide, !map.buttons.isEmpty {
+                        Text("Choose a button").font(.headline).accessibilityAddTraits(.isHeader)
+                        ForEach(Array(map.buttons.enumerated()), id: \.element.id) { index, button in
+                            Button(button.label ?? "Unlabelled button \(index + 1)") { experience.choose(button) }
+                                .buttonStyle(.borderedProminent)
+                                .accessibilityHint("Starts finger guidance to this button.")
+                                .disabled(experience.busy || !experience.ready)
+                        }
+                    }
+                    if experience.map != nil {
+                        Button("Scan again") { experience.scan() }
+                            .buttonStyle(.bordered)
+                            .disabled(!experience.ready)
+                            .accessibilityHint("Cancels current work and scans a new panel.")
+                    }
                 }
-                .toggleStyle(.switch)
-                .safeAreaPadding()
-                
-                
-                
-                
-                Toggle(isOn: $isStarted){
-                    Text("Toggle Start")
-                }
-                .toggleStyle(.button)
-                .textInputBorderShape(.roundedRectangle)
-                .glassEffect(.clear)
+                .padding(24)
+                .frame(maxWidth: .infinity)
+                .background(.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 24))
+                .padding()
             }
         }
-        
-        .task {
-            try? await listenForStart()
+        .preferredColorScheme(.dark)
+        .onAppear { statusFocused = true }
+        .onChange(of: experience.status) { _, message in
+            // State transitions only; tracking's per-frame output stays in the feedback engine.
+            // VoiceRequest announces listening before it opens the microphone.
+            if !experience.listening {
+                UIAccessibility.post(notification: .announcement, argument: message)
+            }
+        }
+        .onChange(of: experience.error) { _, error in
+            if let error { UIAccessibility.post(notification: .announcement, argument: error) }
+        }
+        .onChange(of: pipeline.panelReference?.photo.id) { old, new in
+            if old != new { experience.referenceChanged() }
         }
     }
-    func listenForStart() async throws {
-
-            // 1. Speech-to-text
-            guard let locale = await SpeechTranscriber.supportedLocale(
-                equivalentTo: Locale(identifier: "en-US")
-            ) else { return }
-
-            let transcriber = SpeechTranscriber(
-                locale: locale,
-                preset: .progressiveTranscription
-            )
-
-            // 2. ensure speech model is downloaded
-
-            if let request = try await AssetInventory
-                .assetInstallationRequest(supporting: [transcriber]) {
-                try await request.downloadAndInstall()
-            }
-
-            // 3. get microphone
-
-            guard let microphone = AVCaptureDevice.default(for: .audio) else {
-                return
-            }
-
-            let input = try await CaptureInputSequenceProvider
-                .providerWithSession(
-                    from: microphone,
-                    compatibleWith: [transcriber]
-                )
-
-            // 4. microphone → SpeechTranscriber
-
-            let analyzer = SpeechAnalyzer(
-                inputSequence: input.analyzerInputs,
-                modules: [transcriber]
-            )
-
-            
-            input.captureSession.startRunning()
-            
-
-            // 5. get recognition result
-
-            for try await result in transcriber.results {
-                let text = String(result.text.characters)
-                print(text)
-                if text.localizedCaseInsensitiveContains("start") {
-                    isStarted = true
-                    //input.captureSession.stopRunning()
-                    //await analyzer.cancelAndFinishNow()
-                    //return
-                }
-
-            }
-
-            // Using the analyzer here keeps it alive while the loop above is
-            // listening; otherwise it can be released and stop transcribing.
-            await analyzer.cancelAndFinishNow()
-
-        }
-
 }
-
 
 #Preview {
-    LiveCameraView()
+    let camera = CameraService()
+    let pipeline = ContourPipeline.mock()
+    LiveCameraView(camera: camera, pipeline: pipeline,
+                   experience: CameraLaunchModel(camera: camera, pipeline: pipeline))
 }
-

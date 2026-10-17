@@ -23,23 +23,6 @@ func flowTypesExist() {
     _ = GuidanceFlow()
 }
 
-@Test("the selection placeholder accepts a SurfaceMap without touching pixels")
-func selectionViewTakesAMap() {
-    let map = SurfaceMap(
-        buttons: [
-            SurfaceMap.Button(
-                label: "Start",
-                bounds: PanelRect(x: 0.6, y: 0.6, width: 0.2, height: 0.15),
-                confidence: 0.9
-            )
-        ],
-        confidence: 0.9
-    )
-
-    _ = TargetSelectionView(map: map)
-    #expect(map.buttons.count == 1)
-}
-
 @Test("every flow stage the user can reach is representable")
 func stagesAreRepresentable() {
     let map = SurfaceMap.empty
