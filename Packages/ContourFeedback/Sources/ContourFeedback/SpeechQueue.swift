@@ -187,7 +187,8 @@ public actor SpeechQueue {
         }
         Task { [weak self] in
             for await event in await AudioSessionConfig.events() {
-                await self?.handle(event)
+                guard let self else { return }   // the queue is gone: stop listening
+                await self.handle(event)
             }
         }
     }

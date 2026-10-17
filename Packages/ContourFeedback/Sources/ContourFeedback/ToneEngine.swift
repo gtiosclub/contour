@@ -323,7 +323,8 @@ final class ToneEngine {
         guard sessionEvents == nil else { return }
         sessionEvents = Task { [weak self] in
             for await event in AudioSessionConfig.events() {
-                self?.handle(event)
+                guard let self else { return }   // the tone is gone: stop listening
+                self.handle(event)
             }
         }
     }
