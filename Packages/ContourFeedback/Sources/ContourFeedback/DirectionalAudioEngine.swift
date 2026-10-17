@@ -1,11 +1,20 @@
 //
 //  DirectionalAudioEngine.swift
-//  ContourFeedback
+//  ContourFeedback — Experience / Audio & Speech
 //
 //  Created by Asutosh Mishra on 10/4/26.
 //
+//  The hands-on tone API from #11, for the Directional Audio debug screen:
+//  start, stop, point the beacon, set the volume. It is a thin face on
+//  ToneEngine — the same graph, smoothing and recovery the guidance tone uses —
+//  so what you hear on the debug screen is what guidance plays.
+//
+//  Note the mapping differs from DirectionalAudio's on purpose: here pitch
+//  follows `proximity` (closer is higher), because the debug screen tests the
+//  speaker and the pan, not the axis convention.
+//
 
-import AVFoundation
+import Foundation
 
 @MainActor
 public final class DirectionalAudioEngine {
@@ -16,139 +25,44 @@ public final class DirectionalAudioEngine {
         var maxRate: Float = 2.0
         func rate(for v: Float) -> Float { minRate * powf(maxRate / minRate, v) }
     }
-    private var mapping = PitchMapping()
+    private let mapping = PitchMapping()
 
-    // MARK: - Audio graph
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    private let varispeed = AVAudioUnitVarispeed()
-    private let format = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
-    private lazy var buffer = Self.makeBuffer(format: format, harmonic: false)
-    private var isWired = false
-
-    // MARK: - State
-    private var targetPan: Float = 0
-    private var targetRate: Float = 0.75
-    private var userVolume: Float = 0.5
-    private var fadeTarget: Float = 0          // 1 while playing, 0 while stopped/fading out
-    private var curPan: Float = 0
-    private var curRate: Float = 0.75
-    private var curGain: Float = 0
-    private var wantsToPlay = false
-    private var tickTask: Task<Void, Never>?
-    private var configTask: Task<Void, Never>?
+    /// Its own tone, separate from guidance's, so the debug screen never fights
+    /// a running guidance session for the same voice.
+    private let tone = ToneEngine(harmonic: false)
 
     public init() {
-        engine.attach(player)
-        engine.attach(varispeed)
+        tone.retarget(pan: 0, rate: mapping.minRate, gain: 1)
+        tone.setVolume(0.5)
     }
 
     // MARK: - Public API (frozen Friday)
+
+    /// Start the tone, fading in. Idempotent.
     public func start() throws {
-        wantsToPlay = true
-        fadeTarget = 1
-        guard !engine.isRunning else { return }   // idempotent
-        try wireIfNeeded()
-        try engine.start()
-        player.stop()                              // clears anything queued, so no double-schedule
-        curGain = 0
-        player.volume = 0
-        player.scheduleBuffer(buffer, at: nil, options: .loops)
-        player.play()                              // or: try player.playAudio() if Xcode warns
-        startTicker()
-        observeEngineConfigChanges()
+        try tone.start()
     }
 
+    /// Fade out, then halt. Safe to call when idle.
     public func stop() {
-        wantsToPlay = false
-        fadeTarget = 0                             // ticker fades to silence
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
-            guard let self, !self.wantsToPlay else { return }  // user may have restarted
-            self.player.stop()
-            self.engine.stop()
-            self.tickTask?.cancel(); self.tickTask = nil
-        }
+        tone.stop()
     }
 
+    /// `pan` is -1 left ... +1 right; `proximity` 0 far (low) ... 1 close (high).
+    /// Non-finite values are ignored.
     public func setBeacon(pan: Float, proximity: Float) {
-        if pan.isFinite { targetPan = min(max(pan, -1), 1) }
-        if proximity.isFinite {
-            targetRate = mapping.rate(for: min(max(proximity, 0), 1))
-        }
+        let rate = proximity.isFinite ? mapping.rate(for: min(max(proximity, 0), 1)) : nil
+        tone.retarget(pan: pan, rate: rate)
     }
 
+    /// `0...1`. Clamped; non-finite values are ignored.
     public func setVolume(_ volume: Float) {
-        if volume.isFinite { userVolume = min(max(volume, 0), 1) }
+        tone.setVolume(volume)
     }
 
-    /// Call from Nancy's AudioSessionEvent handler on route changes.
+    /// Restart after a route change if the tone is still wanted. ToneEngine
+    /// already does this from AudioSessionConfig's events; this stays for callers.
     func handleRouteChange() {
-        guard wantsToPlay, !engine.isRunning else { return }
-        try? start()
-    }
-
-    // MARK: - Internals
-    private func wireIfNeeded() throws {
-        guard !isWired else { return }
-        try connect(player, to: varispeed)
-        try connect(varispeed, to: engine.mainMixerNode)
-        isWired = true
-    }
-
-    private func connect(_ a: AVAudioNode, to b: AVAudioNode) throws {
-        // connectNode(_:to:format:) is the throwing iOS 27 replacement. The
-        // compiler check keeps this building on the Xcode 26 toolchain too.
-        #if compiler(>=6.4)
-        if #available(iOS 27, macOS 27, *) {
-            try engine.connectNode(a, to: b, format: format)
-            return
-        }
-        #endif
-        engine.connect(a, to: b, format: format)
-    }
-
-    private func startTicker() {
-        guard tickTask == nil else { return }
-        tickTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                self?.tick()
-                try? await Task.sleep(for: .milliseconds(16))   // ~60 Hz
-            }
-        }
-    }
-
-    private func tick() {
-        let k: Float = 0.25                        // tune by ear
-        curPan  += (targetPan  - curPan)  * k
-        curRate += (targetRate - curRate) * k
-        curGain += (userVolume * fadeTarget - curGain) * k
-        player.pan = curPan
-        varispeed.rate = curRate
-        player.volume = curGain
-    }
-
-    private func observeEngineConfigChanges() {
-        guard configTask == nil else { return }
-        configTask = Task { @MainActor [weak self] in
-            let name = Notification.Name.AVAudioEngineConfigurationChange
-            for await _ in NotificationCenter.default.notifications(named: name) {
-                self?.handleRouteChange()
-            }
-        }
-    }
-
-    private static func makeBuffer(format: AVAudioFormat, harmonic: Bool) -> AVAudioPCMBuffer {
-        let n: AVAudioFrameCount = 4_800           // 100 cycles of 480 Hz at 48 kHz
-        let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: n)!
-        buf.frameLength = n
-        let p = buf.floatChannelData![0]
-        for i in 0..<Int(n) {
-            let t = Float(i) / 48_000
-            var s = sinf(2 * .pi * 480 * t)
-            if harmonic { s = (s + 0.3 * sinf(2 * .pi * 960 * t)) / 1.3 }
-            p[i] = s * 0.5
-        }
-        return buf
+        tone.restartIfWanted()
     }
 }
