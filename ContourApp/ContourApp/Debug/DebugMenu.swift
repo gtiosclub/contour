@@ -32,7 +32,10 @@ struct DebugMenu: View {
             Section("Feedback") {
                 NavigationLink("Haptics") { HapticsDebugView() }
                 NavigationLink("Directional Audio") { AudioDebugView() }
-                NavigationLink("Speech Queue") { SpeechDebugView(queue: SpeechQueue()) }
+                NavigationLink("Speech Queue") { SpeechDebugView() }
+            }
+            Section("Mocks") {
+                NavigationLink("Mock Runs") { MockRunDebugView() }
             }
             Section("Surface Understanding") {
                 NavigationLink("Model Image Spike (Surface)") { ModelImageSpikeView() }

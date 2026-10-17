@@ -70,7 +70,16 @@ final class ExperienceModel {
         let transcript = Transcript()
         self.announcer = announcer
         self.transcript = transcript
-        self.flow = GuidanceFlow { text in await announcer.say(text, interrupt: true) }
+        // LiveFeedbackEngine already speaks the outcomes that guidance ends
+        // in, so the flow stays quiet for those rather than saying them twice.
+        let spokenByFeedback: Set<String> = pipeline.liveComponents.contains(.feedback)
+            ? [GuidanceFlow().announcement(for: .finished(.arrived)),
+               GuidanceFlow().announcement(for: .finished(.lostTracking))]
+            : []
+        self.flow = GuidanceFlow { text in
+            guard !spokenByFeedback.contains(text) else { return }
+            await announcer.say(text, interrupt: true)
+        }
         let usesCamera = pipeline.liveComponents.contains(.surfaceUnderstanding)
         self.capture = CaptureFlow {
             // The mock ignores the photo entirely, so it gets a zero-byte one;
