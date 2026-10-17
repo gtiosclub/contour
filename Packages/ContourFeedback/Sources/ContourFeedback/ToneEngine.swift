@@ -181,7 +181,15 @@ final class ToneEngine {
     var isRunning: Bool { graph?.engine.isRunning ?? false }
 
     /// The gain the tick is heading for: silence unless someone wants the tone.
-    var targetLevel: Float { wantsTone ? target.gain * volume * duck : 0 }
+    var targetLevel: Float {
+        Self.level(gain: target.gain, volume: volume, duck: duck, wanted: wantsTone)
+    }
+
+    /// The tone's output level: the cue's gain, scaled by the master volume and
+    /// the speech duck, or silence when nobody wants it. Pure, for tests.
+    nonisolated static func level(gain: Float, volume: Float, duck: Float, wanted: Bool) -> Float {
+        wanted ? gain * volume * duck : 0
+    }
 
     /// React to the shared audio session. Internal so tests and the debug API
     /// can drive it.

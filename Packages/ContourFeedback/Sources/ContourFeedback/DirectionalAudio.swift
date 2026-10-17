@@ -107,26 +107,69 @@ public struct DirectionalAudio: Sendable {
     /// Retargets the tone and returns. Cheap enough to call on every guidance update.
     /// A state with no vector, or a terminal one, fades the tone out.
     public func play(for state: GuidanceState) async {
-        guard let cue = cue(for: state) else {
-            await tone.stop()
-            return
-        }
-        await play(cue)
-    }
-
-    /// Head for `cue`, starting the tone if needed.
-    func play(_ cue: AudioCue) async {
-        await tone.render(cue)
+        await render(state)
     }
 
     /// Fades out and halts. Safe to call when idle.
     public func stop() async {
-        await tone.stop()
+        await silence()
     }
 
     /// Play an earcon once through the same engine, centred. Starts it and
     /// returns. Does not stop the tone — an outcome does that itself.
     public func play(_ earcon: Earcon) async {
-        await tone.play(earcon)
+        await playEarcon(earcon)
+    }
+
+    // MARK: - Ducking under speech (#114)
+
+    /// The tone's level under an ordinary spoken line, as a fraction of normal.
+    public static let duckedGain = 0.25
+
+    /// How much of the tone to keep while speech is doing `activity`: all of it
+    /// in silence, a quarter under an ordinary line so the words stay clear,
+    /// none under an interrupting line (an outcome), which must be heard.
+    ///
+    /// Pure, so it is pinned by tests.
+    public static func duckFactor(for activity: SpeechActivity) -> Double {
+        switch activity {
+        case .silent: 1
+        case .speaking(.interrupting): 0
+        case .speaking: duckedGain
+        }
+    }
+
+    /// Duck the tone for `activity`. The level glides there; no click. Feed it
+    /// `SpeechQueue.activityUpdates()`.
+    public func duck(for activity: SpeechActivity) async {
+        await tone.setDuck(Float(Self.duckFactor(for: activity)))
+    }
+
+    // MARK: - Main-actor core
+    //
+    // The public methods above are each one hop to these. LiveFeedbackEngine
+    // calls them directly so a whole frame is applied in one step.
+
+    /// Head for the cue for `state`, or fade out if it has none.
+    @MainActor
+    func render(_ state: GuidanceState) {
+        guard let cue = cue(for: state) else { return silence() }
+        render(cue)
+    }
+
+    /// Head for `cue`, starting the tone if needed.
+    @MainActor
+    func render(_ cue: AudioCue) {
+        tone.render(cue)
+    }
+
+    @MainActor
+    func silence() {
+        tone.stop()
+    }
+
+    @MainActor
+    func playEarcon(_ earcon: Earcon) {
+        tone.play(earcon)
     }
 }

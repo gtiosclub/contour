@@ -92,16 +92,29 @@ public struct ProximityHaptics: Sendable {
     /// every frame only changes the rate of the pulses already playing. A state
     /// with no vector stops them.
     public func play(for state: GuidanceState) async {
-        guard let distance = state.vector?.normalizedDistance else {
-            await player.stopPulsing()
-            return
-        }
-        await player.pulse(forDistance: distance)
+        await apply(state)
     }
 
     /// Stop anything currently playing. Must be safe to call when idle.
     public func stop() async {
         await player.stopPulsing()
+    }
+
+    /// `play(for:)`, synchronously on the main actor, so LiveFeedbackEngine can
+    /// apply a whole frame in one step and frames never overtake each other.
+    @MainActor
+    func apply(_ state: GuidanceState) {
+        guard let distance = state.vector?.normalizedDistance else {
+            player.stopPulsing()
+            return
+        }
+        player.pulse(forDistance: distance)
+    }
+
+    /// `stop()`, synchronously on the main actor.
+    @MainActor
+    func silence() {
+        player.stopPulsing()
     }
 
     // MARK: The mapping

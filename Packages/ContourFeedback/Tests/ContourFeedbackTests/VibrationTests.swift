@@ -167,9 +167,10 @@ func pulsingFollowsTheState() async {
     #expect(!player.isPulsing)
 }
 
-@Test("present returns right away and never traps, for every kind of state")
-func presentReturnsPromptly() async {
-    let engine = LiveFeedbackEngine()
+@Test("present returns right away and never traps, for every kind of state", arguments: GuidanceModelKind.allCases)
+func presentReturnsPromptly(model: GuidanceModelKind) async {
+    // No audio or speech: nothing should play on the machine running the tests.
+    let engine = LiveFeedbackEngine(model: model, player: HapticPlayer(), audio: nil, speech: nil, directionalHint: true)
     let states = [state(distance: 1), state(distance: 0.4), state(distance: 0), state(distance: nil)]
         + OutcomeSignal.allCases.map { GuidanceState.outcome($0, at: Date(timeIntervalSince1970: 0)) }
 
@@ -178,4 +179,5 @@ func presentReturnsPromptly() async {
         let elapsed = await clock.measure { await engine.present(subject) }
         #expect(elapsed < .milliseconds(50), "present took \(elapsed) for \(subject)")
     }
+    await engine.stop()
 }

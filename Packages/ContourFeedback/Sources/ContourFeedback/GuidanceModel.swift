@@ -149,7 +149,7 @@ public enum GuidanceModelKind: String, Hashable, Sendable, CaseIterable {
 
     /// Build this model on `player`, so it shares one haptic engine with the
     /// outcome signals and with whatever model ran before it.
-    func makeModel(player: HapticPlayer) -> any GuidanceModel {
+    func makeModel(player: HapticPlayer) -> any MainActorGuidanceModel {
         switch self {
         case .continuousProximity: ContinuousProximityModel(player: player)
         case .pulsedProximity: PulsedProximityModel(player: player)
@@ -178,6 +178,17 @@ public protocol GuidanceModel: Sendable {
     func stop() async
 }
 
+/// A model whose work is main-actor and synchronous underneath.
+///
+/// `render` and `stop` are each one hop to this. LiveFeedbackEngine calls it
+/// directly, so a whole frame — model, tone, hint, outcome — is applied in one
+/// step and a later frame can never overtake an earlier one (an outcome's
+/// "stop" landing before the frame it followed would leave a buzz on).
+protocol MainActorGuidanceModel: GuidanceModel {
+    @MainActor func apply(_ state: GuidanceState)
+    @MainActor func silence()
+}
+
 /// One sustained buzz, described independently of Core Haptics.
 struct SustainedBuzz: Hashable, Sendable {
 
@@ -192,7 +203,7 @@ struct SustainedBuzz: Hashable, Sendable {
 }
 
 /// The sustained, phone-call-style candidate. See the file header.
-public struct ContinuousProximityModel: GuidanceModel {
+public struct ContinuousProximityModel: MainActorGuidanceModel {
 
     public let kind = GuidanceModelKind.continuousProximity
     private let player: HapticPlayer
@@ -206,18 +217,28 @@ public struct ContinuousProximityModel: GuidanceModel {
     }
 
     public func render(_ state: GuidanceState) async {
+        await apply(state)
+    }
+
+    public func stop() async {
+        await silence()
+    }
+
+    @MainActor
+    func apply(_ state: GuidanceState) {
         guard !state.isTerminal,
               let distance = state.vector?.normalizedDistance,
               let buzz = Self.buzz(forDistance: distance)
         else {
-            await player.stopPulsing()
+            player.stopPulsing()
             return
         }
-        await player.sustain(buzz)
+        player.sustain(buzz)
     }
 
-    public func stop() async {
-        await player.stopPulsing()
+    @MainActor
+    func silence() {
+        player.stopPulsing()
     }
 
     /// The buzz at a given distance, or `nil` when the distance isn't a number.
@@ -246,7 +267,7 @@ public struct ContinuousProximityModel: GuidanceModel {
 }
 
 /// The hot/cold pulses candidate: ProximityHaptics, as a model.
-public struct PulsedProximityModel: GuidanceModel {
+public struct PulsedProximityModel: MainActorGuidanceModel {
 
     public let kind = GuidanceModelKind.pulsedProximity
     private let proximity: ProximityHaptics
@@ -260,15 +281,25 @@ public struct PulsedProximityModel: GuidanceModel {
     }
 
     public func render(_ state: GuidanceState) async {
-        if state.isTerminal {
-            await proximity.stop()
-        } else {
-            await proximity.play(for: state)
-        }
+        await apply(state)
     }
 
     public func stop() async {
-        await proximity.stop()
+        await silence()
+    }
+
+    @MainActor
+    func apply(_ state: GuidanceState) {
+        if state.isTerminal {
+            proximity.silence()
+        } else {
+            proximity.apply(state)
+        }
+    }
+
+    @MainActor
+    func silence() {
+        proximity.silence()
     }
 }
 

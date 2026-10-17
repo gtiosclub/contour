@@ -190,21 +190,30 @@ public struct OutcomeAnnouncer: Sendable {
     /// Announce `outcome`: haptics, earcon and speech. Starts the effects and
     /// returns; never waits for the taps, the sound or the words to finish.
     public func announce(_ outcome: OutcomeSignal) async {
+        let line = await perform(outcome)
+        if let speech, let line {
+            await speech.enqueue(line)
+        }
+    }
+
+    /// The haptics and the earcon, synchronously on the main actor, so
+    /// LiveFeedbackEngine applies an outcome in the same step as the frame that
+    /// carried it. Returns the line to speak, for the caller to queue.
+    @MainActor
+    func perform(_ outcome: OutcomeSignal) -> Utterance? {
         let presentation = presentation(for: outcome)
         if presentation.interrupts {
-            await player.stopPulsing()
-            await audio?.stop()   // the guidance tone under a chime reads as "keep going"
+            player.stopPulsing()
+            audio?.silence()   // the guidance tone under a chime reads as "keep going"
         }
-        await player.play(presentation.haptics)
+        player.play(presentation.haptics)
 
         var playedEarcon = false
         if let audio, let earcon = presentation.earcon {
-            await audio.play(earcon)
+            audio.playEarcon(earcon)
             playedEarcon = true
         }
-        if let speech, let line = Self.utterance(for: presentation, withEarcon: playedEarcon) {
-            await speech.enqueue(line)
-        }
+        return Self.utterance(for: presentation, withEarcon: playedEarcon)
     }
 
     private func taps(at milliseconds: [Int], intensity: [Double], sharpness: Double) -> [HapticEvent] {
