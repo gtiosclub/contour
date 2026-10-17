@@ -26,95 +26,136 @@
 //  and return. Never await an utterance to finish.
 //
 
+import AVFoundation
 import ContourCore
 import Foundation
 
-/// How an utterance competes with whatever is already being spoken.
-public enum SpeechPriority: Int, Hashable, Sendable, CaseIterable, Comparable {
+/// Owns the one AVSpeechSynthesizer and tracks which utterance is "current".
+/// Callbacks for any other utterance (one we cut off) are ignored.
+private final class SynthesizerDriver: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
 
-    /// Say it if nothing else is queued; drop it if something outranks it.
-    /// Progress chatter belongs here, if it belongs anywhere.
-    case low
+    private let synthesizer = AVSpeechSynthesizer()
+    private let lock = NSLock()
+    private var current: AVSpeechUtterance?
 
-    /// Say it in turn. Stage changes and announcements the flow owes the user.
-    case normal
+    /// Called when the *current* utterance ends. Never called for cut-off ones.
+    var onFinished: (@Sendable () -> Void)?
 
-    /// Say it now, and drop whatever is queued behind it. `arrived` and
-    /// `lostTracking` are the cases this exists for — a stale "warmer" landing
-    /// after the user has already arrived is worse than silence.
-    case interrupting
+    override init() {
+        super.init()
+        synthesizer.delegate = self
+    }
 
-    public static func < (lhs: SpeechPriority, rhs: SpeechPriority) -> Bool {
-        lhs.rawValue < rhs.rawValue
+    /// Our own bookkeeping; `synthesizer.isSpeaking` lags behind `speak`/`stop`.
+    var isSpeaking: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return current != nil
+    }
+
+    func speak(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        lock.lock()
+        let wasSpeaking = current != nil
+        current = utterance               // replace BEFORE stopping, so the old
+        lock.unlock()                     // cancel callback fails the identity check
+        if wasSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        synthesizer.speak(utterance)
+    }
+
+    func stop() {
+        lock.lock(); current = nil; lock.unlock()
+        synthesizer.stopSpeaking(at: .immediate)   // harmless when idle
+    }
+
+    private func finishIfCurrent(_ utterance: AVSpeechUtterance) {
+        lock.lock()
+        guard utterance === current else { lock.unlock(); return }
+        current = nil
+        lock.unlock()
+        onFinished?()
+    }
+
+    func speechSynthesizer(_ s: AVSpeechSynthesizer, didFinish u: AVSpeechUtterance) {
+        finishIfCurrent(u)
+    }
+
+    // Cut-off lines fail the identity check and are ignored. A cancel of the
+    // *current* line (e.g. the system took the audio session) must still
+    // advance the queue, or it would stall forever.
+    func speechSynthesizer(_ s: AVSpeechSynthesizer, didCancel u: AVSpeechUtterance) {
+        finishIfCurrent(u)
     }
 }
 
-/// One thing to say, and how badly it wants to be said.
-public struct Utterance: Hashable, Sendable {
-
-    /// The text to speak. Written to be *heard*, not read: no abbreviations, no
-    /// punctuation the synthesiser will mispronounce, no leading "OK, so".
-    public var text: String
-
-    /// How it competes with what is already speaking.
-    public var priority: SpeechPriority
-
-    /// Drop this utterance if it has not been spoken within this long.
-    ///
-    /// The point of the whole type. A correction that is four seconds stale is
-    /// not just useless, it is actively misleading — it sends a finger somewhere
-    /// the target no longer is. `nil` means it stays valid indefinitely, which
-    /// is right for outcomes and wrong for almost everything else.
-    public var expiresAfter: Duration?
-
-    public init(text: String, priority: SpeechPriority, expiresAfter: Duration? = nil) {
-        self.text = text
-        self.priority = priority
-        self.expiresAfter = expiresAfter
-    }
-}
-
-/// Serializes speech so utterances queue, expire, and interrupt predictably.
-///
-/// An `actor` because it is the one piece of state in this package that is
-/// written from the camera thread and read from the speech callback.
 public actor SpeechQueue {
 
-    public init() {}
-
-    /// Queue `utterance`, applying its priority against what is already queued.
-    ///
-    /// Starts speech if nothing is speaking and returns immediately. An
-    /// `.interrupting` utterance clears anything pending behind the current one.
-    public func enqueue(_ utterance: Utterance) async {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+    private struct Entry {
+        let utterance: Utterance
+        let enqueuedAt: ContinuousClock.Instant
     }
 
-    /// Decide what should be spoken next, given what is queued and how long each
-    /// entry has been waiting.
-    ///
-    /// Pure and synchronous on purpose — this is the scheduling policy, and it is
-    /// the part a test can pin without a synthesiser. A test asserting that an
-    /// expired low-priority utterance loses to a fresh interrupting one is worth
-    /// writing before any AVSpeechSynthesizer code exists.
-    ///
-    /// - Parameters:
-    ///   - queued: everything waiting, oldest first, each with how long it has
-    ///     been waiting.
-    ///   - isSpeaking: whether something is being spoken right now.
-    /// - Returns: the utterance to speak next, or `nil` to stay silent.
+    private var entries: [Entry] = []
+    private let clock = ContinuousClock()
+    private let driver = SynthesizerDriver()
+
+    public init() {
+        driver.onFinished = { [weak self] in
+            Task { await self?.pump() }
+        }
+    }
+
+    public func enqueue(_ utterance: Utterance) async {
+        if utterance.priority == .interrupting {
+            entries.removeAll()           // drop everything queued behind it
+        }
+        entries.append(Entry(utterance: utterance, enqueuedAt: clock.now))
+        pump()                            // starts work and returns; never awaits speech
+    }
+
     public nonisolated func next(
         from queued: [(utterance: Utterance, waiting: Duration)],
         isSpeaking: Bool
     ) -> Utterance? {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+        let live = queued.filter { !Self.isExpired($0.utterance, waiting: $0.waiting) }
+
+        // Interrupting plays now, even mid-speech. If several, the newest wins.
+        if let urgent = live.last(where: { $0.utterance.priority == .interrupting }) {
+            return urgent.utterance
+        }
+        if isSpeaking { return nil }      // everything else waits its turn
+
+        // Highest priority wins, so low loses to normal; oldest first within a tier.
+        guard let top = live.map({ $0.utterance.priority }).max() else { return nil }
+        return live.first(where: { $0.utterance.priority == top })?.utterance
     }
 
-    /// Stop speaking and drop everything queued. Must be safe to call when idle.
-    ///
-    /// Called when a guidance session ends. Speech outliving its session is the
-    /// bug that makes the app feel haunted.
     public func stop() async {
-        fatalError("unimplemented — owned by Experience / Audio & Speech")
+        entries.removeAll()
+        driver.stop()
+    }
+
+    // MARK: - Internals
+
+    private static func isExpired(_ utterance: Utterance, waiting: Duration) -> Bool {
+        guard let limit = utterance.expiresAfter else { return false }
+        return waiting > limit
+    }
+
+    private func pump() {
+        let now = clock.now
+        entries.removeAll { Self.isExpired($0.utterance, waiting: now - $0.enqueuedAt) }
+
+        // "Drop it if something outranks it": low doesn't wait behind real speech.
+        if entries.contains(where: { $0.utterance.priority > .low }) {
+            entries.removeAll { $0.utterance.priority == .low }
+        }
+
+        let queued = entries.map { (utterance: $0.utterance, waiting: now - $0.enqueuedAt) }
+        guard let chosen = next(from: queued, isSpeaking: driver.isSpeaking),
+              let index = entries.firstIndex(where: { $0.utterance == chosen })
+        else { return }
+
+        entries.remove(at: index)
+        driver.speak(chosen.text)         // one line at a time; stops the old one if needed
     }
 }
