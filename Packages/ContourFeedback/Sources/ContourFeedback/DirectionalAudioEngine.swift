@@ -97,11 +97,15 @@ public final class DirectionalAudioEngine {
     }
 
     private func connect(_ a: AVAudioNode, to b: AVAudioNode) throws {
-        if #available(iOS 27, *) {
+        // connectNode(_:to:format:) is the throwing iOS 27 replacement. The
+        // compiler check keeps this building on the Xcode 26 toolchain too.
+        #if compiler(>=6.4)
+        if #available(iOS 27, macOS 27, *) {
             try engine.connectNode(a, to: b, format: format)
-        } else {
-            engine.connect(a, to: b, format: format)
+            return
         }
+        #endif
+        engine.connect(a, to: b, format: format)
     }
 
     private func startTicker() {

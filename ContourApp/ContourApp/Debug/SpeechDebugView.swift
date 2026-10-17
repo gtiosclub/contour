@@ -5,9 +5,10 @@
 //  Created by Rishika Vunnama on 10/15/26.
 //
 
-
-import SwiftUI
+#if DEBUG
 import ContourCore
+import ContourFeedback
+import SwiftUI
 
 struct SpeechDebugView: View {
     let queue: SpeechQueue
@@ -42,3 +43,4 @@ struct SpeechDebugView: View {
         .padding()
     }
 }
+#endif

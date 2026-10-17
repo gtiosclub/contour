@@ -30,6 +30,51 @@ import AVFoundation
 import ContourCore
 import Foundation
 
+/// How an utterance competes with whatever is already being spoken.
+public enum SpeechPriority: Int, Hashable, Sendable, CaseIterable, Comparable {
+
+    /// Say it if nothing else is queued; drop it if something outranks it.
+    /// Progress chatter belongs here, if it belongs anywhere.
+    case low
+
+    /// Say it in turn. Stage changes and announcements the flow owes the user.
+    case normal
+
+    /// Say it now, and drop whatever is queued behind it. `arrived` and
+    /// `lostTracking` are the cases this exists for — a stale "warmer" landing
+    /// after the user has already arrived is worse than silence.
+    case interrupting
+
+    public static func < (lhs: SpeechPriority, rhs: SpeechPriority) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
+/// One thing to say, and how badly it wants to be said.
+public struct Utterance: Hashable, Sendable {
+
+    /// The text to speak. Written to be *heard*, not read: no abbreviations, no
+    /// punctuation the synthesiser will mispronounce, no leading "OK, so".
+    public var text: String
+
+    /// How it competes with what is already speaking.
+    public var priority: SpeechPriority
+
+    /// Drop this utterance if it has not been spoken within this long.
+    ///
+    /// The point of the whole type. A correction that is four seconds stale is
+    /// not just useless, it is actively misleading — it sends a finger somewhere
+    /// the target no longer is. `nil` means it stays valid indefinitely, which
+    /// is right for outcomes and wrong for almost everything else.
+    public var expiresAfter: Duration?
+
+    public init(text: String, priority: SpeechPriority, expiresAfter: Duration? = nil) {
+        self.text = text
+        self.priority = priority
+        self.expiresAfter = expiresAfter
+    }
+}
+
 /// Owns the one AVSpeechSynthesizer and tracks which utterance is "current".
 /// Callbacks for any other utterance (one we cut off) are ignored.
 private final class SynthesizerDriver: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
