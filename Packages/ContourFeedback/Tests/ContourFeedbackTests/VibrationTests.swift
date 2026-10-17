@@ -60,6 +60,58 @@ func offPanelFeelsLikeTheEdge() {
     #expect(haptics.pattern(forDistance: -0.2) == haptics.pattern(forDistance: 0))
 }
 
+/// Every hundredth from well before the button to well off the panel.
+private let sweep = stride(from: -0.5, through: 2.5, by: 0.01).map { $0 }
+
+@Test("intensity never goes up as distance goes up")
+func intensityNeverRisesWithDistance() throws {
+    let intensities = try sweep.map { try #require(ProximityHaptics.beat(forDistance: $0)).intensity }
+    for (nearer, farther) in zip(intensities, intensities.dropFirst()) {
+        #expect(farther <= nearer)
+    }
+}
+
+@Test("intensity never drops below about 0.2, even off the panel")
+func intensityHasAFloor() throws {
+    for distance in sweep + [.infinity] {
+        let beat = try #require(ProximityHaptics.beat(forDistance: distance))
+        #expect(beat.intensity >= 0.2, "too faint to feel at distance \(distance)")
+        #expect(beat.intensity <= 1)
+    }
+}
+
+@Test("each pulse buzzes for part of its interval, never all of it")
+func pulseWidthLeavesAGap() {
+    for distance in sweep {
+        let width = ProximityHaptics.pulseWidth(forDistance: distance)
+        #expect(width > .zero)
+        #expect(width < ProximityHaptics.pulseInterval(forDistance: distance))
+    }
+    #expect(ProximityHaptics.pulseWidth(forDistance: 0) == .milliseconds(35))
+    #expect(ProximityHaptics.pulseWidth(forDistance: 1) == .milliseconds(60))
+}
+
+@MainActor
+@Test("pulses run on one engine that is started once, not once per frame")
+func pulsesReuseOneEngine() async throws {
+    let player = HapticPlayer()
+    player.stopPulsing()
+    #expect(player.manager == nil, "stopping while idle must not spin up an engine")
+
+    player.pulse(forDistance: 0.9)
+    let engine = try #require(player.manager)
+    #expect(engine.wantsRunning, "the continuous player is on, so resets and backgrounding resume it")
+
+    for distance in stride(from: 0.9, through: 0, by: -0.1) {
+        player.pulse(forDistance: distance)
+    }
+    #expect(player.manager === engine)
+
+    player.stopPulsing()
+    #expect(!engine.wantsRunning)
+    #expect(engine.currentIntensity == 0, "a later start must open silent")
+}
+
 @Test("a distance that isn't a number plays nothing")
 func nanPlaysNothing() {
     #expect(ProximityHaptics().pattern(forDistance: .nan).isEmpty)
