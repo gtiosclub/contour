@@ -1,3 +1,4 @@
+#if DEBUG
 import ContourCore
 import CoreGraphics
 import SwiftUI
@@ -91,3 +92,5 @@ struct CapturedPanelReviewView: View {
         }
     }
 }
+
+#endif

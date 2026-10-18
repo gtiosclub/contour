@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 struct AnushkaDebugView: View {
@@ -5,3 +6,5 @@ struct AnushkaDebugView: View {
         Text("Hello from Anushka's Debug Tool!")
     }
 }
+
+#endif

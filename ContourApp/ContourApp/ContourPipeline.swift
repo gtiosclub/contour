@@ -42,6 +42,7 @@ final class ContourPipeline {
     /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
     private(set) var trackingError: String?
+    private(set) var guidanceArrived = false
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
@@ -203,6 +204,7 @@ final class ContourPipeline {
     /// picks up again when it's back. Arriving ends the session, and any other
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
+        guidanceArrived = false
         generation &+= 1
         let session = generation
         await cancelGuidance()
@@ -265,6 +267,7 @@ final class ContourPipeline {
             await feedback.present(state)
             if state.outcome == .arrived {
                 arrived = true
+                if generation == session, !Task.isCancelled { guidanceArrived = true }
                 break
             }
         }

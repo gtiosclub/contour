@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  ModelImageSpikeView.swift
 //  ContourApp — Debug
@@ -127,3 +128,5 @@ struct ModelImageSpikeView: View {
         }
     }
 }
+
+#endif
