@@ -16,16 +16,21 @@ nonisolated final class CameraService: NSObject, CameraControl,
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
     private let frames = CameraFrameHub()
-    private let arSession = ARSession()
-    private var arRunning = false
+    /// A fresh session per run. Callbacks are matched by identity, so a paused
+    /// run's late frames or errors cannot reach the next one.
+    private var arSession: ARSession?
+    private var observers: [NSObjectProtocol] = []
 
     /// World tracking is opt-in and falls back to AVFoundation on devices
     /// without ARWorldTrackingConfiguration support.
     init(worldTracking: Bool = false) {
         usesWorldTracking = worldTracking && ARWorldTrackingConfiguration.isSupported
         super.init()
-        arSession.delegate = self
-        arSession.delegateQueue = queue
+        if !usesWorldTracking { observeCaptureSession() }
+    }
+
+    deinit {
+        observers.forEach(NotificationCenter.default.removeObserver)
     }
 
     enum CameraError: LocalizedError {
@@ -53,14 +58,15 @@ nonisolated final class CameraService: NSObject, CameraControl,
                 do {
                     if self.usesWorldTracking {
                         self.startWorldTracking()
-                        continuation.resume()
-                        return
+                    } else {
+                        try self.configure()
+                        if !self.session.isRunning {
+                            self.frames.begin()
+                            self.session.startRunning()
+                        }
                     }
-                    try self.configure()
-                    if !self.session.isRunning {
-                        self.frames.begin()
-                        self.session.startRunning()
-                    }
+                    // A run is live again, so an earlier failure no longer applies.
+                    self.onMain { $0.error = nil }
                     continuation.resume()
                 } catch {
                     self.frames.end()
@@ -74,11 +80,10 @@ nonisolated final class CameraService: NSObject, CameraControl,
         await withCheckedContinuation { continuation in
             queue.async {
                 if self.session.isRunning { self.session.stopRunning() }
-                if self.arRunning {
-                    self.arSession.pause()
-                    self.arRunning = false
-                }
+                self.arSession?.pause()
+                self.arSession = nil
                 self.frames.end()
+                self.onMain { $0.isInterrupted = false }
                 continuation.resume()
             }
         }
@@ -86,6 +91,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
 
     @MainActor func retry() async {
         status.error = nil
+        status.isInterrupted = false
         await stop()
         do { try await start() }
         catch { status.error = error.localizedDescription }
@@ -105,16 +111,60 @@ nonisolated final class CameraService: NSObject, CameraControl,
         frames.subscribe()
     }
 
-    /// Every run resets tracking, so world coordinates restart from scratch
+    /// Every run is a new session, so world coordinates restart from scratch
     /// and the new generation's identity marks that change.
     private func startWorldTracking() {
-        guard !arRunning else { return }
+        guard arSession == nil else { return }
         let configuration = ARWorldTrackingConfiguration()
         configuration.isAutoFocusEnabled = true
         configuration.planeDetection = [.horizontal, .vertical]
+        let session = ARSession()
+        session.delegate = self
+        session.delegateQueue = queue
+        arSession = session
         frames.begin()
-        arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-        arRunning = true
+        session.run(configuration)
+    }
+
+    /// Status is presentation state. Main-queue order keeps an interruption's
+    /// start and end, and a failure after them, in the order they happened.
+    private func onMain(_ update: @escaping @MainActor @Sendable (CameraStatus) -> Void) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { update(self.status) } }
+    }
+
+    /// Ends the run that failed and reports it, unless a newer run has started
+    /// by the time the report reaches the main actor.
+    private func fail(_ run: CameraFrameHub.Generation, _ message: String) {
+        frames.end()
+        onMain { [frames] status in
+            guard !frames.isSuperseded(run.id) else { return }
+            status.isInterrupted = false
+            status.error = message
+        }
+    }
+
+    private func observeCaptureSession() {
+        let center = NotificationCenter.default
+        let interrupted = center.addObserver(forName: AVCaptureSession.wasInterruptedNotification,
+                                             object: session, queue: nil) { [weak self] _ in
+            self?.onMain { $0.isInterrupted = true }
+        }
+        let resumed = center.addObserver(forName: AVCaptureSession.interruptionEndedNotification,
+                                         object: session, queue: nil) { [weak self] _ in
+            self?.onMain { $0.isInterrupted = false }
+        }
+        let failed = center.addObserver(forName: AVCaptureSession.runtimeErrorNotification,
+                                        object: session, queue: nil) { [weak self] note in
+            guard let self else { return }
+            let message = (note.userInfo?[AVCaptureSessionErrorKey] as? Error)?.localizedDescription
+                ?? CameraError.unavailable.localizedDescription
+            queue.async {
+                // Stopped since, or already running again: nothing left to fail.
+                guard !self.session.isRunning, let run = self.frames.current else { return }
+                self.fail(run, message)
+            }
+        }
+        observers = [interrupted, resumed, failed]
     }
 
     private func configure() throws {
@@ -190,6 +240,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
     }
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
+        guard session === arSession else { return }
         // ARFrame.timestamp uses the same host clock as sample buffers.
         let age = CameraFrameHub.hostTime - frame.timestamp
         let camera = frame.camera
@@ -212,8 +263,23 @@ nonisolated final class CameraService: NSObject, CameraControl,
     }
 
     func session(_ session: ARSession, didFailWithError error: Error) {
-        arRunning = false
-        frames.end()
-        Task { @MainActor in self.status.error = error.localizedDescription }
+        guard session === arSession, let run = frames.current else { return }
+        arSession = nil
+        fail(run, error.localizedDescription)
+    }
+
+    func sessionWasInterrupted(_ session: ARSession) {
+        guard session === arSession else { return }
+        onMain { $0.isInterrupted = true }
+    }
+
+    /// World coordinates are not trustworthy across the gap, so replace the
+    /// session. Subscribers stay attached and see the new identity.
+    func sessionInterruptionEnded(_ session: ARSession) {
+        guard session === arSession else { return }
+        session.pause()
+        arSession = nil
+        startWorldTracking()
+        onMain { $0.isInterrupted = false }
     }
 }

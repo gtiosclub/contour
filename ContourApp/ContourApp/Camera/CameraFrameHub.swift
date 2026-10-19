@@ -32,6 +32,8 @@ nonisolated final class CameraFrameHub: Sendable {
     /// Host-clock time now, comparable with capture timestamps.
     static var hostTime: TimeInterval { CMClockGetTime(CMClockGetHostTimeClock()).seconds }
 
+    /// Calling this while running renews the identity without finishing
+    /// streams: subscribers stay attached and see the new `id` on later frames.
     @discardableResult
     func begin(at startTime: TimeInterval = hostTime) -> Generation {
         let generation = Generation(id: UUID(), startTime: startTime)
@@ -48,6 +50,12 @@ nonisolated final class CameraFrameHub: Sendable {
         }
         // Outside the lock: finishing runs onTermination, which takes it again.
         finished.forEach { $0.finish() }
+    }
+
+    /// Whether a newer run has begun since `id`. Being idle after a stop or
+    /// failure does not count, so that failure can still be reported.
+    func isSuperseded(_ id: UUID) -> Bool {
+        state.withLock { state in state.generation.map { $0.id != id } ?? false }
     }
 
     func subscribe() -> AsyncStream<CameraFrame> {

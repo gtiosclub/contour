@@ -82,6 +82,39 @@ struct CameraFrameHubTests {
         #expect(await frames.next()?.world?.sessionID == run.id)
     }
 
+    @Test("A failure report is dropped once a newer run has begun")
+    func newerRunSupersedesFailure() {
+        let hub = CameraFrameHub()
+        let failed = hub.begin(at: 0)
+        hub.end()
+        #expect(!hub.isSuperseded(failed.id))
+        let retried = hub.begin(at: 5)
+        #expect(hub.isSuperseded(failed.id))
+        #expect(!hub.isSuperseded(retried.id))
+    }
+
+    @Test("Renewing identity mid-run keeps streams and rejects the old world's frames")
+    func renewalKeepsSubscribers() async throws {
+        let hub = CameraFrameHub()
+        hub.begin(at: 0)
+        var frames = hub.subscribe().makeAsyncIterator()
+        let renewed = hub.begin(at: 10)
+        #expect(hub.subscriberCount == 1)
+
+        let pixels = try frame(at: 0).pixelBuffer
+        let worldFrame = { (generation: CameraFrameHub.Generation, time: TimeInterval) in
+            CameraFrame(pixelBuffer: pixels, timestamp: Date(timeIntervalSince1970: time), orientation: .right,
+                        world: WorldCameraSnapshot(sessionID: generation.id, cameraToWorld: matrix_identity_float4x4,
+                            intrinsics: matrix_identity_float3x3, imageSize: SIMD2(4, 4),
+                            normalTracking: true, planes: []))
+        }
+        #expect(!hub.publish(capturedAt: 9) { worldFrame($0, 9) })
+        #expect(hub.publish(capturedAt: 11) { worldFrame($0, 11) })
+        let received = await frames.next()
+        #expect(received?.timestamp == Date(timeIntervalSince1970: 11))
+        #expect(received?.world?.sessionID == renewed.id)
+    }
+
     private func frame(at time: TimeInterval) throws -> CameraFrame {
         var buffer: CVPixelBuffer?
         let status = CVPixelBufferCreate(nil, 4, 4, kCVPixelFormatType_32BGRA, nil, &buffer)
