@@ -44,6 +44,9 @@ final class ExperienceModel {
     private(set) var message: String?
     /// Replaces the outcome screen's default message (what was heard).
     private(set) var outcomeDetail: String?
+    /// Why guidance can't go on — tracking couldn't lock onto the panel. The
+    /// guide screen shows it and offers Scan again.
+    private(set) var trackingProblem: String?
     private(set) var isCapturing = false
     private(set) var isListening = false
     /// Why the live camera isn't showing, if it isn't.
@@ -177,6 +180,7 @@ final class ExperienceModel {
         stopRunningWork()
         endSelection()
         message = nil
+        trackingProblem = nil
         Task {
             await pipeline.stopGuidance()
             await flow.cancel()
@@ -213,6 +217,7 @@ final class ExperienceModel {
         endSelection()
         message = nil
         outcomeDetail = nil
+        trackingProblem = nil
         transcript.text = nil
         let id = UUID()
         scanID = id
@@ -281,6 +286,7 @@ final class ExperienceModel {
         endSelection()
         message = nil
         outcomeDetail = nil
+        trackingProblem = nil
         Task {
             await pipeline.stopGuidance()
             await flow.advance(to: .acquiringPanel)
@@ -386,6 +392,7 @@ final class ExperienceModel {
         }
         target = button
         outcomeDetail = nil
+        trackingProblem = nil
         #if DEBUG
         demoGuidance = nil
         #endif
@@ -408,7 +415,10 @@ final class ExperienceModel {
     /// The pipeline presented a new guidance state. A loss that lasts ends the
     /// session; a brief one recovers on its own.
     func guidanceChanged() {
-        guard pipeline.latestGuidance?.outcome == .lostTracking, let id = guidanceID else {
+        // The error may be the same text as last session's, which onChange
+        // wouldn't report again; check it with every new state as well.
+        trackingErrorChanged()
+        guard trackingProblem == nil, pipeline.latestGuidance?.outcome == .lostTracking, let id = guidanceID else {
             lostTimer?.cancel()
             lostTimer = nil
             return
@@ -427,9 +437,30 @@ final class ExperienceModel {
         }
     }
 
+    /// Tracking reported (or cleared) an error. If it can't lock onto the
+    /// panel while guiding, waiting won't help: stop guidance and stay on the
+    /// guide screen, which says so and offers Scan again.
+    func trackingErrorChanged() {
+        guard let problem = ExperiencePolicy.trackingProblem(for: pipeline.trackingError),
+              guidanceID != nil, trackingProblem == nil else { return }
+        guidanceTask?.cancel()
+        guidanceTask = nil
+        guidanceID = nil
+        lostTimer?.cancel()
+        lostTimer = nil
+        trackingProblem = problem
+        Task {
+            await pipeline.stopGuidance()
+            // A newer session or Scan again got there first.
+            guard guidanceID == nil, trackingProblem == problem else { return }
+            await announcer.say(problem, interrupt: true)
+        }
+    }
+
     /// Stop, while guiding: back to the controls on the same panel.
     func stopGuiding() {
         stopRunningWork()
+        trackingProblem = nil
         #if DEBUG
         demoGuidance = nil
         #endif

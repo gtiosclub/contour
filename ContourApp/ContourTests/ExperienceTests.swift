@@ -51,6 +51,15 @@ struct ExperiencePolicyTests {
         #expect(ExperiencePolicy.outcome(afterGuidanceEndedWith: nil) == .lostTracking)
     }
 
+    @Test("a tracking error becomes one plain scan-again line; no error, no line")
+    func trackingProblem() {
+        #expect(ExperiencePolicy.trackingProblem(for: nil) == nil)
+        let line = ExperiencePolicy.trackingProblem(
+            for: "Vision could not track the marked panel in the reference photo. Capture again and mark its actual boundary.")
+        #expect(line?.contains("Scan again") == true)
+        #expect(line?.contains("reference") == false)
+    }
+
     @Test("the drawn finger sits back along the guidance vector from the target")
     func fingertip() throws {
         let start = MockSurfaceMaps.microwaveStartButton

@@ -9,7 +9,14 @@
 //
 //  The screens are ContourUI's (they take plain data and closures); the
 //  decisions are ExperienceModel's; this view only picks the screen for the
-//  stage and hands each one the camera preview, which lives in the app.
+//  stage and hands the aiming and guiding screens the camera preview, which
+//  lives in the app.
+//
+//  ONE PREVIEW AT A TIME
+//  Never give the detecting screen a CameraPreview. It cross-fades in over the
+//  aiming screen, so there would be two preview layers on the session at once,
+//  and on a real phone that blanked the screen for about nine seconds after
+//  Scan. It gets plain black, and draws the photo being read on top.
 //
 //  DEVELOPER TOOLS (DEBUG only): the ladybug in the top-right corner opens
 //  Debug/DebugMenu.swift — pipeline status, manual tracking test, captured
@@ -90,6 +97,9 @@ struct ContentView: View {
             .onChange(of: pipeline.latestGuidance) { _, _ in
                 model.guidanceChanged()
             }
+            .onChange(of: pipeline.trackingError) { _, _ in
+                model.trackingErrorChanged()
+            }
     }
 
     @ViewBuilder
@@ -114,7 +124,7 @@ struct ContentView: View {
     private var detecting: some View {
         DetectingScreen(photo: model.photo, sample: model.usesCamera ? nil : DemoPanel.map,
                         onCancel: { model.cancelScan() }) {
-            viewfinder(highlighting: nil)
+            Color.black   // not the camera: see ONE PREVIEW AT A TIME above
         }
         .transition(.opacity)
     }
@@ -130,7 +140,8 @@ struct ContentView: View {
 
     private func guide(_ target: SurfaceMap.Button) -> some View {
         GuideScreen(target: target, targetName: model.targetName, guidance: model.guidance,
-                    onStop: { model.stopGuiding() }) {
+                    problem: model.trackingProblem,
+                    onStop: { model.stopGuiding() }, onRescan: { model.rescan() }) {
             viewfinder(highlighting: target)
         }
         .transition(.opacity)

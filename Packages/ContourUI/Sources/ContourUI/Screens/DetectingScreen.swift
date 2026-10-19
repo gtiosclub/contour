@@ -23,8 +23,9 @@ public struct DetectingScreen<Background: View>: View {
     ///     pipeline's empty photo), `sample` is drawn, else `background`.
     ///   - sample: a panel to draw when there is no photo to freeze.
     ///   - onCancel: go back to aiming.
-    ///   - background: shown when there is neither photo nor sample — usually
-    ///     the live camera.
+    ///   - background: shown when there is neither photo nor sample. Not a
+    ///     second camera preview: this screen fades in over the aiming screen's,
+    ///     and two preview layers on one session blank the screen on a phone.
     public init(
         photo: PanelPhoto?,
         sample: SurfaceMap? = nil,

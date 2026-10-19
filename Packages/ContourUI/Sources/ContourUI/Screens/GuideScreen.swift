@@ -7,6 +7,10 @@
 //  fills as the finger closes in; an arrow pointing where to move; and the
 //  largest Stop button in the app. Magic Tap stops too.
 //
+//  WHEN TRACKING CAN'T START
+//  If tracking can't lock onto the panel at all, waiting won't help, so the
+//  screen says why in `problem` and Stop becomes Scan again (Magic Tap too).
+//
 //  COORDINATES
 //  GuidanceVector.direction is panel space, +dy DOWN — the same way up as the
 //  screen, so the arrow rotates by the vector's angle as-is: (0, 1) points the
@@ -21,8 +25,10 @@ public struct GuideScreen<Background: View>: View {
 
     private let targetName: String
     private let guidance: GuidanceState?
+    private let problem: String?
     private let background: Background
     private let onStop: () -> Void
+    private let onRescan: (() -> Void)?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .largeTitle) private var heroSize = ContourTheme.Size.heroText
@@ -32,23 +38,32 @@ public struct GuideScreen<Background: View>: View {
     ///   - target: where the finger is going.
     ///   - targetName: what to call it; defaults to its label or position.
     ///   - guidance: the latest state from the pipeline. `nil` until the first.
+    ///   - problem: why guidance can't go on, said in place of the guidance
+    ///     line. `nil` while guiding normally.
     ///   - onStop: stop guiding.
+    ///   - onRescan: scan the panel again; offered instead of Stop while there
+    ///     is a `problem`.
     ///   - background: the live camera, or a placeholder.
     public init(
         target: SurfaceMap.Button,
         targetName: String? = nil,
         guidance: GuidanceState?,
+        problem: String? = nil,
         onStop: @escaping () -> Void,
+        onRescan: (() -> Void)? = nil,
         @ViewBuilder background: () -> Background
     ) {
         self.targetName = targetName ?? PanelLayout.spokenName(for: target)
         self.guidance = guidance
+        self.problem = problem
         self.background = background()
         self.onStop = onStop
+        self.onRescan = onRescan
     }
 
     public var body: some View {
-        let status = GuideStatus(guidance)
+        let status = GuideStatus(guidance, problem: problem)
+        let rescan = status.phase == .cannotTrack ? onRescan : nil
         ZStack {
             ContourTheme.Colors.chrome.ignoresSafeArea()
             background
@@ -94,15 +109,22 @@ public struct GuideScreen<Background: View>: View {
                     .contourGlass(in: .capsule)
                     .accessibilityHidden(true)   // the ring's value says the same
 
-                ContourActionButton("Stop", systemImage: "stop.fill", role: .destructive,
-                                    height: ContourTheme.Size.stopHeight,
-                                    hint: "Stops guiding. You can choose another button.",
-                                    action: onStop)
+                if let rescan {
+                    ContourActionButton("Scan again", systemImage: "camera.viewfinder",
+                                        height: ContourTheme.Size.stopHeight,
+                                        hint: "Goes back to the camera to scan the panel again.",
+                                        action: rescan)
+                } else {
+                    ContourActionButton("Stop", systemImage: "stop.fill", role: .destructive,
+                                        height: ContourTheme.Size.stopHeight,
+                                        hint: "Stops guiding. You can choose another button.",
+                                        action: onStop)
+                }
             }
             .padding(.horizontal, ContourTheme.Spacing.m)
             .padding(.vertical, ContourTheme.Spacing.m)
         }
-        .contourMagicTap(onStop)
+        .contourMagicTap(rescan ?? onStop)
         .accessibilityAction(.escape, onStop)
     }
 }
@@ -110,7 +132,7 @@ public struct GuideScreen<Background: View>: View {
 /// What the latest guidance state means for the screen.
 struct GuideStatus: Equatable {
 
-    enum Phase: Equatable { case starting, noFinger, moving, onTarget, lost, unclear }
+    enum Phase: Equatable { case starting, noFinger, moving, onTarget, lost, unclear, cannotTrack }
 
     let phase: Phase
     /// Ring fill, 0...1.
@@ -118,7 +140,11 @@ struct GuideStatus: Equatable {
     /// Arrow angle in radians, clockwise from right (y is down).
     let angle: Double?
 
-    init(_ state: GuidanceState?) {
+    /// - Parameter problem: why tracking can't start at all. Wins over `state`.
+    init(_ state: GuidanceState?, problem: String? = nil) {
+        if let problem {
+            phase = .cannotTrack; fill = 0; angle = nil; problemWords = problem; return
+        }
         guard let state else {
             phase = .starting; fill = 0; angle = nil; return
         }
@@ -145,6 +171,7 @@ struct GuideStatus: Equatable {
 
     private var distanceWords = ""
     private var directionWords = ""
+    private var problemWords = ""
 
     /// The line under the ring.
     var line: String {
@@ -155,6 +182,7 @@ struct GuideStatus: Equatable {
         case .onTarget: "On target"
         case .lost: "Panel out of view — point the phone back at it"
         case .unclear: "Can't see the panel clearly — hold steady"
+        case .cannotTrack: problemWords
         }
     }
 
@@ -169,7 +197,7 @@ struct GuideStatus: Equatable {
     var tint: Color {
         switch phase {
         case .onTarget: ContourTheme.Colors.success
-        case .lost, .unclear: ContourTheme.Colors.warning
+        case .lost, .unclear, .cannotTrack: ContourTheme.Colors.warning
         default: ContourTheme.Colors.accent
         }
     }
@@ -182,6 +210,7 @@ struct GuideStatus: Equatable {
         case .onTarget: "checkmark"
         case .lost: "viewfinder"
         case .unclear: "eye.trianglebadge.exclamationmark"
+        case .cannotTrack: "exclamationmark.triangle.fill"
         }
     }
 }
@@ -222,6 +251,18 @@ private struct ProximityRing: View {
         .padding(ContourTheme.Size.proximityRingLine / 2)
         .frame(width: size, height: size)
         .animation(ContourTheme.Motion.guidance(reduceMotion: reduceMotion), value: status)
+    }
+}
+
+#Preview("Can't track") {
+    GuideScreen(
+        target: SurfaceMap.Button(label: "Start", bounds: PanelRect(x: 0.38, y: 0.52, width: 0.24, height: 0.2),
+                                  confidence: 0.97),
+        guidance: .outcome(.lostTracking, at: .now),
+        problem: "Couldn't lock onto the panel. Scan again with the whole panel in view.",
+        onStop: {}, onRescan: {}
+    ) {
+        ViewfinderPlaceholder(message: "Camera unavailable in Simulator")
     }
 }
 
