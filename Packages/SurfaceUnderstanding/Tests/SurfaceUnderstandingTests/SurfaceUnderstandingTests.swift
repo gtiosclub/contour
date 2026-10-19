@@ -21,36 +21,6 @@ import Testing
 import Foundation
 @testable import SurfaceUnderstanding
 
-// Prints what match() returns for the PR's before/after table. Don't commit this file.
-//
-//   REPORT=1 swift test --filter matcherReport
-//
-// Skipped unless REPORT is set.
-
-@Test("matcher report", .enabled(if: ProcessInfo.processInfo.environment["REPORT"] != nil))
-func matcherReport() {
-    let requests = ["start", "stop", "pause", "timer", "time", "clock", "add 30 seconds", "power"]
-    // The 18 microwave lists: everything in RealPanelLabels except the 2 ovens and the hand-labelled panels.
-    let photos = RealPanelLabels.lists.keys
-        .filter { !$0.hasPrefix("hand-labelled") && !$0.lowercased().contains("oven") }
-        .sorted()
-
-    var table = "| Photo | " + requests.joined(separator: " | ") + " |\n"
-    table += "|---|" + String(repeating: "---|", count: requests.count) + "\n"
-    for photo in photos {
-        let labels = RealPanelLabels.lists[photo]!
-        let map = SurfaceMap(buttons: labels.enumerated().map { i, label in
-            SurfaceMap.Button(label: label, bounds: PanelRect(x: 0, y: Double(i) / Double(labels.count), width: 1, height: 0.01), confidence: 1)
-        }, confidence: 1)
-        let cells = requests.map { request -> String in
-            guard let match = TargetMatcher().match(request, in: map) else { return "nil" }
-            return "\(match.button.label ?? "?") (\(String(format: "%.1f", match.confidence)))"
-        }
-        table += "| \(photo) | " + cells.joined(separator: " | ") + " |\n"
-    }
-    print("\n\(photos.count) microwave lists\n\n\(table)")
-}
-
 @Test("LiveSurfaceUnderstanding still satisfies the ContourCore contract")
 func conformsToContract() {
     let subject: any ContourCore.SurfaceUnderstanding = LiveSurfaceUnderstanding()
@@ -95,4 +65,21 @@ func mockPanelIsMatchable() {
 func fullFrameQuad() {
     #expect(PanelQuad.fullFrame.topLeft == ImagePoint(x: 0, y: 0))
     #expect(PanelQuad.fullFrame.bottomRight == ImagePoint(x: 1, y: 1))
+}
+
+@Test("word matches and fallbacks stay below 0.9", arguments: [
+    // Word matches (pass 2): the request is only part of the label
+    ("normal_microwave.jpg", "start",          "Start Pause"),
+    ("Neat2.jpeg",           "power",          "Power Level"),
+    ("Neat2.jpeg",           "add 30 seconds", "30 Add Sec"),
+    ("microwave1_neat.heif", "timer",          "Timer Set/Off"),
+    // Fallbacks: the asked-for key isn't on the panel
+    ("normal_microwave.jpg", "stop",           "Cancel Off"),
+    ("Neat2.jpeg",           "stop",           "Cancel"),
+    ("microwave2-glare.jpg", "pause",          "STOP"),
+])
+func partialMatchesStayBelowSynonymConfidence(panel: String, say: String, label: String) throws {
+    let result = try #require(TargetMatcher().match(say, in: RealPanelLabels.map(panel)))
+    #expect(result.button.label == label)
+    #expect(result.confidence < 0.9)
 }

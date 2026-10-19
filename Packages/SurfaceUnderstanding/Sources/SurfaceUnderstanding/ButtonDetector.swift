@@ -25,6 +25,10 @@ public struct ButtonDetector: Sendable {
     /// `LabelReader`. A region you are unsure about should be returned with low
     /// confidence rather than dropped; the caller decides the threshold.
     ///
+    /// If the given panel quad is incorrect, such as covering only the clock
+    /// display, returning no buttons is correct. `LiveSurfaceUnderstanding` can
+    /// then fall back to searching the whole photo.
+    ///
     /// Bounds must not overlap. `ContourMocks` asserts that about its canned
     /// map and the app assumes it when hit-testing.
     public func detectButtons(
@@ -57,8 +61,11 @@ public struct ButtonDetector: Sendable {
                 observation.bottomRight,
                 observation.bottomLeft
             ].map {
-                detector.rectify(
-                    ImagePoint(x: Double($0.x), y: 1.0 - Double($0.y)),
+                return detector.rectify(
+                    ImagePoint(
+                        x: Double($0.x),
+                        y: 1.0 - Double($0.y)
+                    ),
                     within: panel
                 )
             }
@@ -113,7 +120,7 @@ public struct ButtonDetector: Sendable {
 /// lets a frame swallow the keys inside it, the second keeps a key's text
 /// instead of the key. The result doesn't depend on the order Vision returned
 /// the boxes in.
-private func removeOverlappingBoxes(
+func removeOverlappingBoxes(
     _ results: [(bounds: PanelRect, confidence: Double)]
 ) -> [(bounds: PanelRect, confidence: Double)] {
     func area(_ i: Int) -> Double {
@@ -123,9 +130,22 @@ private func removeOverlappingBoxes(
     // Box `j` sits inside box `i`. The index breaks exact ties, so two copies
     // of the same rectangle collapse to one.
     func isInside(_ j: Int, _ i: Int) -> Bool {
-        j != i
-            && (area(j) < area(i) || (area(j) == area(i) && j > i))
-            && overlapRatio(results[j].bounds, results[i].bounds) >= 0.5
+        guard j != i else { return false }
+
+        guard area(j) < area(i) || (area(j) == area(i) && j > i) else { return false }
+
+        guard overlapRatio(results[j].bounds, results[i].bounds) >= 0.5 else { return false }
+
+        let center = results[j].bounds.center
+
+        let iBounds = results[i].bounds
+        let centerIsInside =
+            center.x >= iBounds.origin.x &&
+            center.x <= iBounds.origin.x + iBounds.width &&
+            center.y >= iBounds.origin.y &&
+            center.y <= iBounds.origin.y + iBounds.height
+
+        return centerIsInside
     }
 
     var dropped = Set<Int>()
@@ -151,7 +171,14 @@ private func removeOverlappingBoxes(
         }
         if inner.isEmpty { continue }
 
-        let filled = inner.map(area).reduce(0, +)
+        let nonNestedInner = inner.filter { j in
+            !inner.contains { k in
+                k != j && isInside(j, k)
+            }
+        }
+
+        let filled = nonNestedInner.map(area).reduce(0, +)
+
         if filled >= 0.5 * area(i) {
             frames.insert(i)
         } else {

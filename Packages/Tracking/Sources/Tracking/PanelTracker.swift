@@ -54,6 +54,8 @@ public struct PanelObservation: Hashable, Sendable {
     /// `0...1`; `0` when lost.
     public let confidence: Double
     public let status: Status
+    public var featureDiagnostics: FeatureTrackingDiagnostics? = nil
+    public var hybridDiagnostics: HybridTrackingDiagnostics? = nil
 
     public static func tracked(_ quad: PanelQuad, confidence: Double, at timestamp: Date) -> Self {
         Self(timestamp: timestamp, quad: quad, confidence: confidence, status: .tracked)

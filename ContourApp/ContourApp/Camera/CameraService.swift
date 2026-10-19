@@ -4,19 +4,22 @@ import Tracking
 
 /// Session mutations and delegate callbacks are confined to `queue`.
 /// `session` is exposed only for attaching a preview layer on the main actor.
-nonisolated final class CameraService: NSObject, CameraFrameSource,
+nonisolated final class CameraService: NSObject, CameraControl,
     AVCaptureVideoDataOutputSampleBufferDelegate, @unchecked Sendable {
     let session = AVCaptureSession()
+    let status = CameraStatus()
+    let usesWorldTracking = false
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
     private var continuations: [UUID: AsyncStream<CameraFrame>.Continuation] = [:]
 
     enum CameraError: LocalizedError {
-        case permissionDenied, unavailable
+        case permissionDenied, unavailable, exposureControlUnavailable
         var errorDescription: String? {
             switch self {
             case .permissionDenied: "Camera access is unavailable. Enable it in Settings."
             case .unavailable: "Rear camera unavailable. Use a physical iPhone or iPad."
+            case .exposureControlUnavailable: "Exposure adjustment has not been implemented yet."
             }
         }
     }
@@ -50,6 +53,21 @@ nonisolated final class CameraService: NSObject, CameraFrameSource,
                 continuation.resume()
             }
         }
+    }
+
+    @MainActor func retry() async {
+        status.error = nil
+        await stop()
+        do { try await start() }
+        catch { status.error = error.localizedDescription }
+        status.revision &+= 1
+    }
+
+    /// S0 only declares the control seam; C implements actual bias later.
+    /// Automatic exposure remains unchanged, and unsupported requests fail.
+    func setExposureBias(_ value: Float) async throws -> Float? {
+        guard value == 0 else { throw CameraError.exposureControlUnavailable }
+        return nil
     }
 
     /// Every subscriber gets its own newest-frame buffer. Cancelling one does
