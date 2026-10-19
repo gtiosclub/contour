@@ -154,6 +154,22 @@ struct ExperienceFlowTests {
         model.rescan()
         try await waitFor("the camera again") { model.stage == .acquiringPanel }
     }
+
+    @Test("Scan again from the guide screen goes back to the camera")
+    func rescanWhileGuiding() async throws {
+        let model = ExperienceModel(pipeline: .mock(), camera: CameraService())
+        let running = Task { await model.run() }
+        defer { running.cancel() }
+
+        try await waitFor("the camera screen") { model.stage == .acquiringPanel }
+        model.scan()
+        try await waitFor("the controls") { model.stage.kind == .selectingTarget }
+        model.choose(MockSurfaceMaps.microwaveStartButton)
+        try await waitFor("guidance") { model.stage.kind == .guiding }
+        model.rescan()
+        try await waitFor("the camera again") { model.stage == .acquiringPanel }
+        #expect(model.trackingProblem == nil)
+    }
 }
 
 #if DEBUG
