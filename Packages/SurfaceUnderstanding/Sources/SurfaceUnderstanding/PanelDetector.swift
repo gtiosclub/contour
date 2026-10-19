@@ -170,7 +170,8 @@ public struct PanelDetector: Sendable {
         let keyCorners = keyBoxes.filter { area($0) < area(rectangle) * 0.5 }.map { key in
             [key.topLeft, key.topRight, key.bottomRight, key.bottomLeft].map(imagePoint)
         }
-        let quad = enclosingKeyGroups(seed: seed, keys: keyCorners)
+        // Vision can extrapolate a rectangle's corners past the photo's edges.
+        let quad = clampedToPhoto(enclosingKeyGroups(seed: seed, keys: keyCorners))
         let expanded = quad != seed
         let confidence = min(Double(rectangle.confidence), expanded ? 0.85 : 1)
 
@@ -184,26 +185,122 @@ public struct PanelDetector: Sendable {
         let refined = try refinePanel(seed: quad, confidence: confidence) {
             try controlEvidence(in: image, orientation: orientation, seed: quad)
         }
+        guard isInsidePhoto(refined.quad) else { return (quad, confidence, expanded, refined.warnings) }
         return (refined.quad, refined.confidence, expanded || refined.estimatedAlignment, refined.warnings)
     }
 
+    /// How far a corner may sit outside the photo. Vision's rectangle tracker
+    /// can refuse a reference quad whose corners leave the image, and then the
+    /// panel cannot be tracked at all, not even on the first frame.
+    static let frameTolerance = 0.02
+
+    func isInsidePhoto(_ quad: PanelQuad) -> Bool {
+        let range = -Self.frameTolerance...(1 + Self.frameTolerance)
+        return [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+            .allSatisfy { range.contains($0.x) && range.contains($0.y) }
+    }
+
+    /// A grown outline that would leave the photo is not used at all; this is
+    /// for a detected rectangle that already does.
+    func clampedToPhoto(_ quad: PanelQuad) -> PanelQuad {
+        guard !isInsidePhoto(quad) else { return quad }
+        func clamped(_ point: ImagePoint) -> ImagePoint {
+            ImagePoint(x: min(max(point.x, 0), 1), y: min(max(point.y, 0), 1))
+        }
+        return PanelQuad(topLeft: clamped(quad.topLeft), topRight: clamped(quad.topRight),
+                         bottomRight: clamped(quad.bottomRight), bottomLeft: clamped(quad.bottomLeft))
+    }
+
     /// A close-up may expose a border around presets, but no border around the
-    /// whole keypad. Require a majority of keys just beyond that group's ends
-    /// before using the existing geometric expansion to include the column.
+    /// whole keypad. Require more keys continuing the group's columns past its
+    /// ends than lie inside it, then grow over those keys and nothing else: a
+    /// door, handle, stove strip or cabinet edge in the same column is not a key
+    /// of this panel. The grown outline must stay in the photo.
     /// This uses rectangle evidence only; text recognition remains opt-in.
     func enclosingKeyGroups(seed: PanelQuad, keys: [[ImagePoint]]) -> PanelQuad {
-        let centers = keys.compactMap { corners -> PanelPoint? in
-            guard corners.count == 4 else { return nil }
-            let center = ImagePoint(x: (corners.map(\.x).min()! + corners.map(\.x).max()!) / 2,
-                                    y: (corners.map(\.y).min()! + corners.map(\.y).max()!) / 2)
-            return rectify(center, within: seed)
+        struct Key {
+            var corners: [ImagePoint]
+            var center: PanelPoint
+            var left, top, right, bottom: Double
+            var width: Double { right - left }
+            var height: Double { bottom - top }
+            func contains(_ point: PanelPoint) -> Bool {
+                (left...right).contains(point.x) && (top...bottom).contains(point.y)
+            }
         }
-        let inside = centers.filter(\.isOnPanel).count
-        let continuing = centers.filter {
-            !$0.isOnPanel && (0...1).contains($0.x) && (-1...2).contains($0.y)
-        }.count
-        guard inside >= 3, continuing > inside else { return seed }
-        return enclosingControls(seed: seed, evidence: keys)
+        let mapped = keys.compactMap { corners -> Key? in
+            guard corners.count == 4 else { return nil }
+            let center = rectify(ImagePoint(x: (corners.map(\.x).min()! + corners.map(\.x).max()!) / 2,
+                                            y: (corners.map(\.y).min()! + corners.map(\.y).max()!) / 2),
+                                 within: seed)
+            let points = corners.map { rectify($0, within: seed) }
+            guard center.x.isFinite, center.y.isFinite,
+                  points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+            return Key(corners: corners, center: center,
+                       left: points.map(\.x).min()!, top: points.map(\.y).min()!,
+                       right: points.map(\.x).max()!, bottom: points.map(\.y).max()!)
+        }
+        let inside = mapped.filter { $0.center.isOnPanel }
+        guard inside.count >= 3 else { return seed }
+
+        // Vision also boxes the text printed on a key. Size keys by the outer boxes.
+        let outer = inside.filter { key in
+            !inside.contains { $0.width * $0.height > key.width * key.height && $0.contains(key.center) }
+        }
+        func median(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
+        let keyWidth = median(outer.map(\.width))
+        let keyHeight = median(outer.map(\.height))
+
+        func keySized(_ key: Key) -> Bool {
+            (0.5 * keyWidth...2 * keyWidth).contains(key.width) &&
+            (0.5 * keyHeight...2 * keyHeight).contains(key.height)
+        }
+        // A display is wider than a key column; only keys define the columns.
+        let columns = outer.filter(keySized)
+        // In one of the group's key columns, and no bigger than about two keys.
+        var candidates = mapped.filter { key in
+            !key.center.isOnPanel && (0...1).contains(key.center.x) &&
+            key.width <= 2 * keyWidth && key.height <= 2 * keyHeight &&
+            columns.contains { abs(key.center.x - $0.center.x) <= 0.5 * $0.width }
+        }
+        // Chained to the group's edge. Below, a caption row such as "Express Cook"
+        // can separate the keypad from the presets; above sits the display.
+        var top = 0.0, bottom = 1.0
+        var chained: [Key] = []
+        var grew = true
+        while grew {
+            grew = false
+            candidates.removeAll { key in
+                if key.center.y < 0, top - key.bottom < 1.25 * keyHeight {
+                    top = min(top, key.top)
+                } else if key.center.y > 1, key.top - bottom < 2.5 * keyHeight {
+                    bottom = max(bottom, key.bottom)
+                } else {
+                    return false
+                }
+                chained.append(key)
+                grew = true
+                return true
+            }
+        }
+        // Text boxes may extend the chain, but it takes key-sized boxes to start it.
+        guard chained.count > inside.count, chained.filter(keySized).count >= 2 else { return seed }
+
+        let grown = enclosingControls(seed: seed, evidence: (inside + chained).map(\.corners))
+        // A keypad roughly doubles a preset group; much more is not this panel.
+        guard area(grown) <= 2.75 * area(seed), isInsidePhoto(grown) else { return seed }
+        return grown
+    }
+
+    /// Shoelace area of a quad in normalized image units.
+    private func area(_ quad: PanelQuad) -> Double {
+        let points = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+        var total = 0.0
+        for index in points.indices {
+            let next = points[(index + 1) % points.count]
+            total += points[index].x * next.y - next.x * points[index].y
+        }
+        return abs(total) / 2
     }
 
     /// OCR is optional refinement. A failure must not discard a valid rectangle.
