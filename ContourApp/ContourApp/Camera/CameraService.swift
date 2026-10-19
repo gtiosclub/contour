@@ -111,6 +111,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
         guard !arRunning else { return }
         let configuration = ARWorldTrackingConfiguration()
         configuration.isAutoFocusEnabled = true
+        configuration.planeDetection = [.horizontal, .vertical]
         frames.begin()
         arSession.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         arRunning = true
@@ -193,6 +194,8 @@ nonisolated final class CameraService: NSObject, CameraControl,
         let age = CameraFrameHub.hostTime - frame.timestamp
         let camera = frame.camera
         let normalTracking = if case .normal = camera.trackingState { true } else { false }
+        // The frame's own anchors, so planes match these pixels and this pose.
+        let planes = frame.anchors.compactMap { $0 as? ARPlaneAnchor }.map(WorldPlane.init)
         frames.publish(capturedAt: frame.timestamp) { generation in
             // Pose and intrinsics describe these exact pixels in their native
             // landscape orientation; `.right` turns them upright.
@@ -202,7 +205,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
                 intrinsics: camera.intrinsics,
                 imageSize: SIMD2(Float(camera.imageResolution.width), Float(camera.imageResolution.height)),
                 normalTracking: normalTracking,
-                planes: [])
+                planes: planes)
             return CameraFrame(pixelBuffer: frame.capturedImage,
                                timestamp: Date().addingTimeInterval(-age), orientation: .right, world: world)
         }
