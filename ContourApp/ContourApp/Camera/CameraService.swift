@@ -15,6 +15,8 @@ nonisolated final class CameraService: NSObject, CameraControl,
     let usesWorldTracking: Bool
     private let queue = DispatchQueue(label: "edu.gatech.contour.camera")
     private var configured = false
+    /// The AVFoundation capture device once configured; nil under world tracking.
+    private var device: AVCaptureDevice?
     private let frames = CameraFrameHub()
     /// A fresh session per run. Callbacks are matched by identity, so a paused
     /// run's late frames or errors cannot reach the next one.
@@ -34,12 +36,13 @@ nonisolated final class CameraService: NSObject, CameraControl,
     }
 
     enum CameraError: LocalizedError {
-        case permissionDenied, unavailable, exposureControlUnavailable
+        case permissionDenied, unavailable, exposureControlUnavailable, exposureOwnedByWorldTracking
         var errorDescription: String? {
             switch self {
             case .permissionDenied: "Camera access is unavailable. Enable it in Settings."
             case .unavailable: "Rear camera unavailable. Use a physical iPhone or iPad."
-            case .exposureControlUnavailable: "Exposure adjustment has not been implemented yet."
+            case .exposureControlUnavailable: "Exposure adjustment needs a running camera."
+            case .exposureOwnedByWorldTracking: "ARKit controls exposure during world tracking."
             }
         }
     }
@@ -98,11 +101,39 @@ nonisolated final class CameraService: NSObject, CameraControl,
         status.revision &+= 1
     }
 
-    /// S0 only declares the control seam; C implements actual bias later.
-    /// Automatic exposure remains unchanged, and unsupported requests fail.
+    /// Starting values for comparing glare handling, in EV. The device's range
+    /// may clamp them; the applied value is what `setExposureBias` returns.
+    static let exposurePresets: [Float] = [0, -0.7, -1.3]
+
+    /// Returns the bias actually applied, clamped to the device's limits, or nil
+    /// when exposure stays fully automatic. ARKit owns exposure under world
+    /// tracking, so only 0 is honoured there; anything else fails rather than
+    /// pretending to apply.
     func setExposureBias(_ value: Float) async throws -> Float? {
-        guard value == 0 else { throw CameraError.exposureControlUnavailable }
-        return nil
+        guard value.isFinite else { throw CameraError.exposureControlUnavailable }
+        if usesWorldTracking {
+            guard value == 0 else { throw CameraError.exposureOwnedByWorldTracking }
+            return nil
+        }
+        return try await withCheckedThrowingContinuation { continuation in
+            queue.async {
+                guard let device = self.device else {
+                    // Not configured yet, so automatic exposure is already in effect.
+                    if value == 0 { continuation.resume(returning: nil) }
+                    else { continuation.resume(throwing: CameraError.exposureControlUnavailable) }
+                    return
+                }
+                do {
+                    try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
+                    let applied = min(max(value, device.minExposureTargetBias), device.maxExposureTargetBias)
+                    device.setExposureTargetBias(applied)
+                    continuation.resume(returning: applied)
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
     }
 
     /// Every subscriber gets its own newest-frame buffer. Cancelling one does
@@ -191,6 +222,7 @@ nonisolated final class CameraService: NSObject, CameraControl,
             connection.videoRotationAngle = 90
         }
         output.setSampleBufferDelegate(self, queue: queue)
+        self.device = device
         configured = true
     }
 
