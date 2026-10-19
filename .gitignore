@@ -41,6 +41,10 @@ playground.xcworkspace
 Server/functions/node_modules/
 # Emulator-only files. .secret.local holds a real OpenAI key.
 Server/functions/*.local
+# Firebase CLI and emulator logs. A failed `functions:secrets:set` leaves
+# firebase-debug.log behind with the request body, key included.
+Server/**/firebase-debug*.log
+Server/**/*-debug.log
 
 # Editors
 .vscode/

@@ -160,8 +160,8 @@ No network, no install, no key. `test/structure.test.js` also checks that
    ```sh
    OPENAI_MODEL=<model id>
    ```
-   Pick a small, fast model that accepts images, from OpenAI's current model
-   list. The code has no default on purpose, because model names change. Time a
+   Pick a small, fast model that accepts images and supports Structured
+   Outputs (`json_schema`), from OpenAI's current model list. The code has no default on purpose, because model names change. Time a
    real `/label` call with 30 or so boxes: it has to come back well inside 8 s.
    If the model is a reasoning model, also set
    `OPENAI_REASONING_EFFORT=<the lowest value it accepts>` or it will time out.
@@ -181,7 +181,9 @@ does nothing for this function.
    iOS 14, so DeviceCheck, the older fallback provider, isn't needed.
 3. In Xcode, add the App Attest capability to ContourApp. App Attest needs a
    paid Apple Developer Program team. Anyone signing with a personal team uses
-   the debug provider instead.
+   the debug provider instead. Before a TestFlight or App Store build, set the
+   App Attest environment in ContourApp's `.entitlements` file to
+   `production`, as Firebase's App Attest guide says.
 4. Add `FirebaseCore` and `FirebaseAppCheck` (firebase-ios-sdk, SPM) to
    ContourApp, then set the provider before `FirebaseApp.configure()`:
    ```swift
@@ -280,7 +282,9 @@ count, so the real ceiling is those numbers times `maxInstances` (3, in
 OpenAI project budget is the real spending limit. The IP is the right-most
 `X-Forwarded-For` entry, which is the one Google's front end adds. That is an
 assumption about Cloud Run's header to confirm once deployed. If it's wrong,
-the limit turns into a shared per-instance limit, which errs strict.
+the limit turns into a shared per-instance limit, which errs strict. Phones on
+one network (campus Wi-Fi, a demo room) can share a public IP and so share
+these limits; raise `RATE_LIMITS` in `src/limits.js` if a demo hits 429s.
 
 ## Logging
 
