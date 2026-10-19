@@ -49,6 +49,13 @@ func plateAroundFourKeysKeepsKeys() {
     }
 }
 
+private func boxesOverlap(_ first: PanelRect, _ second: PanelRect) -> Bool {
+    first.origin.x < second.origin.x + second.width
+        && second.origin.x < first.origin.x + first.width
+        && first.origin.y < second.origin.y + second.height
+        && second.origin.y < first.origin.y + first.height
+}
+
 @Test("half-overlapping boxes survive when the smaller center is outside")
 func halfOverlappingBoxesKeepValidKey() {
     let outer = PanelRect(x: 0.10, y: 0.10, width: 0.20, height: 0.20)
@@ -62,6 +69,38 @@ func halfOverlappingBoxesKeepValidKey() {
     let found = removeOverlappingBoxes(results)
 
     #expect(found.count == 2)
-    #expect(found.contains { $0.bounds == outer })
-    #expect(found.contains { $0.bounds == overlapping })
+    #expect(found.contains { $0.bounds.contains(outer.center) })
+    #expect(found.contains { $0.bounds.contains(overlapping.center) })
+
+    for i in found.indices {
+        for j in found.indices where j > i {
+            #expect(!boxesOverlap(found[i].bounds, found[j].bounds))
+        }
+    }
+}
+
+@Test("three overlapping boxes survive without overlapping")
+func threeOverlappingBoxesKeepValidKeys() {
+    let first = PanelRect(x: 0.10, y: 0.10, width: 0.20, height: 0.10)
+    let second = PanelRect(x: 0.25, y: 0.10, width: 0.20, height: 0.10)
+    let third = PanelRect(x: 0.40, y: 0.10, width: 0.20, height: 0.10)
+
+    let results: [(bounds: PanelRect, confidence: Double)] = [
+        (first, 1.0),
+        (second, 1.0),
+        (third, 1.0)
+    ]
+
+    let found = removeOverlappingBoxes(results)
+
+    #expect(found.count == 3)
+    #expect(found.contains { $0.bounds.contains(first.center) })
+    #expect(found.contains { $0.bounds.contains(second.center) })
+    #expect(found.contains { $0.bounds.contains(third.center) })
+
+    for i in found.indices {
+        for j in found.indices where j > i {
+            #expect(!boxesOverlap(found[i].bounds, found[j].bounds))
+        }
+    }
 }
