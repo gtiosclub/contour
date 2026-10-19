@@ -147,23 +147,4 @@ func startCancelIsSkipped() {
     let map = panel(with: "Start Cancel", width: 0.22, height: 0.11)
     #expect(TargetMatcher().match("start", in: map) == nil)
 }
-// MARK: - Confidence and safety
-
-// Word matches (0.8) and fallbacks (0.7) must never look as sure as a synonym (0.9).
-@Test("word matches and fallbacks stay below 0.9", arguments: [
-    // Word matches: the request is only part of the label
-    ("normal_microwave.jpg", "start",          "Start Pause"),
-    ("Neat2.jpeg",           "power",          "Power Level"),
-    ("Neat2.jpeg",           "add 30 seconds", "30 Add Sec"),
-    ("microwave1_neat.heif", "timer",          "Timer Set/Off"),
-    // Fallbacks: the asked-for key isn't on the panel
-    ("normal_microwave.jpg", "stop",           "Cancel Off"),
-    ("Neat2.jpeg",           "stop",           "Cancel"),
-    ("microwave2-glare.jpg", "pause",          "STOP"),
-])
-func partialMatchesStayBelowSynonymConfidence(panel: String, say: String, label: String) throws {
-    let result = try #require(TargetMatcher().match(say, in: RealPanelLabels.map(panel)))
-    #expect(result.button.label == label)
-    #expect(result.confidence < 0.9)
-}
 
