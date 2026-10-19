@@ -13,6 +13,9 @@
 //    - Lock and unlock the phone. Same.
 //  The reset count should stay at zero through all of that.
 //
+//  The "Direction cues" toggle is the flag for the #119 prototype. Flip it here,
+//  go back, and run guidance to compare against hot/cold alone.
+//
 
 #if DEBUG
 import ContourFeedback
@@ -25,6 +28,7 @@ struct HapticsDebugView: View {
     @State private var sharpness: Float = 0.5
     @State private var continuousOn = false
     @State private var startError: String?
+    @AppStorage(LiveFeedbackEngine.directionalHintsKey) private var directionalHints = false
 
     var body: some View {
         Form {
@@ -66,6 +70,15 @@ struct HapticsDebugView: View {
                     haptics.tap(intensity: intensity, sharpness: sharpness)
                 }
                 Text("Uses the slider values. Should work while the continuous vibration is running.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Guidance bake-off") {
+                Toggle("Direction cues", isOn: $directionalHints)
+                Text("Adds a two-tap cue for which way to move on top of hot/cold. "
+                     + "Crisp taps are up/down, dull taps are left/right; rising is up or right, "
+                     + "falling is down or left. Takes effect on the next frame of guidance.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
