@@ -37,6 +37,11 @@ playground.xcworkspace
 *.p12
 *.mobileprovision
 
+# Server (Firebase Cloud Functions)
+Server/functions/node_modules/
+# Emulator-only files. .secret.local holds a real OpenAI key.
+Server/functions/*.local
+
 # Editors
 .vscode/
 .idea/
