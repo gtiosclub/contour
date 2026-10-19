@@ -186,6 +186,7 @@ public struct GuidanceFlow: Sendable {
              (.selectingTarget, .finished(.notFound)),
              (.guiding, .finished),
              (.guiding, .selectingTarget),
+             (.guiding, .acquiringPanel),   // Scan again, when tracking can't lock on
              (.finished, .acquiringPanel),
              (.finished, .guiding),
              (.finished, .selectingTarget):

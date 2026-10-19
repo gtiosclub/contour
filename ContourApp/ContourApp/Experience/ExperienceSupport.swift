@@ -53,6 +53,15 @@ nonisolated enum ExperiencePolicy {
         return .select
     }
 
+    /// What the guide screen says when tracking can't lock onto the panel at
+    /// all, or `nil` if it can. The pipeline's `trackingError` is worded for
+    /// developers; the user only needs to know waiting won't help and a new
+    /// scan might.
+    static func trackingProblem(for trackingError: String?) -> String? {
+        guard trackingError != nil else { return nil }
+        return "Couldn't lock onto the panel. Scan again with the whole panel in view."
+    }
+
     /// How a guidance session that ended by itself — not by Stop — finished.
     ///
     /// `pipeline.guide(to:)` returns when the finger arrives or the tracking

@@ -37,7 +37,7 @@ private func expectedLegal(_ from: GuidanceFlowStage, _ to: GuidanceFlowStage) -
     case .acquiringPanel: return to == .detecting
     case .detecting: return to == .selectingTarget(map) || to == .acquiringPanel || to == .finished(.lowConfidence)
     case .selectingTarget: return to == .guiding(start) || to == .acquiringPanel || to == .finished(.notFound)
-    case .guiding: return to.kind == .finished || to == .selectingTarget(map)
+    case .guiding: return to.kind == .finished || to == .selectingTarget(map) || to == .acquiringPanel
     case .finished: return to == .acquiringPanel || to == .guiding(start) || to == .selectingTarget(map)
     }
 }

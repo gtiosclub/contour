@@ -220,6 +220,7 @@ final class ContourPipeline {
         let session = generation
         latestGuidance = nil
         lastOutcome = nil
+        trackingError = nil   // the new session reports its own, if any
         await cancelGuidance()
         guard generation == session, !Task.isCancelled else { return }
         if let reference = panelReference {

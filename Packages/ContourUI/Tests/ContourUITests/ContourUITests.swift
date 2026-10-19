@@ -110,6 +110,17 @@ struct GuideStatusTests {
         #expect(GuideStatus(GuidanceState(timestamp: at, vector: .onTarget)).phase == .onTarget)
     }
 
+    @Test("a tracking problem wins over the guidance and is said as given")
+    func problem() {
+        let at = MockTrackingSource.fixedEpoch
+        let status = GuideStatus(.outcome(.lostTracking, at: at), problem: "Couldn't lock on — scan again")
+        #expect(status.phase == .cannotTrack)
+        #expect(status.line == "Couldn't lock on — scan again")
+        #expect(status.spoken == "Couldn't lock on. scan again")
+        #expect(status.fill == 0)
+        #expect(GuideStatus(.outcome(.lostTracking, at: at), problem: nil).phase == .lost)
+    }
+
     @Test("the mock walk toward Start reads as a steady approach")
     func mockWalk() {
         let source = MockTrackingSource()
