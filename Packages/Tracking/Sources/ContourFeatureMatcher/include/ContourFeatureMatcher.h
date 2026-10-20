@@ -55,7 +55,7 @@ typedef enum {
     CFT_LOSS_TOO_FEW_INLIERS = 4,
     CFT_LOSS_LOW_INLIER_RATIO = 5,
     CFT_LOSS_LOW_COVERAGE = 6,
-    /// Nonfinite, folded, mirrored, or behind-the-camera projected corners.
+    /// Nonfinite, folded, or mirrored corners, or a panel crossing the horizon.
     CFT_LOSS_INVALID_GEOMETRY = 7,
     CFT_LOSS_IMPLAUSIBLE_AREA = 8,
 } CFTLossReason;
@@ -109,7 +109,8 @@ void cft_destroy(CFTTracker *tracker);
 
 /// Replaces any previous reference. `corners` are the panel's TL, TR, BR, BL in
 /// the reference image, forming a convex quad of the same orientation. Only
-/// features inside the quad are kept. On failure the tracker is unregistered.
+/// features inside the quad are kept. On any failure with a non-NULL tracker,
+/// including NULL corners, the tracker is left unregistered with no evidence.
 CFTStatus cft_register_reference(CFTTracker *tracker, const CFTGrayImage *reference,
                                  const CFTPoint corners[4], CFTRegistrationInfo *info);
 

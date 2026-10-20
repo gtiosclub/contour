@@ -227,16 +227,28 @@ CFTStatus matchFrame(CFTTracker &tracker, const cv::Mat &frame, CFTMatchResult &
     if (result.inlierRatio < config.minInlierRatio) return lost(result, CFT_LOSS_LOW_INLIER_RATIO);
     if (result.coverage < config.minCoverage) return lost(result, CFT_LOSS_LOW_COVERAGE);
 
-    // Project the corners by hand so the homogeneous w can be checked: w <= 0
-    // means the corner maps through the horizon, not to a visible point.
+    // Project the corners by hand so the homogeneous w can be checked. A
+    // homography's overall sign is arbitrary, so only w's consistency matters:
+    // w is affine across the panel, so one sign at all four corners means the
+    // whole convex panel is on one side of the horizon. A sign change or a w
+    // near zero means part of it maps through the horizon, not to visible points.
     const double *h = homography.ptr<double>();
-    CFTPoint corners[4];
+    double w[4];
+    double largest = 0;
     for (int i = 0; i < 4; ++i) {
         double x = tracker.referenceCorners[i].x, y = tracker.referenceCorners[i].y;
-        double w = h[6] * x + h[7] * y + h[8];
-        if (!std::isfinite(w) || w <= 1e-9) return lost(result, CFT_LOSS_INVALID_GEOMETRY);
-        corners[i] = {static_cast<float>((h[0] * x + h[1] * y + h[2]) / w),
-                      static_cast<float>((h[3] * x + h[4] * y + h[5]) / w)};
+        w[i] = h[6] * x + h[7] * y + h[8];
+        if (!std::isfinite(w[i])) return lost(result, CFT_LOSS_INVALID_GEOMETRY);
+        largest = std::max(largest, std::abs(w[i]));
+    }
+    CFTPoint corners[4];
+    for (int i = 0; i < 4; ++i) {
+        if (std::abs(w[i]) <= std::max(1e-12, 1e-6 * largest) || (w[i] > 0) != (w[0] > 0)) {
+            return lost(result, CFT_LOSS_INVALID_GEOMETRY);
+        }
+        double x = tracker.referenceCorners[i].x, y = tracker.referenceCorners[i].y;
+        corners[i] = {static_cast<float>((h[0] * x + h[1] * y + h[2]) / w[i]),
+                      static_cast<float>((h[3] * x + h[4] * y + h[5]) / w[i])};
         if (!isFinite(corners[i])) return lost(result, CFT_LOSS_INVALID_GEOMETRY);
     }
     // Folded or self-intersecting quads, and mirrored ones (TL/TR swapped),
@@ -303,9 +315,11 @@ void cft_destroy(CFTTracker *tracker) {
 CFTStatus cft_register_reference(CFTTracker *tracker, const CFTGrayImage *reference,
                                  const CFTPoint corners[4], CFTRegistrationInfo *info) {
     if (info != nullptr) *info = CFTRegistrationInfo{};
-    if (tracker == nullptr || corners == nullptr) return CFT_STATUS_INVALID_ARGUMENT;
+    if (tracker == nullptr) return CFT_STATUS_INVALID_ARGUMENT;
+    // Any failed registration, including bad arguments, leaves no old reference behind.
+    tracker->unregister();
+    if (corners == nullptr) return CFT_STATUS_INVALID_ARGUMENT;
     return guarded([&] {
-        tracker->unregister();
 
         cv::Mat image;
         if (!view(tracker->config, reference, image)) return CFT_STATUS_INVALID_BUFFER;

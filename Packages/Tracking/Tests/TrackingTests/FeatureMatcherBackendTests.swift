@@ -75,6 +75,55 @@ struct FeatureMatcherBackendTests {
         expectCorners(result, near: Self.liveCorners, within: 3)
     }
 
+    @Test("A valid view is tracked even when every homogeneous w is negative")
+    func negativeDenominators() throws {
+        // OpenCV normalizes h22 = 1, so w = 1 at the reference origin. With the
+        // panel far from the origin and the horizon line between them, every
+        // panel corner has w < 0, yet the view is ordinary and visible.
+        let reference = SyntheticGray.textured(width: 3500, height: 400, seed: 7)
+        let referenceCorners = [CFTPoint(x: 3000, y: 30), CFTPoint(x: 3400, y: 30),
+                                CFTPoint(x: 3400, y: 330), CFTPoint(x: 3000, y: 330)]
+        let truth = Homography(h: [-0.6875, 0, 1987.5, 0, -0.5, -30, -1.0 / 2000, 0, 1])
+        let liveCorners = referenceCorners.map { corner in
+            let (x, y) = truth.apply(Double(corner.x), Double(corner.y))
+            return CFTPoint(x: Float(x), y: Float(y))
+        }
+        #expect(referenceCorners.allSatisfy { truth.w(Double($0.x), Double($0.y)) < 0 })
+        #expect(liveCorners.allSatisfy { $0.x > 0 && $0.x < 640 && $0.y > 0 && $0.y < 480 })
+
+        var frame = SyntheticGray.textured(width: 640, height: 480, seed: 99)
+        frame.warp(reference, from: referenceCorners, to: liveCorners)
+        let tracker = try Tracker()
+        try tracker.register(reference, corners: referenceCorners)
+        let (status, result) = tracker.match(frame)
+        #expect(status == CFT_STATUS_OK, "\(String(cString: cft_loss_reason_description(result.lossReason)))")
+        expectCorners(result, near: liveCorners, within: 3)
+    }
+
+    @Test("A failed replacement registration drops the previous reference and evidence")
+    func failedReplacementUnregisters() throws {
+        let tracker = try Tracker()
+        try tracker.register(Self.panel, corners: Self.panelCorners)
+        #expect(tracker.match(Self.liveFrame()).0 == CFT_STATUS_OK)
+        #expect(cft_copy_inlier_points(tracker.handle, nil, 0) > 0)
+
+        var info = CFTRegistrationInfo(referenceFeatures: 99)
+        let status = Self.panel.withImage { cft_register_reference(tracker.handle, $0, nil, &info) }
+        #expect(status == CFT_STATUS_INVALID_ARGUMENT)
+        #expect(info.referenceFeatures == 0)
+        #expect(cft_reference_feature_count(tracker.handle) == 0)
+        #expect(cft_copy_inlier_points(tracker.handle, nil, 0) == 0)
+        #expect(cft_copy_inlier_feature_ids(tracker.handle, nil, 0) == 0)
+        #expect(tracker.match(Self.liveFrame()).0 == CFT_STATUS_NOT_REGISTERED)
+
+        // Every other failure path behaves the same way.
+        try tracker.register(Self.panel, corners: Self.panelCorners)
+        #expect(throws: CFT_STATUS_INSUFFICIENT_FEATURES) {
+            try tracker.register(SyntheticGray(width: 480, height: 360, value: 90), corners: Self.panelCorners)
+        }
+        #expect(tracker.match(Self.liveFrame()).0 == CFT_STATUS_NOT_REGISTERED)
+    }
+
     @Test("Rejects an unrelated scene without reporting corners")
     func unrelatedImage() throws {
         let tracker = try Tracker()
@@ -390,6 +439,8 @@ struct SyntheticGray {
 struct Homography {
     let h: [Double]
 
+    init(h: [Double]) { self.h = h }
+
     init(from a: [CFTPoint], to b: [CFTPoint]) {
         var m = [[Double]]()
         for i in 0..<4 {
@@ -408,8 +459,10 @@ struct Homography {
         h = (0..<8).map { m[$0][8] / m[$0][$0] } + [1]
     }
 
+    func w(_ x: Double, _ y: Double) -> Double { h[6] * x + h[7] * y + h[8] }
+
     func apply(_ x: Double, _ y: Double) -> (Double, Double) {
-        let w = h[6] * x + h[7] * y + h[8]
+        let w = w(x, y)
         return ((h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w)
     }
 }

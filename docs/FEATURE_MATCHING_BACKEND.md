@@ -15,7 +15,7 @@ pixels of the buffer passed in (x right, y down).
 | Call | Purpose |
 |---|---|
 | `cft_create` / `cft_destroy` | Own one tracker. `NULL` config = starting values below. |
-| `cft_register_reference` | Grayscale reference + TL/TR/BR/BL quad → ORB features inside the quad. Replaces any previous reference; failure leaves it unregistered. |
+| `cft_register_reference` | Grayscale reference + TL/TR/BR/BL quad → ORB features inside the quad. Replaces any previous reference; any failure, including bad arguments, leaves it unregistered. |
 | `cft_match_frame` | One live frame → `CFT_STATUS_OK` with corners and evidence, or `CFT_STATUS_LOST` with a loss reason and zeroed corners. |
 | `cft_copy_inlier_points` / `cft_copy_inlier_feature_ids` | Evidence of the most recent attempt only (live points, stable reference IDs). |
 | `cft_set_active_features` / `cft_restore_all_features` | Hooks for #84: restrict matching to original feature IDs, or restore all. |
@@ -47,9 +47,11 @@ Lifecycle rules the wrapper can rely on:
    refined model so corners, inliers and error describe the same fit.
 4. Accept only with ≥ 20 inliers, inlier ratio ≥ 0.45, and inlier hull covering
    ≥ 12% of the reference panel.
-5. Corners are projected by hand: every corner needs homogeneous w > 0 (in front
-   of the camera), the quad must be strictly convex with the reference's winding
-   (not folded or mirrored), and its area must be 0.5%–400% of the frame.
+5. Corners are projected by hand. The homography's overall sign is arbitrary, so
+   the homogeneous w must have one sign at all four corners and stay clear of
+   zero; a sign change means part of the panel maps through the horizon. The
+   quad must also be strictly convex with the reference's winding (not folded
+   or mirrored), and its area must be 0.5%–400% of the frame.
 6. Evidence score: `clamp(0.4 + 0.2·ratio + 0.2·min(1, coverage/0.5) +
    0.15·min(1, inliers/80), 0, 0.95)`. A heuristic, not a probability.
 
@@ -69,15 +71,17 @@ with known homographies (debug build, M-series Mac, 640×480):
 | Unrelated scenes (3 seeds) | lost: too few inliers |
 | One reference control tiled across the frame | lost: too few unambiguous matches |
 | Panel of identical repeated buttons | lost: too few unambiguous matches |
+| All corner w negative (panel far from the reference origin) | tracked, corners within 3 px |
 | Padded rows | same result as tight rows |
 | Null/short-stride/out-of-range buffers, NaN/folded/outside corners, blank panel | explicit error, no evidence |
+| Failed replacement registration (null corners, blank panel) | previous reference and evidence dropped |
 
 ## Known limits
 
 - Synthetic images only. Real glare, blur, low light and printed-label panels
   need recorded fixtures (with #83/#101).
-- The w > 0 and mirrored-quad guards are not reachable with the synthetic
-  warps; they are reviewed but not exercised by a test.
+- The w sign-change and mirrored-quad rejections are not reachable with the
+  synthetic warps; they are reviewed but not exercised by a test.
 - Frames are not downscaled here. #82 decides processing size; at full camera
   resolution ORB cost grows roughly with pixel count.
 - OpenCV is a prebuilt binary (~670 MB unpacked xcframework, all platforms);
