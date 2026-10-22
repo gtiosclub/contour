@@ -12,6 +12,21 @@ actor FrameImageRenderer {
         render(CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(frame.orientation))
     }
 
+    /// `frame` upright and scaled down so its longer side is at most
+    /// `maxLongSide`, for display only. Never enlarges and never crops.
+    func previewImage(for frame: CameraFrame, maxLongSide: CGFloat = 960) -> CGImage? {
+        let upright = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(frame.orientation)
+        let size = upright.extent.size
+        let scale = min(1, maxLongSide / max(size.width, size.height))
+        // Whole-pixel output; scaling each axis to its rounded size keeps the
+        // full field of view with no fractional edge.
+        let width = max(1, (size.width * scale).rounded()), height = max(1, (size.height * scale).rounded())
+        let scaled = upright
+            .transformed(by: CGAffineTransform(translationX: -upright.extent.minX, y: -upright.extent.minY))
+            .transformed(by: CGAffineTransform(scaleX: width / size.width, y: height / size.height))
+        return context.createCGImage(scaled, from: CGRect(x: 0, y: 0, width: width, height: height))
+    }
+
     func image(for photo: PanelPhoto) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(photo.data as CFData, nil),
               let pixels = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
