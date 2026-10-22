@@ -33,19 +33,26 @@ import Tracking
 final class ContourPipeline {
 
     let surfaceUnderstanding: any ContourCore.SurfaceUnderstanding
-    let tracking: any TrackingSource
+    private(set) var tracking: any TrackingSource
+    let sessionFactory: GuidanceSessionFactory
+    private let sessionCamera: (any CameraFrameSource)?
+    private(set) var trackingSettings: GuidanceTrackingSettings
+    var trackingMethod: PanelTrackingMethod { trackingSettings.method }
+    var featureOptions: FeatureTrackingOptions { trackingSettings.options }
+    private(set) var trackingReady = true
     let feedback: any FeedbackEngine
 
     /// The reference whose map and live tracking belong to the current session.
     private(set) var panelReference: PanelReference?
     private(set) var trackingError: String?
+    private(set) var hybridStatus: HybridTrackingDiagnostics?
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
 
     var canGuide: Bool {
         guard let reference = panelReference else { return false }
-        return !liveComponents.contains(.tracking) || reference.detection.quad != .fullFrame
+        return trackingReady && (!liveComponents.contains(.tracking) || reference.detection.quad != .fullFrame)
     }
 
     /// Which of the three are real implementations rather than mocks. Rendered
@@ -71,8 +78,15 @@ final class ContourPipeline {
         surfaceUnderstanding: any ContourCore.SurfaceUnderstanding,
         tracking: any TrackingSource,
         feedback: any FeedbackEngine,
-        liveComponents: Set<Component>
+        liveComponents: Set<Component>,
+        sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision,
+        sessionCamera: (any CameraFrameSource)? = nil,
+        trackingMethod: PanelTrackingMethod = .vision,
+        featureOptions: FeatureTrackingOptions = FeatureTrackingOptions()
     ) {
+        self.sessionFactory = sessionFactory
+        self.sessionCamera = sessionCamera
+        self.trackingSettings = GuidanceTrackingSettings(method: trackingMethod, options: featureOptions)
         self.surfaceUnderstanding = surfaceUnderstanding
         self.tracking = tracking
         self.feedback = feedback
@@ -113,8 +127,19 @@ final class ContourPipeline {
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
             tracking: LiveTrackingSource(camera: camera),
             feedback: LiveFeedbackEngine(),
-            liveComponents: Set(Component.allCases)
+            liveComponents: Set(Component.allCases), sessionCamera: camera
         )
+    }
+
+    /// Independent UI work supplies scripted sessions; assembly supplies the
+    /// real factory. Construction errors remain explicit to the caller.
+    static func live(camera: any CameraFrameSource, sessionFactory: @escaping GuidanceSessionFactory,
+                     method: PanelTrackingMethod = .hybrid,
+                     options: FeatureTrackingOptions = FeatureTrackingOptions()) throws -> ContourPipeline {
+        ContourPipeline(surfaceUnderstanding: LiveSurfaceUnderstanding(),
+            tracking: try sessionFactory(camera, method, options, nil),
+            feedback: LiveFeedbackEngine(), liveComponents: Set(Component.allCases), sessionFactory: sessionFactory,
+            sessionCamera: camera, trackingMethod: method, featureOptions: options)
     }
 
     // MARK: Session
@@ -125,29 +150,82 @@ final class ContourPipeline {
         let scan = generation
         panelReference = nil
         trackingError = nil
+        hybridStatus = nil
+        trackingReady = false
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let reference = try PanelReference(photo: photo, detection: detection)
-        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
-        guard generation == scan, !Task.isCancelled else { throw CancellationError() }
-        panelReference = reference
+        let activation = beginSessionReplacement(with: reference)
+        await withTaskCancellationHandler {
+            await activation.value
+        } onCancel: {
+            activation.cancel()
+        }
+        guard panelReference?.photo.id == reference.photo.id, !Task.isCancelled else {
+            throw CancellationError()
+        }
         return detection.map
     }
 
     /// Shared handoff for manual setup and replacement. Previous guidance ends
     /// before a different reference or target can be used.
     func replaceReference(with reference: PanelReference) async {
+        let activation = beginSessionReplacement(with: reference)
+        await withTaskCancellationHandler {
+            await activation.value
+        } onCancel: {
+            activation.cancel()
+        }
+    }
+
+    /// Called by settings controls (including Diagnostics). The requested
+    /// configuration becomes authoritative synchronously, before any async
+    /// factory or registration work can finish out of order. Await the returned
+    /// task to observe completion; the UI may simply let it run.
+    @discardableResult
+    func requestTrackingSettings(method: PanelTrackingMethod,
+                                 options: FeatureTrackingOptions) -> Task<Void, Never> {
+        trackingSettings = GuidanceTrackingSettings(method: method, options: options)
+        return beginSessionReplacement(with: panelReference)
+    }
+
+    private func beginSessionReplacement(with reference: PanelReference?) -> Task<Void, Never> {
         generation &+= 1
         let replacement = generation
-        panelReference = nil
-        trackingError = nil
-        await cancelGuidance()
-        guard generation == replacement, !Task.isCancelled else { return }
-        if let live = tracking as? LiveTrackingSource { await live.use(reference) }
-        guard generation == replacement, !Task.isCancelled else { return }
         panelReference = reference
+        trackingError = nil
+        hybridStatus = nil
+        trackingReady = false
+        // An old stream may still be unwinding; it holds its own source. New
+        // guidance must never subscribe to it while replacement is pending.
+        if sessionCamera != nil { tracking = InactiveTrackingSource() }
+        return Task { await activateSession(request: replacement, reference: reference) }
+    }
+
+    private func activateSession(request: UInt64, reference: PanelReference?) async {
+        await cancelGuidance()
+        guard generation == request, !Task.isCancelled else { return }
+        do {
+            if let sessionCamera {
+                // A new factory call owns a new tracker. Diagnostics makes its
+                // own call with these settings and never shares this session.
+                let candidate = try sessionFactory(sessionCamera, trackingMethod, featureOptions, nil)
+                if let reference { await candidate.use(reference) }
+                guard generation == request, !Task.isCancelled else { return }
+                tracking = candidate
+            } else if let reference, let live = tracking as? any GuidanceTrackingSession {
+                await live.use(reference)
+                guard generation == request, !Task.isCancelled else { return }
+            }
+            trackingReady = true
+        } catch {
+            guard generation == request, !Task.isCancelled else { return }
+            // Keep the requested mode visible. An unsupported mode or failed
+            // factory cannot quietly continue using the old tracker.
+            trackingError = error.localizedDescription
+        }
     }
 
     /// Stop guidance without discarding the reference, so it can be retried.
@@ -180,6 +258,7 @@ final class ContourPipeline {
     /// picks up again when it's back. Arriving ends the session, and any other
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
+        guard trackingReady else { return }
         generation &+= 1
         let session = generation
         await cancelGuidance()
@@ -189,7 +268,8 @@ final class ContourPipeline {
         } else if liveComponents.contains(.tracking) {
             return
         }
-        let task = Task { await self.runGuidance(to: target, session: session) }
+        let source = tracking
+        let task = Task { await self.runGuidance(to: target, session: session, source: source) }
         guidanceTask = task
         guidanceGeneration = session
         await withTaskCancellationHandler {
@@ -203,15 +283,18 @@ final class ContourPipeline {
         }
     }
 
-    private func runGuidance(to target: SurfaceMap.Button, session: UInt64) async {
+    private func runGuidance(to target: SurfaceMap.Button, session: UInt64,
+                             source: any TrackingSource) async {
         var announced: OutcomeSignal?
         var lostSince: Date?
         var arrived = false
-        for await frame in tracking.frames() {
+        for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
-            if let live = tracking as? LiveTrackingSource {
+            if let live = source as? any GuidanceTrackingSession {
                 let failure = await live.registrationError()
+                let status = await live.hybridStatus()
                 guard generation == session, !Task.isCancelled else { break }
+                hybridStatus = status
                 switch failure {
                 case .invalidReferenceQuad:
                     trackingError = "Tracking could not initialize: the panel corners are invalid. Prepare a new reference."
@@ -249,4 +332,9 @@ final class ContourPipeline {
             await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
     }
+}
+
+/// No frames while the requested session is being built or cannot be built.
+private struct InactiveTrackingSource: TrackingSource {
+    func frames() -> AsyncStream<TrackingFrame> { AsyncStream { $0.finish() } }
 }

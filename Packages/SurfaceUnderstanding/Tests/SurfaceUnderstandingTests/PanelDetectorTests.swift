@@ -187,3 +187,76 @@ func panelDetectionCancellation() async {
     }
     await #expect(throws: SurfaceUnderstandingError.cancelled) { _ = try await task.value }
 }
+
+private func expectPanelCorners(_ actual: PanelQuad, _ expected: PanelQuad) {
+    for (a, e) in zip([actual.topLeft, actual.topRight, actual.bottomRight, actual.bottomLeft],
+                      [expected.topLeft, expected.topRight, expected.bottomRight, expected.bottomLeft]) {
+        #expect(abs(a.x - e.x) < 0.03)
+        #expect(abs(a.y - e.y) < 0.03)
+    }
+}
+
+@Test("Small labelled panels retain their outer corners", arguments: [0.4, 0.5])
+func smallPanelRetainsCorners(scale: Double) async throws {
+    let fixture = try SyntheticPanel.smallPanelPhoto(scale: scale)
+    let result = try await PanelDetector().detectPanel(in: fixture.photo)
+    expectPanelCorners(result.quad, fixture.quad)
+}
+
+@Test("Keys select the panel instead of the larger door")
+func smallPanelBeatsDoor() async throws {
+    let fixture = try SyntheticPanel.smallPanelPhoto(scale: 0.4, door: true)
+    let result = try await PanelDetector().detectPanel(in: fixture.photo)
+    expectPanelCorners(result.quad, fixture.quad)
+}
+
+@Test("A fully visible inset panel should keep its outer edges")
+func insetPanelRetainsOuterEdges() async throws {
+    let context = try #require(CGContext(data: nil, width: 900, height: 600,
+        bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 0.05, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+    context.setFillColor(CGColor(gray: 0.8, alpha: 1))
+    context.fill(CGRect(x: 250, y: 160, width: 400, height: 270))
+    context.setFillColor(CGColor(gray: 0.1, alpha: 1))
+    for x in [270, 400, 530] {
+        for y in [180, 280] { context.fill(CGRect(x: x, y: y, width: 100, height: 70)) }
+    }
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let photo = PanelPhoto(data: data as Data, pixelSize: PixelSize(width: 900, height: 600), timestamp: Date())
+    let result = try await PanelDetector().detectPanel(in: photo)
+    let expected = PanelQuad(topLeft: ImagePoint(x: 250.0 / 900, y: 170.0 / 600),
+                             topRight: ImagePoint(x: 650.0 / 900, y: 170.0 / 600),
+                             bottomRight: ImagePoint(x: 650.0 / 900, y: 440.0 / 600),
+                             bottomLeft: ImagePoint(x: 250.0 / 900, y: 440.0 / 600))
+    expectPanelCorners(result.quad, expected)
+}
+
+@Test("A preset group expands to the continuing keypad without distant scene boxes")
+func panelKeyGroupIncludesContinuingColumn() {
+    let seed = PanelQuad(topLeft: ImagePoint(x: 0.3, y: 0.1), topRight: ImagePoint(x: 0.7, y: 0.1),
+                         bottomRight: ImagePoint(x: 0.7, y: 0.4), bottomLeft: ImagePoint(x: 0.3, y: 0.4))
+    func box(_ x: Double, _ y: Double) -> [ImagePoint] {
+        [(x,y), (x+0.15,y), (x+0.15,y+0.12), (x,y+0.12)].map {
+            ImagePoint(x: 0.3 + 0.4 * $0.0, y: 0.1 + 0.3 * $0.1)
+        }
+    }
+    let inside = [box(0.1,0.1), box(0.4,0.1), box(0.7,0.1)]
+    let outside = [box(0.1,1.1), box(0.7,1.1), box(0.1,1.5), box(0.7,1.5)]
+    let distant = box(2,1.2)
+    let detector = PanelDetector()
+    let expanded = detector.enclosingKeyGroups(seed: seed, keys: inside + outside + [distant])
+    #expect(expanded != seed)
+    for point in (inside + outside).flatMap({ $0 }) {
+        #expect(detector.rectify(point, within: expanded).isOnPanel)
+    }
+    #expect(!detector.rectify(distant[0], within: expanded).isOnPanel)
+    // A few neighbouring boxes alone must not enlarge a complete panel.
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(outside.prefix(3))) == seed)
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(repeating: distant, count: 8)) == seed)
+}

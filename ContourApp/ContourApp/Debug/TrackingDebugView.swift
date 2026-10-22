@@ -7,7 +7,7 @@ import Tracking
 struct TrackingDebugView: View {
     let camera: CameraService
     let pipeline: ContourPipeline
-    @State private var model = TrackingDebugModel()
+    @State private var model: TrackingDebugModel
     @State private var showOverlay = true
     @State private var showReferenceSetup = false
     @State private var showManualSetup = false
@@ -18,9 +18,19 @@ struct TrackingDebugView: View {
     @State private var manualReference = ManualReferenceState()
     @Environment(\.scenePhase) private var scenePhase
 
-    private struct RunID: Hashable { let reference: UUID?; let active: Bool }
+    init(camera: CameraService, pipeline: ContourPipeline) {
+        self.camera = camera
+        self.pipeline = pipeline
+        _model = State(initialValue: TrackingDebugModel(sessionFactory: pipeline.sessionFactory))
+    }
+
+    private struct RunID: Hashable {
+        let reference: UUID?; let active: Bool
+        let method: PanelTrackingMethod; let options: FeatureTrackingOptions
+    }
     private var runID: RunID {
-        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active)
+        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active,
+              method: pipeline.trackingMethod, options: pipeline.featureOptions)
     }
 
     private var distanceToTarget: Double? {
@@ -49,6 +59,35 @@ struct TrackingDebugView: View {
                 Text("Yellow: panel. Green: fingertip. Cyan: buttons. Orange: selected target. Pixels and overlays come from the same processed frame.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("The green fingertip can remain visible when the panel is lost. Target distance and guidance still require usable panel tracking.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Picker("Tracking method", selection: Binding(
+                    get: { pipeline.trackingMethod },
+                    set: { requestSettings(method: $0, options: pipeline.featureOptions) }
+                )) {
+                    ForEach(PanelTrackingMethod.allCases, id: \.self) { method in
+                        Text(method.rawValue).tag(method)
+                    }
+                }
+                Toggle("Exclude bright highlights", isOn: Binding(
+                    get: { pipeline.featureOptions.excludeHighlights },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.excludeHighlights = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                Toggle("Enhance contrast", isOn: Binding(
+                    get: { pipeline.featureOptions.normalizeContrast },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.normalizeContrast = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                if let trackingError = pipeline.trackingError {
+                    Text(trackingError).foregroundStyle(.red)
+                }
+                Text("Guidance and Diagnostics use the same settings with separate tracking sessions.")
                     .font(.caption).foregroundStyle(.secondary)
                 Toggle("Show tracking overlay", isOn: $showOverlay)
                 Button(capturing ? "Capturing…" : "Capture manual panel and target") { capturePanel() }
@@ -131,7 +170,8 @@ struct TrackingDebugView: View {
         }
         .task(id: runID) {
             guard runID.active else { model.clearDisplayedResults(); return }
-            await model.run(camera: camera, reference: manualReference.reference)
+            await model.run(camera: camera, reference: manualReference.reference,
+                            method: pipeline.trackingMethod, options: pipeline.featureOptions)
         }
         .onDisappear { capture?.cancel() }
         .onChange(of: scenePhase) { _, phase in
@@ -145,6 +185,10 @@ struct TrackingDebugView: View {
         model.clearDisplayedResults()
         manualReference.replace(with: reference)
         manualReference.selectTarget(reference.detection.map.buttons.first?.id)
+    }
+
+    private func requestSettings(method: PanelTrackingMethod, options: FeatureTrackingOptions) {
+        pipeline.requestTrackingSettings(method: method, options: options)
     }
 
     private func capturePanel() {

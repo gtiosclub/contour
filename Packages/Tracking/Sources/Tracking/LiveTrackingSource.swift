@@ -50,7 +50,7 @@ public struct LiveTrackingSource: TrackingSource {
     /// should enqueue samples promptly rather than perform rendering here.
     public init(
         camera: any CameraFrameSource,
-        panelTracker: PanelTracker = PanelTracker(),
+        panelTracker: any PanelTracking = PanelTracker(),
         fingertipTracker: FingertipTracker = FingertipTracker(),
         evaluator: TrackingQualityEvaluator = TrackingQualityEvaluator(),
         onSample: (@Sendable (LiveTrackingSample) -> Void)? = nil
@@ -68,6 +68,8 @@ public struct LiveTrackingSource: TrackingSource {
     /// Registration failure for the current reference, if initialization failed.
     /// Cleared by the next reference handoff. No camera ownership is transferred.
     public func registrationError() async -> PanelTrackingError? { await engine?.registrationError() }
+
+    public func hybridStatus() async -> HybridTrackingDiagnostics? { await engine?.hybridStatus() }
 
     /// Start tracking and return the stream of frames.
     ///
@@ -105,7 +107,7 @@ private actor Engine {
     }
 
     private let camera: any CameraFrameSource
-    private let panelTracker: PanelTracker
+    private let panelTracker: any PanelTracking
     private let fingertipTracker: FingertipTracker
     private let evaluator: TrackingQualityEvaluator
     private let onSample: (@Sendable (LiveTrackingSample) -> Void)?
@@ -122,8 +124,11 @@ private actor Engine {
     private var sampleQuad: PanelQuad?
     private var sampleTip: ImagePoint?
     private var sampleAssessment: TrackingAssessment?
+    private var panelStatus: PanelObservation.Status?
+    private var featureDiagnostics: FeatureTrackingDiagnostics?
+    private var hybridDiagnostics: HybridTrackingDiagnostics?
 
-    init(camera: any CameraFrameSource, panelTracker: PanelTracker,
+    init(camera: any CameraFrameSource, panelTracker: any PanelTracking,
          fingertipTracker: FingertipTracker, evaluator: TrackingQualityEvaluator,
          onSample: (@Sendable (LiveTrackingSample) -> Void)?) {
         self.camera = camera
@@ -144,9 +149,12 @@ private actor Engine {
         previous = nil
         smoothed = nil
         initializationFailure = nil
+        panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
     }
 
     func registrationError() -> PanelTrackingError? { initializationFailure }
+
+    func hybridStatus() -> HybridTrackingDiagnostics? { hybridDiagnostics }
 
     /// Each guidance session starts fresh from the panel, not from wherever
     /// the last session left off.
@@ -159,11 +167,13 @@ private actor Engine {
         sampleQuad = nil
         sampleTip = nil
         sampleAssessment = nil
+        panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
         let result = await processFrame(frame)
         guard generation == session, !Task.isCancelled else { return .lost(at: frame.timestamp) }
         onSample?(LiveTrackingSample(cameraFrame: frame, frame: result,
             panelQuad: sampleQuad, imageFingertip: sampleTip, assessment: sampleAssessment,
-            registrationError: initializationFailure))
+            registrationError: initializationFailure, panelStatus: panelStatus,
+            featureDiagnostics: featureDiagnostics, hybridDiagnostics: hybridDiagnostics))
         return result
     }
 
@@ -200,6 +210,9 @@ private actor Engine {
             return lost(frame)
         }
         guard generation == frameGeneration, !Task.isCancelled else { return .lost(at: frame.timestamp) }
+        panelStatus = observation.status
+        featureDiagnostics = observation.featureDiagnostics
+        hybridDiagnostics = observation.hybridDiagnostics
         guard observation.status == .tracked, let quad = observation.quad,
               let homography = try? PanelHomography(quad: quad) else {
             return lost(frame)
@@ -218,7 +231,10 @@ private actor Engine {
         let assessment = evaluator.assess(rated, previous: previous, asOf: Date())
         previous = rated
         sampleAssessment = assessment
-        guard assessment.quality != .lost else { return lost(frame) }
+        guard assessment.quality != .lost else {
+            hybridDiagnostics?.source = .unavailable
+            return lost(frame)
+        }
         sampleQuad = quad
         sampleTip = tip?.fingertip
 

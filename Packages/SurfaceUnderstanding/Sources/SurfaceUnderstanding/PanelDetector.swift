@@ -68,11 +68,19 @@ public struct PanelDetector: Sendable {
 
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 10
-        request.minimumConfidence = 0.7
+        request.minimumConfidence = 0.3
         request.minimumAspectRatio = 0.1
         request.maximumAspectRatio = 1.0
         request.minimumSize = 0.1
         request.quadratureTolerance = 45
+
+        // Match ButtonDetector's key request, without adding OCR to this path.
+        let keys = VNDetectRectanglesRequest()
+        keys.maximumObservations = 30
+        keys.minimumSize = 0.03
+        keys.minimumConfidence = 0.5
+        keys.minimumAspectRatio = 0.3
+        keys.maximumAspectRatio = 1.0
 
         let handler = VNImageRequestHandler(
             cgImage: image,
@@ -82,7 +90,14 @@ public struct PanelDetector: Sendable {
 
         do {
             try handler.perform([request])
+            guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+            // Separate calls avoid a Vision hang during concurrent Swift tests.
+            try handler.perform([keys])
         } catch {
+            if Task.isCancelled || error is CancellationError ||
+                (error as? SurfaceUnderstandingError) == .cancelled {
+                throw SurfaceUnderstandingError.cancelled
+            }
             throw SurfaceUnderstandingError.underlying(error.localizedDescription)
         }
 
@@ -90,7 +105,7 @@ public struct PanelDetector: Sendable {
             throw SurfaceUnderstandingError.cancelled
         }
 
-        // Pick the largest qualifying rectangle by its actual corner area.
+        // Use actual corner area, including for perspective-skewed rectangles.
         func area(_ rectangle: VNRectangleObservation) -> CGFloat {
             let points = [
                 rectangle.topLeft,
@@ -109,38 +124,86 @@ public struct PanelDetector: Sendable {
             return abs(total) / 2
         }
 
-        let rectangles = (request.results ?? []).filter { $0.confidence >= 0.7 }
-        let rectangle = rectangles.max(by: { area($0) < area($1) })
-        if let rectangle, area(rectangle) < 0.25, rectangles.count >= 3 {
-            // Several controls provide evidence for a panel whose border is
-            // outside the photo. With less evidence, preserve a valid inset
-            // rectangle rather than mistaking its small area for no panel.
-            return (.fullFrame, 0.6, false, [])
+        let rectangles = request.results ?? []
+        guard let largest = rectangles.max(by: { area($0) < area($1) }) else {
+            throw SurfaceUnderstandingError.noPanelFound
         }
-        guard let rectangle else { throw SurfaceUnderstandingError.noPanelFound }
 
         // Vision uses bottom-left origin; Contour uses top-left.
         func imagePoint(_ point: CGPoint) -> ImagePoint {
             ImagePoint(x: Double(point.x), y: 1.0 - Double(point.y))
         }
+        func panelQuad(_ rectangle: VNRectangleObservation) -> PanelQuad {
+            PanelQuad(topLeft: imagePoint(rectangle.topLeft),
+                      topRight: imagePoint(rectangle.topRight),
+                      bottomRight: imagePoint(rectangle.bottomRight),
+                      bottomLeft: imagePoint(rectangle.bottomLeft))
+        }
 
-        let quad = PanelQuad(
-            topLeft: imagePoint(rectangle.topLeft),
-            topRight: imagePoint(rectangle.topRight),
-            bottomRight: imagePoint(rectangle.bottomRight),
-            bottomLeft: imagePoint(rectangle.bottomLeft)
-        )
+        let keyBoxes = keys.results ?? []
+        let candidates = rectangles.map { rectangle in
+            let quad = panelQuad(rectangle)
+            let candidateArea = area(rectangle)
+            let count = keyBoxes.filter { key in
+                // The second request can find the panel itself or the door.
+                guard area(key) < candidateArea * 0.5 else { return false }
+                let center = CGPoint(x: key.boundingBox.midX, y: key.boundingBox.midY)
+                return rectify(imagePoint(center), within: quad).isOnPanel
+            }.count
+            return (rectangle: rectangle, area: candidateArea, count: count)
+        }
+        let mostKeys = candidates.map(\.count).max() ?? 0
+        let rectangle: VNRectangleObservation
+        if mostKeys >= 3 {
+            // Prefer a tight panel over a control column with a barcode or trim
+            // when both contain essentially the same number of keys.
+            rectangle = candidates.filter { $0.count >= 3 && Double($0.count) >= Double(mostKeys) * 0.9 }
+                .min(by: { $0.area < $1.area })!.rectangle
+        } else if keyBoxes.count >= 3 {
+            // The keypad is visible, but its enclosing border may be off-camera.
+            return (.fullFrame, 0.6, false, [])
+        } else {
+            // Sparse evidence still preserves lone rectangles and simple panels.
+            rectangle = largest
+        }
+        let seed = panelQuad(rectangle)
+        let keyCorners = keyBoxes.filter { area($0) < area(rectangle) * 0.5 }.map { key in
+            [key.topLeft, key.topRight, key.bottomRight, key.bottomLeft].map(imagePoint)
+        }
+        let quad = enclosingKeyGroups(seed: seed, keys: keyCorners)
+        let expanded = quad != seed
+        let confidence = min(Double(rectangle.confidence), expanded ? 0.85 : 1)
 
         guard expandWithText else {
-            return (quad, Double(rectangle.confidence), false, [])
+            return (quad, confidence, expanded, [])
         }
 
         // A strong rectangle can be only one button bank. Use nearby text to
         // include the display and keypad rather than equating rectangle confidence
         // with confidence that the entire panel has been found.
-        return try refinePanel(seed: quad, confidence: Double(rectangle.confidence)) {
+        let refined = try refinePanel(seed: quad, confidence: confidence) {
             try controlEvidence(in: image, orientation: orientation, seed: quad)
         }
+        return (refined.quad, refined.confidence, expanded || refined.estimatedAlignment, refined.warnings)
+    }
+
+    /// A close-up may expose a border around presets, but no border around the
+    /// whole keypad. Require a majority of keys just beyond that group's ends
+    /// before using the existing geometric expansion to include the column.
+    /// This uses rectangle evidence only; text recognition remains opt-in.
+    func enclosingKeyGroups(seed: PanelQuad, keys: [[ImagePoint]]) -> PanelQuad {
+        let centers = keys.compactMap { corners -> PanelPoint? in
+            guard corners.count == 4 else { return nil }
+            let center = ImagePoint(x: (corners.map(\.x).min()! + corners.map(\.x).max()!) / 2,
+                                    y: (corners.map(\.y).min()! + corners.map(\.y).max()!) / 2)
+            return rectify(center, within: seed)
+        }
+        let inside = centers.filter(\.isOnPanel).count
+        let continuing = centers.filter {
+            !$0.isOnPanel && (0...1).contains($0.x) && (-1...2).contains($0.y)
+        }.count
+        guard inside >= 3, continuing > inside else { return seed }
+        return enclosingControls(seed: seed, evidence: keys)
     }
 
     /// OCR is optional refinement. A failure must not discard a valid rectangle.
@@ -206,8 +269,8 @@ public struct PanelDetector: Sendable {
             .map { $0.bottom - $0.top }.sorted()
         let typicalHeight = interiorHeights.isEmpty ? 1 : interiorHeights[interiorHeights.count / 2]
         var bounds = Bounds(left: 0, top: 0, right: 1, bottom: 1)
-        // Isolated oversized text below a panel is often branding, not a control.
-        // Preserve large keypad digits that form a row with other nearby evidence.
+        // Isolated oversized evidence below a panel is often branding or trim.
+        // Preserve larger keys or keypad digits that share a row with nearby evidence.
         var remaining = boxes.filter { box in
             guard box.top > 1, box.bottom - box.top > typicalHeight * 2 else { return true }
             return boxes.contains { other in
