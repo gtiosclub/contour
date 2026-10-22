@@ -46,6 +46,7 @@ final class ContourPipeline {
     private(set) var panelReference: PanelReference?
     private(set) var trackingError: String?
     private(set) var hybridStatus: HybridTrackingDiagnostics?
+    let guidanceStatus = GuidanceStatusDisplay()
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
@@ -151,6 +152,7 @@ final class ContourPipeline {
         panelReference = nil
         trackingError = nil
         hybridStatus = nil
+        guidanceStatus.reset()
         trackingReady = false
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
@@ -197,6 +199,7 @@ final class ContourPipeline {
         panelReference = reference
         trackingError = nil
         hybridStatus = nil
+        guidanceStatus.reset()
         trackingReady = false
         // An old stream may still be unwinding; it holds its own source. New
         // guidance must never subscribe to it while replacement is pending.
@@ -225,12 +228,16 @@ final class ContourPipeline {
             // Keep the requested mode visible. An unsupported mode or failed
             // factory cannot quietly continue using the old tracker.
             trackingError = error.localizedDescription
+            guidanceStatus.reset(to: GuidanceStatusSnapshot(diagnostics: nil, error: trackingError))
         }
     }
 
     /// Stop guidance without discarding the reference, so it can be retried.
     func stopGuidance() async {
         generation &+= 1
+        hybridStatus = nil
+        trackingError = nil
+        guidanceStatus.reset(to: .stopped)
         await cancelGuidance()
     }
 
@@ -268,6 +275,9 @@ final class ContourPipeline {
         } else if liveComponents.contains(.tracking) {
             return
         }
+        hybridStatus = nil
+        trackingError = nil
+        guidanceStatus.reset()
         let source = tracking
         let task = Task { await self.runGuidance(to: target, session: session, source: source) }
         guidanceTask = task
@@ -306,6 +316,7 @@ final class ContourPipeline {
                     trackingError = nil
                 }
             }
+            guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
             let state = MockGuidance.state(for: frame, target: target)
 
             // A frame or two of blur isn't worth announcing: say the panel is
@@ -325,6 +336,11 @@ final class ContourPipeline {
                 arrived = true
                 break
             }
+        }
+        if generation == session {
+            hybridStatus = nil
+            trackingError = nil
+            guidanceStatus.reset(to: .stopped)
         }
         if !arrived {
             // Stopping, or the camera going away, must not leave the vibration
