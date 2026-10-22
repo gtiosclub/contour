@@ -9,6 +9,12 @@
 //  rate: `pulse(forDistance:)` only updates the distance the next beat uses, so
 //  it can be called every frame without restarting anything.
 //
+//  Pulses play through the manager's one looping continuous player: each beat
+//  turns its intensity up for a pulse width and back down to silence. Nothing
+//  is created per beat or per frame, and because the manager knows we want it
+//  running, it rebuilds that player after an engine reset and resumes it when
+//  the app comes back to the foreground. Outcome signals are one-off taps.
+//
 
 import Foundation
 
@@ -16,8 +22,8 @@ import Foundation
 final class HapticPlayer {
 
     /// Created on first use so constructing the package's types stays cheap
-    /// and off the main actor.
-    private var manager: HapticEngineManager?
+    /// and off the main actor. Readable for tests.
+    private(set) var manager: HapticEngineManager?
     private var distance: Double?
     private var pulseLoop: Task<Void, Never>?
     private var signal: Task<Void, Never>?
@@ -34,20 +40,42 @@ final class HapticPlayer {
         self.distance = distance
         guard pulseLoop == nil else { return }
 
+        let engine = requireManager()
+        // Start silent; the first beat sets the level. If the engine cannot
+        // start right now (say, the app is in the background), the manager
+        // still remembers we want it and resumes on the next foreground.
+        engine.update(intensity: 0, sharpness: 0)
+        try? engine.start()
+
         pulseLoop = Task { [weak self] in
             while !Task.isCancelled, let self, let distance = self.distance {
-                if let beat = ProximityHaptics.beat(forDistance: distance) {
-                    self.tap(beat)
+                let interval = ProximityHaptics.pulseInterval(forDistance: distance)
+                guard let beat = ProximityHaptics.beat(forDistance: distance) else {
+                    try? await Task.sleep(for: interval)
+                    continue
                 }
-                try? await Task.sleep(for: ProximityHaptics.pulseInterval(forDistance: distance))
+                let width = ProximityHaptics.pulseWidth(forDistance: distance)
+                let sharpness = Float(beat.sharpness)
+                engine.update(intensity: Float(beat.intensity), sharpness: sharpness)
+                try? await Task.sleep(for: width)
+                guard !Task.isCancelled else { return }
+                engine.update(intensity: 0, sharpness: sharpness)
+                try? await Task.sleep(for: interval - width)
             }
         }
     }
 
+    /// Stop the pulses. Safe to call every frame while idle: the engine is only
+    /// touched if pulses were actually playing, so an outcome signal that is
+    /// still tapping is not cut off by the frames that follow it.
     func stopPulsing() {
         distance = nil
-        pulseLoop?.cancel()
+        guard let loop = pulseLoop else { return }
+        loop.cancel()
         pulseLoop = nil
+        // Silence first, so the next start() doesn't open at the last beat.
+        manager?.update(intensity: 0, sharpness: 0)
+        manager?.stop()
     }
 
     /// Play `events` once, at their offsets. A new signal replaces one still
@@ -66,8 +94,13 @@ final class HapticPlayer {
     }
 
     private func tap(_ event: HapticEvent) {
-        let engine = manager ?? HapticEngineManager()
-        manager = engine
-        engine.tap(intensity: Float(event.intensity), sharpness: Float(event.sharpness))
+        requireManager().tap(intensity: Float(event.intensity), sharpness: Float(event.sharpness))
+    }
+
+    private func requireManager() -> HapticEngineManager {
+        if let manager { return manager }
+        let manager = HapticEngineManager()
+        self.manager = manager
+        return manager
     }
 }
