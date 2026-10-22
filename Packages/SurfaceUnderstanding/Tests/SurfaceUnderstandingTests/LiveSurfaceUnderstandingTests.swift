@@ -181,3 +181,21 @@ func printedLabelsBecomeButtons() async throws {
         #expect(hits.count == 1, "\(label): \(hits.count) buttons, map was \(detection.map.buttons.map(\.label))")
     }
 }
+
+// MARK: - 2x copy for LabelReader
+
+@Test("a 720x1280 photo gets a 1440x2560 upright copy")
+func smallPhotoIsDoubled() throws {
+    let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+    let copy = LiveSurfaceUnderstanding.labelPhoto(for: small)
+    let image = try copy.cgImage()
+    #expect(image.width == 1440 && image.height == 2560)
+    #expect(copy.orientation == .up)
+}
+
+@Test("a 1080x1920 photo is used as is")
+func largePhotoIsUnchanged() throws {
+    let large = photo(try pngData(width: 1080, height: 1920) { _ in }, width: 1080, height: 1920)
+    #expect(LiveSurfaceUnderstanding.labelPhoto(for: large) == large)
+}
+

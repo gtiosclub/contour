@@ -1,7 +1,10 @@
 import ContourCore
 import ContourMocks
+import Foundation
 import Testing
 @testable import SurfaceUnderstanding
+
+// MARK: - Mock microwave
 
 @Test("stop and clear both find Stop/Clear on the mock")
 func stopAndClear() throws {
@@ -73,6 +76,8 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 14, panel: "hand-labelled microwave-01.jpg", say: "stop",  expect: "Cancel/Off"),
     PanelRow(n: 15, panel: "hand-labelled microwave-04.jpg", say: "pause", expect: "Stop/Cancel"),
     PanelRow(n: 16, panel: "microwave1_neat.heif", say: "pause",  expect: nil),
+    // No Stop or Cancel key: stop must not fall back to Start Pause.
+    // PanelRow(n: 44, panel: "angle_microwave.jpg",  say: "stop",   expect: nil),
 
     // Time, timer, clock
     PanelRow(n: 17, panel: "microwave1_neat.heif", say: "timer",         expect: "Timer Set/Off"),
@@ -97,6 +102,7 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 34, panel: "hand-labelled microwave-01.jpg", say: "plus thirty seconds", expect: "Add 30 Sec"),
     PanelRow(n: 35, panel: "hand-labelled microwave-04.jpg", say: "add 30 seconds",      expect: "Start/+30 Sec"),
 
+    // Other
     PanelRow(n: 36, panel: "glare_microwave.jpg",   say: "start",   expect: "Start"),
     PanelRow(n: 37, panel: "hand-labelled microwave-04.jpg", say: "start", expect: "Start/+30 Sec"),
     PanelRow(n: 38, panel: "microwave1_neat.heif",  say: "three",   expect: nil),
@@ -105,9 +111,40 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 41, panel: "angle_microwave.jpg",   say: "popcorn", expect: nil),
     PanelRow(n: 42, panel: "OvenStraight.heif",     say: "start",   expect: nil),
     PanelRow(n: 43, panel: "microwave2-neat2.jpg",  say: "defrost", expect: nil),
+    PanelRow(n: 45, panel: "Neat1.jpeg",            say: "start",   expect: "Start Pause"),
+    PanelRow(n: 46, panel: "neat-oven.heif",        say: "start",   expect: nil),
 ])
-
 func realPanelRow(_ row: PanelRow) {
     let result = TargetMatcher().match(row.say, in: RealPanelLabels.map(row.panel))
     #expect(result?.button.label == row.expect)
 }
+
+// MARK: - Merged labels
+
+/// Ordinary 0.1-tall keys plus the label under test.
+private func panel(with label: String, width: Double, height: Double) -> SurfaceMap {
+    let others = ["Popcorn", "Time Cook", "Cancel Off", "Clock", "Power"].enumerated().map { i, text in
+        SurfaceMap.Button(label: text, bounds: PanelRect(x: 0.6, y: Double(i) * 0.15, width: 0.3, height: 0.1), confidence: 1)
+    }
+    let target = SurfaceMap.Button(label: label, bounds: PanelRect(x: 0.1, y: 0.2, width: width, height: height), confidence: 1)
+    return SurfaceMap(buttons: others + [target], confidence: 1)
+}
+
+@Test("a label taller than a quarter of the panel isn't Start (TestSet microwave-02)")
+func tallMergedLabelIsSkipped() {
+    let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
+@Test("a normal-height Start Pause still matches (normal_microwave)")
+func normalStartPauseStays() {
+    let map = panel(with: "Start Pause", width: 0.33, height: 0.11)
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
+}
+
+@Test("Start Cancel read as one label isn't Start (neat-oven at 720x1280)")
+func startCancelIsSkipped() {
+    let map = panel(with: "Start Cancel", width: 0.22, height: 0.11)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
