@@ -24,6 +24,13 @@ func scoreboard() async throws {
     let samples = try TestSet.loadSamples(from: Bundle.module)
     var scored: [ScoredPhoto] = []
 
+    if let firstSample = samples.first {
+        _ = try? await LabelReader.recognize(
+            try loadPhoto(named: firstSample.id).cgImage(),
+            level: .accurate
+        )
+    }
+
     for sample in samples {
         let photo = try loadPhoto(named: sample.id)
         let started = ContinuousClock.now
@@ -40,6 +47,7 @@ func scoreboard() async throws {
             )
             scored.append(ScoredPhoto(sample: sample, photo: photo, detection: detection, result: result))
         } catch {
+            print("Scoreboard failed for \(sample.id): \(error)")
             let seconds = started.duration(to: .now).seconds
             let result = TestSet.scoreboardResult(
                 photo: sample.id,
