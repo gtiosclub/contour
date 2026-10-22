@@ -49,13 +49,12 @@ nonisolated extension CameraService {
 
 nonisolated extension PanelPhoto {
 
-    /// A JPEG of `frame`, keeping its orientation and capture time.
     init(frame: CameraFrame) throws {
-        guard let orientation = PhotoOrientation(frame.orientation) else {
+        guard PhotoOrientation(frame.orientation) != nil else {
             throw PanelPhotoCaptureError.unsupportedOrientation
         }
-
-        let image = CIImage(cvPixelBuffer: frame.pixelBuffer)
+        
+        let image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(frame.orientation)
         guard let cgImage = CIContext().createCGImage(image, from: image.extent) else {
             throw PanelPhotoCaptureError.encodingFailed
         }
@@ -72,7 +71,7 @@ nonisolated extension PanelPhoto {
         self.init(
             data: data as Data,
             pixelSize: PixelSize(width: cgImage.width, height: cgImage.height),
-            orientation: orientation,
+            orientation: .up,
             timestamp: frame.timestamp
         )
     }
