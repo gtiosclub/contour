@@ -26,6 +26,30 @@ struct GuidanceStatusDisplayTests {
         #expect(available.message == "Using a recent world estimate.")
     }
 
+    @Test("Unchanged evidence does not consume a publication interval")
+    func unchangedEvidence() {
+        let display = GuidanceStatusDisplay()
+        let start = ContinuousClock.now
+        let first = GuidanceStatusSnapshot(source: "Visual", calibration: "Building", verification: "Unavailable", message: "Visible")
+        let second = GuidanceStatusSnapshot(source: "Prediction", calibration: "Ready", verification: "Recent", message: "Covered")
+        display.receive(first)
+        display.publishIfDue(at: start)
+        display.receive(first)
+        display.publishIfDue(at: start.advanced(by: .milliseconds(100)))
+        display.receive(second)
+        display.publishIfDue(at: start.advanced(by: .milliseconds(150)))
+        #expect(display.current == second)
+    }
+
+    @Test("Unknown or invalid verification ages are never shown as measurements")
+    func unknownVerification() {
+        for age in [Double.nan, Double.infinity, -1] {
+            let evidence = HybridTrackingDiagnostics(mode: .visual, message: "Visible", calibrationFrames: 1,
+                visualVerificationAge: age)
+            #expect(GuidanceStatusSnapshot(diagnostics: evidence).verification.contains("unavailable"))
+        }
+    }
+
     @Test("Display coalesces rapid changes and clears pending old-session evidence")
     func boundedPublicationAndReset() {
         let display = GuidanceStatusDisplay()

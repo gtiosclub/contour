@@ -68,11 +68,19 @@ public struct PanelDetector: Sendable {
 
         let request = VNDetectRectanglesRequest()
         request.maximumObservations = 10
-        request.minimumConfidence = 0.7
+        request.minimumConfidence = 0.3
         request.minimumAspectRatio = 0.1
         request.maximumAspectRatio = 1.0
         request.minimumSize = 0.1
         request.quadratureTolerance = 45
+
+        // Match ButtonDetector's key request, without adding OCR to this path.
+        let keys = VNDetectRectanglesRequest()
+        keys.maximumObservations = 30
+        keys.minimumSize = 0.03
+        keys.minimumConfidence = 0.5
+        keys.minimumAspectRatio = 0.3
+        keys.maximumAspectRatio = 1.0
 
         let handler = VNImageRequestHandler(
             cgImage: image,
@@ -82,7 +90,14 @@ public struct PanelDetector: Sendable {
 
         do {
             try handler.perform([request])
+            guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+            // Separate calls avoid a Vision hang during concurrent Swift tests.
+            try handler.perform([keys])
         } catch {
+            if Task.isCancelled || error is CancellationError ||
+                (error as? SurfaceUnderstandingError) == .cancelled {
+                throw SurfaceUnderstandingError.cancelled
+            }
             throw SurfaceUnderstandingError.underlying(error.localizedDescription)
         }
 
@@ -90,7 +105,7 @@ public struct PanelDetector: Sendable {
             throw SurfaceUnderstandingError.cancelled
         }
 
-        // Pick the largest qualifying rectangle by its actual corner area.
+        // Use actual corner area, including for perspective-skewed rectangles.
         func area(_ rectangle: VNRectangleObservation) -> CGFloat {
             let points = [
                 rectangle.topLeft,
@@ -109,38 +124,183 @@ public struct PanelDetector: Sendable {
             return abs(total) / 2
         }
 
-        let rectangles = (request.results ?? []).filter { $0.confidence >= 0.7 }
-        let rectangle = rectangles.max(by: { area($0) < area($1) })
-        if let rectangle, area(rectangle) < 0.25, rectangles.count >= 3 {
-            // Several controls provide evidence for a panel whose border is
-            // outside the photo. With less evidence, preserve a valid inset
-            // rectangle rather than mistaking its small area for no panel.
-            return (.fullFrame, 0.6, false, [])
+        let rectangles = request.results ?? []
+        guard let largest = rectangles.max(by: { area($0) < area($1) }) else {
+            throw SurfaceUnderstandingError.noPanelFound
         }
-        guard let rectangle else { throw SurfaceUnderstandingError.noPanelFound }
 
         // Vision uses bottom-left origin; Contour uses top-left.
         func imagePoint(_ point: CGPoint) -> ImagePoint {
             ImagePoint(x: Double(point.x), y: 1.0 - Double(point.y))
         }
+        func panelQuad(_ rectangle: VNRectangleObservation) -> PanelQuad {
+            PanelQuad(topLeft: imagePoint(rectangle.topLeft),
+                      topRight: imagePoint(rectangle.topRight),
+                      bottomRight: imagePoint(rectangle.bottomRight),
+                      bottomLeft: imagePoint(rectangle.bottomLeft))
+        }
 
-        let quad = PanelQuad(
-            topLeft: imagePoint(rectangle.topLeft),
-            topRight: imagePoint(rectangle.topRight),
-            bottomRight: imagePoint(rectangle.bottomRight),
-            bottomLeft: imagePoint(rectangle.bottomLeft)
-        )
+        let keyBoxes = keys.results ?? []
+        let candidates = rectangles.map { rectangle in
+            let quad = panelQuad(rectangle)
+            let candidateArea = area(rectangle)
+            let count = keyBoxes.filter { key in
+                // The second request can find the panel itself or the door.
+                guard area(key) < candidateArea * 0.5 else { return false }
+                let center = CGPoint(x: key.boundingBox.midX, y: key.boundingBox.midY)
+                return rectify(imagePoint(center), within: quad).isOnPanel
+            }.count
+            return (rectangle: rectangle, area: candidateArea, count: count)
+        }
+        let mostKeys = candidates.map(\.count).max() ?? 0
+        let rectangle: VNRectangleObservation
+        if mostKeys >= 3 {
+            // Prefer a tight panel over a control column with a barcode or trim
+            // when both contain essentially the same number of keys.
+            rectangle = candidates.filter { $0.count >= 3 && Double($0.count) >= Double(mostKeys) * 0.9 }
+                .min(by: { $0.area < $1.area })!.rectangle
+        } else if keyBoxes.count >= 3 {
+            // The keypad is visible, but its enclosing border may be off-camera.
+            return (.fullFrame, 0.6, false, [])
+        } else {
+            // Sparse evidence still preserves lone rectangles and simple panels.
+            rectangle = largest
+        }
+        let seed = panelQuad(rectangle)
+        let keyCorners = keyBoxes.filter { area($0) < area(rectangle) * 0.5 }.map { key in
+            [key.topLeft, key.topRight, key.bottomRight, key.bottomLeft].map(imagePoint)
+        }
+        // Vision can extrapolate a rectangle's corners past the photo's edges.
+        let quad = clampedToPhoto(enclosingKeyGroups(seed: seed, keys: keyCorners))
+        let expanded = quad != seed
+        let confidence = min(Double(rectangle.confidence), expanded ? 0.85 : 1)
 
         guard expandWithText else {
-            return (quad, Double(rectangle.confidence), false, [])
+            return (quad, confidence, expanded, [])
         }
 
         // A strong rectangle can be only one button bank. Use nearby text to
         // include the display and keypad rather than equating rectangle confidence
         // with confidence that the entire panel has been found.
-        return try refinePanel(seed: quad, confidence: Double(rectangle.confidence)) {
+        let refined = try refinePanel(seed: quad, confidence: confidence) {
             try controlEvidence(in: image, orientation: orientation, seed: quad)
         }
+        guard isInsidePhoto(refined.quad) else { return (quad, confidence, expanded, refined.warnings) }
+        return (refined.quad, refined.confidence, expanded || refined.estimatedAlignment, refined.warnings)
+    }
+
+    /// How far a corner may sit outside the photo. Vision's rectangle tracker
+    /// can refuse a reference quad whose corners leave the image, and then the
+    /// panel cannot be tracked at all, not even on the first frame.
+    static let frameTolerance = 0.02
+
+    func isInsidePhoto(_ quad: PanelQuad) -> Bool {
+        let range = -Self.frameTolerance...(1 + Self.frameTolerance)
+        return [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+            .allSatisfy { range.contains($0.x) && range.contains($0.y) }
+    }
+
+    /// A grown outline that would leave the photo is not used at all; this is
+    /// for a detected rectangle that already does.
+    func clampedToPhoto(_ quad: PanelQuad) -> PanelQuad {
+        guard !isInsidePhoto(quad) else { return quad }
+        func clamped(_ point: ImagePoint) -> ImagePoint {
+            ImagePoint(x: min(max(point.x, 0), 1), y: min(max(point.y, 0), 1))
+        }
+        return PanelQuad(topLeft: clamped(quad.topLeft), topRight: clamped(quad.topRight),
+                         bottomRight: clamped(quad.bottomRight), bottomLeft: clamped(quad.bottomLeft))
+    }
+
+    /// A close-up may expose a border around presets, but no border around the
+    /// whole keypad. Require more keys continuing the group's columns past its
+    /// ends than lie inside it, then grow over those keys and nothing else: a
+    /// door, handle, stove strip or cabinet edge in the same column is not a key
+    /// of this panel. The grown outline must stay in the photo.
+    /// This uses rectangle evidence only; text recognition remains opt-in.
+    func enclosingKeyGroups(seed: PanelQuad, keys: [[ImagePoint]]) -> PanelQuad {
+        struct Key {
+            var corners: [ImagePoint]
+            var center: PanelPoint
+            var left, top, right, bottom: Double
+            var width: Double { right - left }
+            var height: Double { bottom - top }
+            func contains(_ point: PanelPoint) -> Bool {
+                (left...right).contains(point.x) && (top...bottom).contains(point.y)
+            }
+        }
+        let mapped = keys.compactMap { corners -> Key? in
+            guard corners.count == 4 else { return nil }
+            let center = rectify(ImagePoint(x: (corners.map(\.x).min()! + corners.map(\.x).max()!) / 2,
+                                            y: (corners.map(\.y).min()! + corners.map(\.y).max()!) / 2),
+                                 within: seed)
+            let points = corners.map { rectify($0, within: seed) }
+            guard center.x.isFinite, center.y.isFinite,
+                  points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+            return Key(corners: corners, center: center,
+                       left: points.map(\.x).min()!, top: points.map(\.y).min()!,
+                       right: points.map(\.x).max()!, bottom: points.map(\.y).max()!)
+        }
+        let inside = mapped.filter { $0.center.isOnPanel }
+        guard inside.count >= 3 else { return seed }
+
+        // Vision also boxes the text printed on a key. Size keys by the outer boxes.
+        let outer = inside.filter { key in
+            !inside.contains { $0.width * $0.height > key.width * key.height && $0.contains(key.center) }
+        }
+        func median(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
+        let keyWidth = median(outer.map(\.width))
+        let keyHeight = median(outer.map(\.height))
+
+        func keySized(_ key: Key) -> Bool {
+            (0.5 * keyWidth...2 * keyWidth).contains(key.width) &&
+            (0.5 * keyHeight...2 * keyHeight).contains(key.height)
+        }
+        // A display is wider than a key column; only keys define the columns.
+        let columns = outer.filter(keySized)
+        // In one of the group's key columns, and no bigger than about two keys.
+        var candidates = mapped.filter { key in
+            !key.center.isOnPanel && (0...1).contains(key.center.x) &&
+            key.width <= 2 * keyWidth && key.height <= 2 * keyHeight &&
+            columns.contains { abs(key.center.x - $0.center.x) <= 0.5 * $0.width }
+        }
+        // Chained to the group's edge. Below, a caption row such as "Express Cook"
+        // can separate the keypad from the presets; above sits the display.
+        var top = 0.0, bottom = 1.0
+        var chained: [Key] = []
+        var grew = true
+        while grew {
+            grew = false
+            candidates.removeAll { key in
+                if key.center.y < 0, top - key.bottom < 1.25 * keyHeight {
+                    top = min(top, key.top)
+                } else if key.center.y > 1, key.top - bottom < 2.5 * keyHeight {
+                    bottom = max(bottom, key.bottom)
+                } else {
+                    return false
+                }
+                chained.append(key)
+                grew = true
+                return true
+            }
+        }
+        // Text boxes may extend the chain, but it takes key-sized boxes to start it.
+        guard chained.count > inside.count, chained.filter(keySized).count >= 2 else { return seed }
+
+        let grown = enclosingControls(seed: seed, evidence: (inside + chained).map(\.corners))
+        // A keypad roughly doubles a preset group; much more is not this panel.
+        guard area(grown) <= 2.75 * area(seed), isInsidePhoto(grown) else { return seed }
+        return grown
+    }
+
+    /// Shoelace area of a quad in normalized image units.
+    private func area(_ quad: PanelQuad) -> Double {
+        let points = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+        var total = 0.0
+        for index in points.indices {
+            let next = points[(index + 1) % points.count]
+            total += points[index].x * next.y - next.x * points[index].y
+        }
+        return abs(total) / 2
     }
 
     /// OCR is optional refinement. A failure must not discard a valid rectangle.
@@ -206,8 +366,8 @@ public struct PanelDetector: Sendable {
             .map { $0.bottom - $0.top }.sorted()
         let typicalHeight = interiorHeights.isEmpty ? 1 : interiorHeights[interiorHeights.count / 2]
         var bounds = Bounds(left: 0, top: 0, right: 1, bottom: 1)
-        // Isolated oversized text below a panel is often branding, not a control.
-        // Preserve large keypad digits that form a row with other nearby evidence.
+        // Isolated oversized evidence below a panel is often branding or trim.
+        // Preserve larger keys or keypad digits that share a row with nearby evidence.
         var remaining = boxes.filter { box in
             guard box.top > 1, box.bottom - box.top > typicalHeight * 2 else { return true }
             return boxes.contains { other in

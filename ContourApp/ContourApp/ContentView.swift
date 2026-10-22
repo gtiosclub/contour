@@ -26,6 +26,9 @@ struct ContentView: View {
     @State private var guidanceID: UUID?
     @State private var scanTask: Task<Void, Never>?
     @State private var scanID: UUID?
+    @State private var listenTask: Task<Void, Never>?
+    @State private var listenID: UUID?
+    @State private var heard: String?
     #if DEBUG
     @State private var showManualTracking = false
     @State private var manualPhoto: PanelPhoto?
@@ -41,6 +44,7 @@ struct ContentView: View {
                     NavigationLink("Tracking Diagnostics") {
                         TrackingDebugView(camera: camera, pipeline: pipeline)
                     }
+                    NavigationLink("Tracking status scenarios") { GuidanceStatusScenariosView() }
                     NavigationLink("Model image spike (Surface)") {
                         ModelImageSpikeView()
                     }
@@ -96,9 +100,6 @@ struct ContentView: View {
                     if let lastError {
                         Text(lastError).foregroundStyle(.red)
                     }
-                    if let trackingError = pipeline.trackingError {
-                        Text(trackingError).foregroundStyle(.red)
-                    }
                 }
 
                 if let reference = pipeline.panelReference, !reference.photo.data.isEmpty {
@@ -116,6 +117,8 @@ struct ContentView: View {
                             .frame(height: 360)
                             .task { try? await camera.start() }
                     }
+                    GuidanceStatusRow(snapshot: pipeline.guidanceStatus.current)
+                        .task { await pipeline.guidanceStatus.run() }
                     Button("Scan panel") { scan() }
                     #if DEBUG
                     if pipeline.liveComponents.contains(.tracking) {
@@ -124,7 +127,13 @@ struct ContentView: View {
                     }
                     #endif
                     Button(guidanceTask == nil ? guidanceTitle : "Stop") { toggleGuidance() }
-                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil)
+                        .disabled(guidanceTask == nil && (map == nil || !pipeline.canGuide || scanTask != nil))
+                    Button(listenTask == nil ? "Say a button" : "Listening…") { sayAButton() }
+                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil
+                                  || listenTask != nil || guidanceTask != nil)
+                    if let heard {
+                        Text(heard).foregroundStyle(.secondary)
+                    }
                     Text(pipeline.liveComponents.contains(.tracking)
                          ? "Keep the panel in view and move your finger toward the selected target. "
                            + "It vibrates faster as you get closer."
@@ -190,6 +199,9 @@ struct ContentView: View {
         guidanceTask?.cancel()
         guidanceTask = nil
         guidanceID = nil
+        listenTask?.cancel()
+        listenTask = nil
+        listenID = nil
         map = nil
         lastError = nil
         let id = UUID()
@@ -231,6 +243,9 @@ struct ContentView: View {
         guidanceTask?.cancel()
         guidanceTask = nil
         guidanceID = nil
+        listenTask?.cancel()
+        listenTask = nil
+        listenID = nil
         lastError = nil
         let id = UUID()
         scanID = id
@@ -258,6 +273,9 @@ struct ContentView: View {
         guidanceTask?.cancel()
         guidanceTask = nil
         guidanceID = nil
+        listenTask?.cancel()
+        listenTask = nil
+        listenID = nil
         Task { await pipeline.stopGuidance() }
     }
 
@@ -275,31 +293,10 @@ struct ContentView: View {
         return PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
     }
 
-    /// The Start button. A label that is "Start", or has it as one part of
-    /// "Start/Pause", wins. Otherwise the shortest label with "Start" as a word,
-    /// like "Start Pause" read off a key printed on two lines.
-    /// TODO: use TargetMatcher once #30 lands.
-    private func startButton(in map: SurfaceMap) -> SurfaceMap.Button? {
-        let labelled = map.buttons.compactMap { button in button.label.map { (button, $0) } }
-        func words(_ label: String) -> [Substring] {
-            label.lowercased().split { !$0.isLetter && !$0.isNumber }
-        }
-
-        let exact = labelled.first { _, label in
-            label.split(separator: "/").contains {
-                $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Start") == .orderedSame
-            }
-        }
-        if let exact { return exact.0 }
-
-        return labelled
-            .filter { words($0.1).contains("start") }
-            .min { words($0.1).count < words($1.1).count }?.0
-    }
-
     private func toggleGuidance() {
         if let guidanceTask {
             guidanceTask.cancel()
+            pipeline.guidanceStatus.reset(to: .stopped)
             self.guidanceTask = nil
             guidanceID = nil
             return
@@ -308,6 +305,14 @@ struct ContentView: View {
             lastError = "No Start button found on the panel."
             return
         }
+        startGuidance(to: target)
+    }
+
+    /// Guide to Start and Say a button both start guidance here. Any guidance
+    /// still running is cancelled, and the pipeline waits for it to end before
+    /// the new one begins.
+    private func startGuidance(to target: SurfaceMap.Button) {
+        guidanceTask?.cancel()
         let id = UUID()
         guidanceID = id
         guidanceTask = Task {
@@ -323,7 +328,40 @@ struct ContentView: View {
         #if DEBUG
         if let manualTargetID { return map.buttons.first { $0.id == manualTargetID } }
         #endif
-        return startButton(in: map)
+        return ButtonLookup.button(for: "start", in: map)
+    }
+
+    /// Listen for a button's name, then guide to it the way Guide to Start does.
+    private func sayAButton() {
+        guard let map else { return }
+        lastError = nil
+        heard = nil
+        let id = UUID()
+        listenID = id
+        listenTask = Task {
+            defer { if listenID == id { listenTask = nil } }
+            do {
+                let result = try await VoiceRequest().listen(for: map)
+                guard listenID == id, !Task.isCancelled else { return }
+                guard !result.text.isEmpty else {
+                    heard = "Didn't hear anything."
+                    return
+                }
+                heard = "Heard \u{201C}\(result.text)\u{201D}"
+                // The diagnostics screen can replace the panel while this listens.
+                guard pipeline.canGuide, let button = result.button,
+                      self.map?.buttons.contains(where: { $0.id == button.id }) == true else {
+                    lastError = "No button matching \u{201C}\(result.text)\u{201D} on this panel."
+                    return
+                }
+                heard = "Heard \u{201C}\(result.text)\u{201D}: guiding to \(button.label ?? "it")"
+                startGuidance(to: button)
+            } catch is CancellationError {
+                // Scanning again or leaving the screen ended the request.
+            } catch {
+                if listenID == id { lastError = error.localizedDescription }
+            }
+        }
     }
 }
 

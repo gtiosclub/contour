@@ -114,3 +114,26 @@ func punctuationIsNotAButton() {
 
     #expect(LabelReader.textButtons(from: words).isEmpty)
 }
+
+@Test("Reading order keeps Add 30 Sec together")
+func neat1ReadingOrder() {
+    let add = word("Add",x: 0.314,y: 0.700,width: 0.037,height: 0.0131)
+    let thirty = word("30",x: 0.3076,y: 0.712,width: 0.021,height: 0.0118)
+    let sec = word("Sec",x: 0.3304,y: 0.712,width: 0.034,height: 0.0118)
+
+    #expect(
+        LabelReader.readingOrder([sec, thirty, add]).map(\.text)
+            == ["Add", "30", "Sec"]
+    )
+}
+@Test("Words with close vertical centres stay on one line")
+func closeVerticalCentresStayOnOneLine() {
+    let words = [
+        word("Start", x: 0.10, y: 0.5000, width: 0.07, height: 0.012),
+        word("Pause", x: 0.175, y: 0.5059, width: 0.07, height: 0.012)
+    ]
+
+    let buttons = LabelReader.textButtons(from: words)
+
+    #expect(buttons.map(\.label) == ["Start Pause"])
+}

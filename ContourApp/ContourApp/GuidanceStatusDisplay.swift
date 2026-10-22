@@ -18,6 +18,11 @@ struct GuidanceStatusSnapshot: Equatable {
         message: "Tracking evidence is not available yet."
     )
 
+    static let stopped = GuidanceStatusSnapshot(
+        source: "No active guidance", calibration: "Calibration: unavailable",
+        verification: "Last visual check: unavailable", message: "Start guidance to receive current tracking status."
+    )
+
     init(source: String, calibration: String, verification: String, message: String) {
         self.source = source
         self.calibration = calibration
@@ -45,7 +50,14 @@ struct GuidanceStatusSnapshot: Equatable {
         } else {
             verification = "Last visual check: unavailable"
         }
-        message = diagnostics.message.isEmpty ? diagnostics.mode.rawValue : diagnostics.message
+        let explanation = diagnostics.message.isEmpty ? diagnostics.mode.rawValue : diagnostics.message
+        let blocker: String?
+        switch diagnostics.repositionReason {
+        case .suspectedGlare: blocker = "Possible glare is blocking a visual check."
+        case .weakAlignment: blocker = "Visual alignment is too weak to verify."
+        case nil: blocker = nil
+        }
+        message = [explanation, blocker].compactMap { $0 }.joined(separator: " ")
     }
 }
 
@@ -73,31 +85,49 @@ final class GuidanceStatusDisplay {
         lastPublication = now
     }
 
+    /// A separate monotonic display loop. It never sleeps in the frame/feedback
+    /// path, and a final pending sample is published even if no new frame arrives.
+    func run() async {
+        let clock = ContinuousClock()
+        while !Task.isCancelled {
+            publishIfDue(at: clock.now)
+            do { try await clock.sleep(for: minimumInterval) }
+            catch { return }
+        }
+    }
+
     /// Stop/replacement must discard unpublished evidence as well as the
     /// currently visible status before the next session begins.
-    func reset() {
+    func reset(to snapshot: GuidanceStatusSnapshot = .waiting) {
         pending = nil
         lastPublication = nil
-        current = .waiting
+        current = snapshot
     }
 }
 
-/// A single persistent row. It does not insert/remove subrows as the source
-/// changes, and text remains readable when Dynamic Type needs more lines.
+/// Reserve a font-scaled viewport so ordinary evidence changes cannot move
+/// controls below it. Long messages remain available by scrolling, including
+/// at accessibility text sizes; no status fields are conditionally inserted.
 struct GuidanceStatusRow: View {
     let snapshot: GuidanceStatusSnapshot
+    @ScaledMetric(relativeTo: .body) private var viewportHeight: CGFloat = 180
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LabeledContent("Tracking", value: snapshot.source)
-                .font(.headline)
-            Text(snapshot.calibration)
-            Text(snapshot.verification)
-            Text(snapshot.message)
-                .foregroundStyle(.secondary)
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Tracking: \(snapshot.source)")
+                    .font(.headline)
+                Text(snapshot.calibration)
+                Text(snapshot.verification)
+                Text(snapshot.message)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .combine)
+        .frame(height: viewportHeight)
+        .transaction { $0.animation = nil }
+        .accessibilityIdentifier("guidance-status")
     }
 }
 
