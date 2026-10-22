@@ -50,7 +50,9 @@ struct GuidanceStatusSnapshot: Equatable {
         } else {
             verification = "Last visual check: unavailable"
         }
-        let explanation = diagnostics.message.isEmpty ? diagnostics.mode.rawValue : diagnostics.message
+        let fallback = diagnostics.source == .unavailable
+            ? "No usable alignment is available for guidance." : diagnostics.mode.rawValue
+        let explanation = diagnostics.message.isEmpty ? fallback : diagnostics.message
         let blocker: String?
         switch diagnostics.repositionReason {
         case .suspectedGlare: blocker = "Possible glare is blocking a visual check."

@@ -15,6 +15,9 @@ struct GuidanceStatusDisplayTests {
         #expect(unavailable.source == "No usable alignment")
         #expect(unavailable.calibration == "Calibration ready")
         #expect(unavailable.verification == "Last visual check: unavailable")
+        let retained = HybridTrackingDiagnostics(mode: .predicted, message: "", calibrationFrames: 12,
+            source: .unavailable, calibrationReady: true)
+        #expect(!GuidanceStatusSnapshot(diagnostics: retained).message.contains("prediction"))
 
         let predicted = HybridTrackingDiagnostics(mode: .predicted,
             message: "Using a recent world estimate.", calibrationFrames: 12,
