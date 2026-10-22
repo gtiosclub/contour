@@ -7,6 +7,8 @@
 //  │                                                                          │
 //  │  REAL     proximity pulses (ProximityHaptics) and the four outcome        │
 //  │           signals (OutcomeAnnouncer), through HapticEngineManager.        │
+//  │  FLAGGED  direction cues (DirectionalHaptics), off unless the             │
+//  │           directionalHintsKey user default is on. Prototype for #119.     │
 //  │  PENDING  directional audio and speech. DirectionalAudio and SpeechQueue  │
 //  │           are still stubs, so this never calls them.                      │
 //  └──────────────────────────────────────────────────────────────────────────┘
@@ -42,13 +44,27 @@ import Foundation
 /// The real feedback engine: guidance you feel.
 public struct LiveFeedbackEngine: FeedbackEngine {
 
+    /// `UserDefaults` key that turns on the direction cue prototype (#119).
+    /// Read on every frame, so a debug toggle switches it between blindfold
+    /// runs without rebuilding the pipeline. Off when unset.
+    public static let directionalHintsKey = "contour.feedback.directionalHints"
+
     private let proximity: ProximityHaptics
     private let announcer: OutcomeAnnouncer
+    private let direction: DirectionalHaptics
+    private let directionalHints: @Sendable () -> Bool
 
     public init() {
-        let player = HapticPlayer()
+        self.init(player: HapticPlayer()) {
+            UserDefaults.standard.bool(forKey: Self.directionalHintsKey)
+        }
+    }
+
+    init(player: HapticPlayer, directionalHints: @escaping @Sendable () -> Bool) {
         proximity = ProximityHaptics(player: player)
         announcer = OutcomeAnnouncer(player: player)
+        direction = DirectionalHaptics(player: player)
+        self.directionalHints = directionalHints
     }
 
     /// Present one moment of guidance as haptics, audio, and/or speech.
@@ -56,12 +72,17 @@ public struct LiveFeedbackEngine: FeedbackEngine {
     /// A state with a non-`nil` `outcome` is terminal — play the corresponding
     /// signal for `arrived`, `lostTracking`, `notFound`, or `lowConfidence`.
     /// Otherwise the pulses follow the distance, and a state with no vector (no
-    /// finger seen) goes quiet.
+    /// finger seen) goes quiet. With the direction flag on, a short cue now and
+    /// then also says which way to move.
     public func present(_ state: GuidanceState) async {
         if let outcome = state.outcome {
+            await direction.reset()
             await announcer.announce(outcome)
         } else {
             await proximity.play(for: state)
+            if directionalHints() {
+                await direction.play(for: state)
+            }
         }
     }
 }

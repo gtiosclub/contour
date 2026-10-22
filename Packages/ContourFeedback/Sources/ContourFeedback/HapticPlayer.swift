@@ -13,7 +13,8 @@
 //  turns its intensity up for a pulse width and back down to silence. Nothing
 //  is created per beat or per frame, and because the manager knows we want it
 //  running, it rebuilds that player after an engine reset and resumes it when
-//  the app comes back to the foreground. Outcome signals are one-off taps.
+//  the app comes back to the foreground. Outcome signals and direction cues
+//  are one-off taps, and the pulses go quiet while one plays.
 //
 
 import Foundation
@@ -28,10 +29,22 @@ final class HapticPlayer {
     private var pulseLoop: Task<Void, Never>?
     private var signal: Task<Void, Never>?
 
+    /// The pulses skip their beats until then, so a signal or a direction cue
+    /// is felt on its own rather than blurred into the buzz.
+    private var quietUntil: ContinuousClock.Instant?
+
+    /// How long the pulses stay quiet after a signal's last tap.
+    static let quietAfterSignal: Duration = .milliseconds(150)
+
     nonisolated init() {}
 
     /// Whether proximity pulses are currently playing. For tests.
     var isPulsing: Bool { pulseLoop != nil }
+
+    /// Whether a signal or cue is still playing, plus its quiet tail.
+    var isPlayingSignal: Bool {
+        quietUntil.map { ContinuousClock.now < $0 } ?? false
+    }
 
     /// Keep pulsing for `distance`. The running loop picks up the new distance
     /// on its next beat.
@@ -49,6 +62,10 @@ final class HapticPlayer {
 
         pulseLoop = Task { [weak self] in
             while !Task.isCancelled, let self, let distance = self.distance {
+                if let quietUntil = self.quietUntil, ContinuousClock.now < quietUntil {
+                    try? await Task.sleep(until: quietUntil, clock: .continuous)
+                    continue
+                }
                 let interval = ProximityHaptics.pulseInterval(forDistance: distance)
                 guard let beat = ProximityHaptics.beat(forDistance: distance) else {
                     try? await Task.sleep(for: interval)
@@ -79,12 +96,15 @@ final class HapticPlayer {
     }
 
     /// Play `events` once, at their offsets. A new signal replaces one still
-    /// playing.
+    /// playing. Proximity pulses go quiet until it is over.
     func play(_ events: [HapticEvent]) {
         signal?.cancel()
+        let clock = ContinuousClock()
+        let start = clock.now
+        quietUntil = start + (events.map(\.time).max() ?? .zero) + Self.quietAfterSignal
+        // Cut a pulse that is mid-buzz, so the first tap lands on silence.
+        manager?.update(intensity: 0, sharpness: 0)
         signal = Task { [weak self] in
-            let clock = ContinuousClock()
-            let start = clock.now
             for event in events {
                 try? await clock.sleep(until: start + event.time)
                 guard !Task.isCancelled, let self else { return }
