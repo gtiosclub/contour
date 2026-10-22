@@ -125,7 +125,6 @@ public struct LabelReader: Sendable {
         let right: Double
         let top: Double
         let bottom: Double
-    
         var centre: PanelPoint { PanelPoint(x: (left + right) / 2, y: (top + bottom) / 2) }
         var height: Double { bottom - top }
     }
@@ -146,14 +145,12 @@ public struct LabelReader: Sendable {
                 let range = token.startIndex..<token.endIndex
                 let box = (candidate.boundingBox(for: range))?.boundingBox.cgRect
                 ?? observation.boundingBox.cgRect
-                
                 // Vision boxes are bottom-left origin, y up. Flip to our image
                 // space (top-left, y down), then rectify into panel space.
                 let corners = [
                     (box.minX, box.minY), (box.maxX, box.minY),
                     (box.minX, box.maxY), (box.maxX, box.maxY),
                 ].map { detector.rectify(ImagePoint(x: $0.0, y: 1 - $0.1), within: panel) }
-
                 words.append(Word(
                     text: String(token),
                     left: corners.map(\.x).min() ?? .nan,
@@ -180,7 +177,6 @@ public struct LabelReader: Sendable {
     static func assign(_ words: [Word], to regions: [PanelRect]) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
         var taken = Array(repeating: [Word](), count: regions.count)
         var unused: [Word] = []
-
         for word in words {
             if let index = regions.firstIndex(where: { $0.contains(word.centre) }) {
                 taken[index].append(word)
@@ -284,10 +280,21 @@ public struct LabelReader: Sendable {
             // Remove the clock itself.
             if word == clock { return false }
 
-            // Only suppress words within the clock's horizontal columns,
-            // and vertically within the clock display's own height.
+            // A clock can be split into separate OCR words, such as "12:0" and "1".
+            // Drop clock-sized digit fragments on the same display row, even when
+            // a fragment falls outside the main clock's horizontal bounds.
+            let isClockFragment = word.text.allSatisfy(\.isNumber)
+                && !word.text.isEmpty
+                && word.height >= 2 * medianHeight
+                && word.top < clock.bottom
+                && word.bottom > clock.top
+
+            if isClockFragment { return false }
+
+            // Preserve the existing narrow rule for words printed inside the display.
             let insideColumns = word.left < clock.right && word.right > clock.left
-            let alongsideDisplay = word.top >= clock.top && word.top <= clock.bottom + medianHeight
+            let alongsideDisplay = word.top >= clock.top
+                && word.top <= clock.bottom + medianHeight
 
             if insideColumns && alongsideDisplay {
                 return false
@@ -329,11 +336,14 @@ public struct LabelReader: Sendable {
         let narrower = min(a.right - a.left, b.right - b.left)
         return overlap >= narrower * 0.5 && rise <= height * 1.6
     }
-    /// Words in reading order: rows top to bottom, left to right within a row.
+
+
+    /// Orders words from top to bottom, then left to right within each row.
     ///
-    /// Two words share a row when their vertical centres are close
-    /// relative to the height of the smaller word. This keeps words on the
-    /// same line together even when their boxes do not overlap
+    /// Words are processed by ascending vertical centre. A word joins the
+    /// current row when its vertical centre is within half the smaller of its
+    /// height and the last word's height. Otherwise, it starts a new row.
+    /// Words within each row are sorted by ascending horizontal centre.
     static func readingOrder(_ words: [Word]) -> [Word] {
         var rows: [[Word]] = []
         for word in words.sorted(by: { $0.centre.y < $1.centre.y }) {
