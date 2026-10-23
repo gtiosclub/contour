@@ -81,7 +81,6 @@ public struct LabelReader: Sendable {
         }
 
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
-        
         let words = locateWords(in: observations, panel: panel)
         let assigned = Self.assign(words, to: regions)
         return Reading(
@@ -226,7 +225,6 @@ public struct LabelReader: Sendable {
     }
 
     // MARK: - Text without a key
-    
     /// Labels made from words that belong to no detected key.
     ///
     /// Words join one label when they sit on one line with a small gap ("Add 30
@@ -250,7 +248,9 @@ public struct LabelReader: Sendable {
         }
         .sorted { ($0.bounds.minY, $0.bounds.minX) < ($1.bounds.minY, $1.bounds.minX) }
     }
-    /// Removes a clock display and printed words directly beneath it.
+
+    /// Removes a clock display, including separately recognized digit pieces,
+    /// and nearby text within the display's horizontal columns.
     /// Kept independent of Vision so the geometry can be unit tested.
     static func removingClockWords(from words: [Word]) -> [Word] {
         let heights = words.map(\.height).filter { $0.isFinite && $0 > 0 }.sorted()
@@ -267,9 +267,16 @@ public struct LabelReader: Sendable {
                 $0.isNumber || $0 == ":" || $0 == "."
             }
 
+            let width = word.right - word.left
+            let height = word.height
+            let longSide = max(width, height)
+            let shortSide = min(width, height)
+
             return clockCharacters
                 && (3...4).contains(digits)
-                && word.height >= 2 * medianHeight
+                && height >= 2 * medianHeight
+                && shortSide > 0
+                && longSide >= 2 * shortSide
         }
 
         guard let clock = clocks.max(by: { $0.height < $1.height }) else {
@@ -303,8 +310,6 @@ public struct LabelReader: Sendable {
             return true
         }
     }
-
-
     /// The words split into labels: words that belong together end up in one
     /// group.
     static func groups(of words: [Word]) -> [[Word]] {
@@ -336,8 +341,6 @@ public struct LabelReader: Sendable {
         let narrower = min(a.right - a.left, b.right - b.left)
         return overlap >= narrower * 0.5 && rise <= height * 1.6
     }
-
-
     /// Orders words from top to bottom, then left to right within each row.
     ///
     /// Words are processed by ascending vertical centre. A word joins the
