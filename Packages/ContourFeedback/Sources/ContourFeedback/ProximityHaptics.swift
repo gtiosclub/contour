@@ -15,8 +15,13 @@
 //  HOT / COLD
 //  Closer is faster, stronger and crisper: one soft pulse every 600 ms at the far
 //  edge of the panel, sharp pulses every 70 ms on the button. Anything past the
-//  edge of the panel feels like the edge. These numbers are a first pass for the
-//  MVP; tune them in the Harness and on a phone.
+//  edge of the panel feels like the edge. Intensity never drops below 0.35, so
+//  even the far edge is something you can feel. These numbers are a first pass
+//  for the MVP; tune them in the Harness and on a phone.
+//
+//  On the phone, every pulse is the one continuous player in
+//  HapticEngineManager turned up for a pulse width and back down. See
+//  HapticPlayer.
 //
 
 import ContourCore
@@ -101,6 +106,12 @@ public struct ProximityHaptics: Sendable {
     /// Time between pulses: 600 ms at the edge of the panel, 70 ms on target.
     static func pulseInterval(forDistance distance: Double) -> Duration {
         .milliseconds(Int((70 + 530 * clampedDistance(distance)).rounded()))
+    }
+
+    /// How long each pulse buzzes: half the time between pulses, capped at
+    /// 60 ms, so even the 70 ms pulses on the button have a gap you can feel.
+    static func pulseWidth(forDistance distance: Double) -> Duration {
+        min(pulseInterval(forDistance: distance) / 2, .milliseconds(60))
     }
 
     /// One pulse at this distance, or `nil` when the distance isn't a number.

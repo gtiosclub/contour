@@ -21,6 +21,19 @@ typealias GuidanceSessionFactory = @MainActor (
     (@Sendable (LiveTrackingSample) -> Void)?
 ) throws -> any GuidanceTrackingSession
 
+/// The app's requested tracking configuration. Diagnostics reads the same
+/// value, but asks the factory for its own independent session.
+struct GuidanceTrackingSettings: Hashable, Sendable {
+    var method: PanelTrackingMethod
+    var options: FeatureTrackingOptions
+
+    init(method: PanelTrackingMethod = .hybrid,
+         options: FeatureTrackingOptions = FeatureTrackingOptions()) {
+        self.method = method
+        self.options = options
+    }
+}
+
 nonisolated enum GuidanceSessionFactoryError: LocalizedError, Equatable {
     case unimplemented(PanelTrackingMethod)
 
