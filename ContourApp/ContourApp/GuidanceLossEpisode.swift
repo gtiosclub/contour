@@ -1,7 +1,7 @@
 import Foundation
 
-/// Draft #92 policy: owned by one guidance loop, with no detached timer or
-/// delayed output. The caller still needs to wire decisions into feedback.
+/// One loss episode per guidance loop. Only the announcement is delayed;
+/// unusable frames quiet feedback immediately. No timer outlives the loop.
 struct GuidanceLossEpisode {
     enum Decision: Equatable {
         case resume

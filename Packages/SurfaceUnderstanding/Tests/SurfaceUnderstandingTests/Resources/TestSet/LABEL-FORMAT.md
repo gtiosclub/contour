@@ -54,3 +54,20 @@ to a detector's output.
   must not exceed `1`.
 
 This follows [`ContourCore/COORDINATES.md`](../../../../../ContourCore/COORDINATES.md).
+
+## Run the scoreboard
+
+Run the real surface-understanding pipeline over every labelled photo and print
+the PR-ready Markdown table:
+
+```sh
+swift test --filter scoreboard
+```
+
+To also write one straightened-panel PNG per photo, set
+`SCOREBOARD_OVERLAYS` to the output folder. Labelled boxes are green and
+detected boxes are magenta:
+
+```sh
+SCOREBOARD_OVERLAYS=/tmp/scoreboard-overlays swift test --filter scoreboard
+```

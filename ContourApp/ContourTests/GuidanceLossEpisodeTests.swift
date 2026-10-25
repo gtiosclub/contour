@@ -3,7 +3,7 @@ import Testing
 @testable import ContourApp
 
 @MainActor
-@Suite("Guidance loss episode groundwork")
+@Suite("Guidance loss episodes")
 struct GuidanceLossEpisodeTests {
     @Test("A brief gap quiets immediately and recovery starts a new episode")
     func briefRecovery() {

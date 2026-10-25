@@ -36,6 +36,7 @@ final class ContourPipeline {
     private(set) var tracking: any TrackingSource
     let sessionFactory: GuidanceSessionFactory
     private let sessionCamera: (any CameraFrameSource)?
+    @ObservationIgnored private let guidanceNow: @MainActor () -> ContinuousClock.Instant
     private(set) var trackingSettings: GuidanceTrackingSettings
     var trackingMethod: PanelTrackingMethod { trackingSettings.method }
     var featureOptions: FeatureTrackingOptions { trackingSettings.options }
@@ -82,8 +83,10 @@ final class ContourPipeline {
         sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision,
         sessionCamera: (any CameraFrameSource)? = nil,
         trackingMethod: PanelTrackingMethod = .vision,
-        featureOptions: FeatureTrackingOptions = FeatureTrackingOptions()
+        featureOptions: FeatureTrackingOptions = FeatureTrackingOptions(),
+        guidanceNow: @escaping @MainActor () -> ContinuousClock.Instant = { .now }
     ) {
+        self.guidanceNow = guidanceNow
         self.sessionFactory = sessionFactory
         self.sessionCamera = sessionCamera
         self.trackingSettings = GuidanceTrackingSettings(method: trackingMethod, options: featureOptions)
@@ -254,7 +257,7 @@ final class ContourPipeline {
     /// guidance policy has an owner. See MockGuidance.swift.
     ///
     /// An outcome is presented once, not on every frame it stays true. Losing
-    /// the panel is announced once it has been gone for 0.3 s, then guidance
+    /// the panel quiets feedback immediately and is announced after 0.4 s, then guidance
     /// picks up again when it's back. Arriving ends the session, and any other
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
@@ -286,7 +289,7 @@ final class ContourPipeline {
     private func runGuidance(to target: SurfaceMap.Button, session: UInt64,
                              source: any TrackingSource) async {
         var announced: OutcomeSignal?
-        var lostSince: Date?
+        var loss = GuidanceLossEpisode()
         var arrived = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
@@ -308,14 +311,12 @@ final class ContourPipeline {
             }
             let state = MockGuidance.state(for: frame, target: target)
 
-            // A frame or two of blur isn't worth announcing: say the panel is
-            // lost only once it has been gone for a moment.
-            if state.outcome == .lostTracking {
-                let since = lostSince ?? frame.timestamp
-                lostSince = since
-                if frame.timestamp.timeIntervalSince(since) < 0.3 { continue }
-            } else {
-                lostSince = nil
+            switch loss.update(isUsable: state.outcome != .lostTracking, at: guidanceNow()) {
+            case .quiet:
+                await feedback.present(GuidanceState(timestamp: frame.timestamp, vector: nil))
+                continue
+            case .announceLoss, .resume:
+                break
             }
 
             if let outcome = state.outcome, outcome == announced { continue }
