@@ -32,3 +32,36 @@ For current device testing instructions, see
 [Tracking visual diagnostics](TRACKING_VISUAL_DIAGNOSTICS.md). Developer navigation
 is available only in Debug builds. The separate camera/speech prototype retains
 its own original implementation and is labelled accordingly in Developer tools.
+
+## Capture service
+
+`CameraService(worldTracking: true)` captures through ARKit on devices that
+support `ARWorldTrackingConfiguration`. Otherwise, and by default until the
+upright preview draws from frames, it uses AVFoundation and frames have no
+`world`. Under ARKit each `CameraFrame.world` comes from that frame's own
+`ARFrame`: camera pose, native-landscape intrinsics and size, tracking
+reliability, and its plane anchors (horizontal and vertical) as candidates.
+A plane's transform has its origin at the extent center and local x/z along
+width/height. Geometry chooses the panel plane.
+
+Every subscriber to `cameraFrames()` gets its own newest-frame buffer and
+cancels independently. Stop and failure finish all streams. Each run gets a
+fresh session identity and a fresh `ARSession`, so frames, errors and
+interruption callbacks from a stopped run are rejected. A failure report is
+dropped if a newer run has already begun.
+
+Interruptions (backgrounding, another app taking the camera) set
+`CameraStatus.isInterrupted`. AVFoundation resumes the same run. ARKit resumes
+with a new session and identity because world coordinates do not survive the
+gap. Subscribers stay attached and see the new `sessionID`. Failures set
+`CameraStatus.error`. `retry()` restarts and bumps `revision` so consumers can
+resubscribe.
+
+Exposure presets are 0, −0.7 and −1.3 EV (`CameraService.exposurePresets`).
+AVFoundation clamps them to the device's target-bias range and returns the
+applied value. Under ARKit only 0 is accepted, because ARKit owns exposure.
+
+Tradeoffs: a new `ARSession` per run costs a little setup time but makes stale
+callbacks rejectable by identity, where timestamps alone cannot reject errors.
+Restarting world tracking after an interruption gives up relocalization in
+exchange for never pairing pixels with an old coordinate frame.

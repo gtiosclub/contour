@@ -146,3 +146,26 @@ LiveTrackingSource retains its existing cancellation behavior: termination cance
 the producing task and releases its camera subscription. Coordinating explicit
 stopTracking() cleanup with reference/restart races belongs to the assembly task;
 S0 does not claim to change that lifecycle policy.
+
+## Guidance settings and session handoff (#90)
+
+`ContourPipeline.requestTrackingSettings(method:options:)` accepts a requested
+configuration synchronously and returns a task to await for completion. Its
+observable `trackingSettings` is the single in-memory choice for guidance and
+the diagnostics view. The view requests changes through that method and builds
+its own diagnostic session with the same factory, method and options; it never
+shares the guidance tracker. Highlight exclusion starts on and contrast
+enhancement off.
+
+Each settings or reference request cancels active guidance, clears old error and
+hybrid evidence, and asks the injected factory for a fresh guidance session.
+The latest request alone may activate its session after async registration;
+unsupported methods leave guidance unavailable with an explicit error. A
+failed selection can be retried with the same settings. `stopGuidance()` also
+invalidates pending registration without discarding the requested reference.
+The default injected live configuration is hybrid for the future integrated
+factory. The current device-only `live(camera:)` stays on its actual Vision
+implementation until Integration installs a hybrid-capable factory; it never
+labels Vision output as hybrid. `LiveTrackingSource` itself still defaults to
+Vision. Status presentation and brief-loss feedback are follow-up tasks #91
+and #92.
