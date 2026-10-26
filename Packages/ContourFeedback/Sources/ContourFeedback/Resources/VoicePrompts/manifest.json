@@ -1,0 +1,93 @@
+{
+  "voice": "Samantha (English (US))",
+  "language": "en-US",
+  "source": "macOS system speech synthesized to whole-phrase recordings",
+  "format": "Mono 22050 Hz 16-bit PCM WAV",
+  "clips": [
+    {
+      "id": "move_left",
+      "text": "Move left.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "move_right",
+      "text": "Move right.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "move_up",
+      "text": "Move up.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "move_down",
+      "text": "Move down.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "now_left",
+      "text": "Now move left.",
+      "wordsPerMinute": 160
+    },
+    {
+      "id": "now_right",
+      "text": "Now move right.",
+      "wordsPerMinute": 160
+    },
+    {
+      "id": "now_up",
+      "text": "Now move up.",
+      "wordsPerMinute": 160
+    },
+    {
+      "id": "now_down",
+      "text": "Now move down.",
+      "wordsPerMinute": 160
+    },
+    {
+      "id": "near_left",
+      "text": "A little to the left.",
+      "wordsPerMinute": 170
+    },
+    {
+      "id": "near_right",
+      "text": "A little to the right.",
+      "wordsPerMinute": 170
+    },
+    {
+      "id": "near_up",
+      "text": "A little upward.",
+      "wordsPerMinute": 170
+    },
+    {
+      "id": "near_down",
+      "text": "A little downward.",
+      "wordsPerMinute": 170
+    },
+    {
+      "id": "a_little_further",
+      "text": "A little further.",
+      "wordsPerMinute": 205
+    },
+    {
+      "id": "move_slowly",
+      "text": "Move slowly.",
+      "wordsPerMinute": 155
+    },
+    {
+      "id": "stop",
+      "text": "Stop.",
+      "wordsPerMinute": 150
+    },
+    {
+      "id": "target_reached",
+      "text": "Target reached.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "guidance_paused",
+      "text": "Guidance paused.",
+      "wordsPerMinute": 165
+    }
+  ]
+}
