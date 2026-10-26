@@ -83,6 +83,8 @@ struct GuidanceTrackingSettingsTests {
         #expect(pipeline.trackingMethod == .features)
         #expect(!pipeline.trackingReady && !pipeline.canGuide)
         #expect(pipeline.trackingError?.contains("implemented") == true)
+        #expect(pipeline.guidanceStatus.current.source == "Tracking unavailable")
+        #expect(pipeline.guidanceStatus.current.message == pipeline.trackingError)
         #expect(pipeline.panelReference?.photo.id == reference.photo.id)
         await ready.send(.lost(at: Date()))
         await Task.yield()

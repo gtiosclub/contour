@@ -169,3 +169,32 @@ implementation until Integration installs a hybrid-capable factory; it never
 labels Vision output as hybrid. `LiveTrackingSource` itself still defaults to
 Vision. Status presentation and brief-loss feedback are follow-up tasks #91
 and #92.
+
+## Stable guidance status (#91)
+
+The main guidance screen owns a persistent `GuidanceStatusRow` before its
+controls. It reserves a 180-point viewport scaled with the body font. Long
+messages scroll inside that area rather than shifting the preview or buttons;
+Dynamic Type can enlarge the viewport, but ordinary evidence changes cannot.
+No per-frame insertion, removal, transition, or implicit animation is used.
+
+`ContourPipeline.guidanceStatus` receives every supplied diagnostic snapshot.
+Its separate `ContinuousClock` display loop publishes at most once per 100 ms,
+coalesces intermediate samples, skips unchanged values, and flushes pending
+evidence even when no newer frame arrives. Tracking and feedback do not await
+that display loop. Source is read from policy diagnostics, independently of
+calibration readiness. Missing/invalid visual verification ages stay unavailable;
+messages and reposition blockers come from the supplied evidence.
+
+Scan, settings/reference replacement, Start, Stop, and natural completion clear
+both pending and displayed evidence. The existing session generation check
+rejects a diagnostic read that finishes after replacement. Factory errors appear
+immediately in the same reserved area. Stop remains enabled during guidance.
+
+Use **Developer tools > Tracking status scenarios** for scripted visual,
+corrected AR, prediction, and retained-calibration/no-output examples, including
+long messages and accessibility text. Simulator tests check the row's unchanged
+height across evidence changes at 320/430-point widths and three text sizes,
+frame feedback independent of UI publication, Stop clearing, and a delayed
+old-session status read. This is component acceptance; production hybrid/device
+acceptance remains with Integration.
