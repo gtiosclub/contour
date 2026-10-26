@@ -46,11 +46,29 @@ struct CFTTracker {
     /// Whether the most recent match was accepted. Lost frames keep their
     /// inliers as diagnostics but never count as calibration evidence.
     bool lastTracked = false;
+    /// Whether the most recent match has already been counted as a calibration view.
+    bool lastCounted = false;
+
+    /// Per original ID: accepted calibration views it was an inlier in.
+    std::vector<int32_t> appearances;
+    int32_t acceptedViews = 0;
 
     void clearEvidence() {
         lastInlierPoints.clear();
         lastInlierIDs.clear();
         lastTracked = false;
+        lastCounted = false;
+    }
+
+    void clearCalibration() {
+        std::fill(appearances.begin(), appearances.end(), 0);
+        acceptedViews = 0;
+    }
+
+    void activateAll() {
+        std::vector<int32_t> all(referencePoints.size());
+        for (size_t id = 0; id < all.size(); ++id) all[id] = static_cast<int32_t>(id);
+        activate(all);
     }
 
     void unregister() {
@@ -61,6 +79,8 @@ struct CFTTracker {
         activeDescriptors.release();
         referenceArea = 0;
         referenceWinding = 0;
+        appearances.clear();
+        acceptedViews = 0;
         clearEvidence();
     }
 
@@ -134,7 +154,12 @@ bool validConfig(const CFTConfig &c) {
         && c.minHighlightFill >= 0 && c.minHighlightFill <= 1
         && c.maxHighlightAreaFraction > 0 && c.maxHighlightAreaFraction <= 1
         && c.claheClipLimit > 0 && std::isfinite(c.claheClipLimit)
-        && c.claheGridSize >= 1 && c.claheGridSize <= 64;
+        && c.claheGridSize >= 1 && c.claheGridSize <= 64
+        && c.calibrationMinViews >= 1
+        && c.minPersistence >= 0 && c.minPersistence <= 1
+        && c.minAppearances >= 1
+        && c.minSelectedFeatures >= c.minReferenceFeatures
+        && c.minSelectedCoverage >= 0 && c.minSelectedCoverage <= 1;
 }
 
 /// What the extractor may use from one input image.
@@ -410,6 +435,11 @@ void cft_default_config(CFTConfig *config) {
         .maxHighlightAreaFraction = 0.25f,
         .claheClipLimit = 2.0f,
         .claheGridSize = 8,
+        .calibrationMinViews = 8,
+        .minPersistence = 0.6f,
+        .minAppearances = 4,
+        .minSelectedFeatures = 40,
+        .minSelectedCoverage = 0.12f,
     };
 }
 
@@ -492,9 +522,8 @@ CFTStatus cft_register_reference(CFTTracker *tracker, const CFTGrayImage *refere
         tracker->referenceArea = quadArea;
         tracker->referenceWinding = quadWinding;
 
-        std::vector<int32_t> all(static_cast<size_t>(descriptors.rows));
-        for (size_t id = 0; id < all.size(); ++id) all[id] = static_cast<int32_t>(id);
-        tracker->activate(all);
+        tracker->activateAll();
+        tracker->appearances.assign(tracker->referencePoints.size(), 0);
         tracker->registered = true;
 
         if (info != nullptr) info->referenceFeatures = descriptors.rows;
@@ -579,9 +608,7 @@ CFTStatus cft_set_active_features(CFTTracker *tracker, const int32_t *ids, int32
 void cft_restore_all_features(CFTTracker *tracker) {
     if (tracker == nullptr || !tracker->registered) return;
     guarded([&] {
-        std::vector<int32_t> all(tracker->referencePoints.size());
-        for (size_t id = 0; id < all.size(); ++id) all[id] = static_cast<int32_t>(id);
-        tracker->activate(all);
+        tracker->activateAll();
         tracker->clearEvidence();
         return CFT_STATUS_OK;
     });
@@ -595,17 +622,93 @@ int32_t cft_active_feature_count(const CFTTracker *tracker) {
 CFTStatus cft_observe_calibration_view(CFTTracker *tracker) {
     if (tracker == nullptr) return CFT_STATUS_INVALID_ARGUMENT;
     if (!tracker->registered) return CFT_STATUS_NOT_REGISTERED;
-    // Counting persistent features is Visual tracking 4 (#84).
-    return tracker->lastTracked ? CFT_STATUS_OK : CFT_STATUS_LOST;
+    if (!tracker->lastTracked) return CFT_STATUS_LOST;
+    if (tracker->lastCounted) return CFT_STATUS_OK;
+    return guarded([&] {
+        // Each original feature counts at most once per view, even if it
+        // somehow matched twice.
+        std::vector<bool> seen(tracker->appearances.size(), false);
+        for (int32_t id : tracker->lastInlierIDs) {
+            auto index = static_cast<size_t>(id);
+            if (index < seen.size() && !seen[index]) {
+                seen[index] = true;
+                ++tracker->appearances[index];
+            }
+        }
+        ++tracker->acceptedViews;
+        tracker->lastCounted = true;
+        return CFT_STATUS_OK;
+    });
 }
 
 int32_t cft_finish_calibration(CFTTracker *tracker) {
-    (void)tracker;
-    return -1;
+    if (tracker == nullptr || !tracker->registered) return -1;
+    int32_t selected = -1;
+    CFTStatus status = guarded([&] {
+        const CFTConfig &config = tracker->config;
+        tracker->activateAll();
+        if (tracker->acceptedViews < config.calibrationMinViews) return CFT_STATUS_OK;
+
+        int32_t required = std::max(config.minAppearances, static_cast<int32_t>(std::ceil(
+            config.minPersistence * static_cast<double>(tracker->acceptedViews) - 1e-9)));
+        std::vector<int32_t> persistent;
+        std::vector<cv::Point2f> points;
+        for (size_t id = 0; id < tracker->appearances.size(); ++id) {
+            if (tracker->appearances[id] >= required) {
+                persistent.push_back(static_cast<int32_t>(id));
+                points.push_back(tracker->referencePoints[id]);
+            }
+        }
+        // A small persistent cluster would make a worse reference than the
+        // whole panel: keep the originals unless the subset is broad enough.
+        if (static_cast<int32_t>(persistent.size()) < config.minSelectedFeatures) return CFT_STATUS_OK;
+        std::vector<cv::Point2f> hull;
+        cv::convexHull(points, hull);
+        if (cv::contourArea(hull) / tracker->referenceArea < config.minSelectedCoverage) return CFT_STATUS_OK;
+
+        tracker->activate(persistent);
+        tracker->clearEvidence();
+        selected = static_cast<int32_t>(persistent.size());
+        return CFT_STATUS_OK;
+    });
+    if (status != CFT_STATUS_OK) {
+        selected = -1;
+        guarded([&] { tracker->activateAll(); return CFT_STATUS_OK; });
+    }
+    return selected;
 }
 
 void cft_reset_calibration(CFTTracker *tracker) {
-    cft_restore_all_features(tracker);
+    if (tracker == nullptr || !tracker->registered) return;
+    guarded([&] {
+        tracker->clearCalibration();
+        tracker->activateAll();
+        tracker->clearEvidence();
+        return CFT_STATUS_OK;
+    });
+}
+
+int32_t cft_calibration_view_count(const CFTTracker *tracker) {
+    return tracker == nullptr ? 0 : tracker->acceptedViews;
+}
+
+int32_t cft_copy_active_feature_ids(const CFTTracker *tracker, int32_t *ids, int32_t capacity) {
+    if (tracker == nullptr || !tracker->registered) return 0;
+    auto count = static_cast<int32_t>(tracker->activeIDs.size());
+    if (ids != nullptr && capacity > 0) std::copy_n(tracker->activeIDs.begin(), std::min(count, capacity), ids);
+    return count;
+}
+
+int32_t cft_copy_reference_feature_points(const CFTTracker *tracker, CFTPoint *points, int32_t capacity) {
+    if (tracker == nullptr || !tracker->registered) return 0;
+    auto count = static_cast<int32_t>(tracker->referencePoints.size());
+    if (points != nullptr && capacity > 0) {
+        for (int32_t i = 0; i < std::min(count, capacity); ++i) {
+            points[i] = {tracker->referencePoints[static_cast<size_t>(i)].x,
+                         tracker->referencePoints[static_cast<size_t>(i)].y};
+        }
+    }
+    return count;
 }
 
 const char *cft_status_description(CFTStatus status) {
