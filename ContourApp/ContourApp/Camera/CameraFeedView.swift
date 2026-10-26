@@ -11,14 +11,15 @@ import Tracking
 /// capture subscribe separately and still receive full-size frames.
 struct CameraFeedView: View {
     let camera: any CameraFrameSource
+    /// Changes whenever a new camera run begins, which resubscribes the preview.
+    var revision = 0
     var framesPerSecond: Double = 15
-    @State private var image: CGImage?
-    private let renderer = FrameImageRenderer()
+    @State private var model = CameraFeedModel()
 
     var body: some View {
         ZStack {
             Color.black
-            if let image {
+            if let image = model.image {
                 // Aspect fit: the whole frame, with black bars rather than a crop.
                 Image(decorative: image, scale: 1)
                     .resizable()
@@ -27,16 +28,8 @@ struct CameraFeedView: View {
         }
         .accessibilityElement()
         .accessibilityLabel("Rear camera preview")
-        .task {
-            let clock = ContinuousClock()
-            let interval = Duration.seconds(1 / framesPerSecond)
-            for await frame in await camera.cameraFrames() {
-                let started = clock.now
-                let rendered = await renderer.previewImage(for: frame)
-                guard !Task.isCancelled else { return }
-                if let rendered { image = rendered }
-                do { try await clock.sleep(until: started + interval) } catch { return }
-            }
+        .task(id: revision) {
+            await model.run(camera: camera, framesPerSecond: framesPerSecond)
         }
     }
 }

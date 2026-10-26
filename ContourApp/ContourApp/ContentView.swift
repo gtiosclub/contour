@@ -115,7 +115,7 @@ struct ContentView: View {
                 Section("Run the pipeline") {
                     if surfaceIsLive {
                         // What the scan will capture, so you can aim at the panel.
-                        CameraFeedView(camera: camera)
+                        CameraFeedView(camera: camera, revision: camera.status.revision)
                             .frame(height: 360)
                             .task { try? await camera.start() }
                     }

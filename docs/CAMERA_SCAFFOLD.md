@@ -54,8 +54,8 @@ Interruptions (backgrounding, another app taking the camera) set
 `CameraStatus.isInterrupted`. AVFoundation resumes the same run. ARKit resumes
 with a new session and identity because world coordinates do not survive the
 gap. Subscribers stay attached and see the new `sessionID`. Failures set
-`CameraStatus.error`. `retry()` restarts and bumps `revision` so consumers can
-resubscribe.
+`CameraStatus.error`. Every successful start, including `retry()`, bumps `revision` so
+consumers can resubscribe to the new run.
 
 Exposure presets are 0, −0.7 and −1.3 EV (`CameraService.exposurePresets`).
 AVFoundation clamps them to the device's target-bias range and returns the
