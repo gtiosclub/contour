@@ -50,6 +50,9 @@ struct ContentView: View {
                     NavigationLink("Haptics") {
                         HapticsDebugView()
                     }
+                    NavigationLink("Test Experience") {
+                        TestExperienceView()
+                    }
                 }
                 #endif
 
