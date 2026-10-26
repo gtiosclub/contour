@@ -24,6 +24,7 @@
 struct CFTTracker {
     CFTConfig config;
     cv::Ptr<cv::ORB> orb;
+    cv::Ptr<cv::CLAHE> clahe;
     cv::BFMatcher matcher{cv::NORM_HAMMING, false};
 
     bool registered = false;
@@ -127,7 +128,111 @@ bool validConfig(const CFTConfig &c) {
         && c.minInlierRatio >= 0 && c.minInlierRatio <= 1
         && c.minCoverage >= 0 && c.minCoverage <= 1
         && c.minAreaFraction > 0 && c.maxAreaFraction > c.minAreaFraction && std::isfinite(c.maxAreaFraction)
-        && c.minDimension >= 1 && c.maxDimension >= c.minDimension;
+        && c.minDimension >= 1 && c.maxDimension >= c.minDimension
+        && c.saturationThreshold >= 1 && c.saturationThreshold <= 255
+        && c.minHighlightArea >= 1
+        && c.minHighlightFill >= 0 && c.minHighlightFill <= 1
+        && c.maxHighlightAreaFraction > 0 && c.maxHighlightAreaFraction <= 1
+        && c.claheClipLimit > 0 && std::isfinite(c.claheClipLimit)
+        && c.claheGridSize >= 1 && c.claheGridSize <= 64;
+}
+
+/// What the extractor may use from one input image.
+struct Prepared {
+    cv::Mat image;     // possibly contrast-enhanced
+    cv::Mat excluded;  // 255 where features may not look; empty when nothing is excluded
+    float saturatedFraction = 0;
+    float excludedFraction = 0;
+};
+
+/// Glare is judged on the raw pixels, before any contrast change, so CLAHE
+/// can never redefine what was clipped.
+Prepared prepare(const CFTTracker &tracker, const cv::Mat &raw) {
+    const CFTConfig &config = tracker.config;
+    Prepared prepared;
+    const double total = static_cast<double>(raw.rows) * raw.cols;
+
+    cv::Mat saturated;
+    cv::compare(raw, cv::Scalar(config.saturationThreshold), saturated, cv::CMP_GE);
+    int saturatedCount = cv::countNonZero(saturated);
+    prepared.saturatedFraction = static_cast<float>(saturatedCount / total);
+
+    if (config.excludeHighlights && saturatedCount >= config.minHighlightArea) {
+        cv::Mat labels, stats, centroids;
+        int count = cv::connectedComponentsWithStats(saturated, labels, stats, centroids, 8, CV_32S);
+        std::vector<uchar> qualifies(static_cast<size_t>(count), 0);
+        bool any = false;
+        for (int label = 1; label < count; ++label) {
+            int area = stats.at<int>(label, cv::CC_STAT_AREA);
+            double box = static_cast<double>(stats.at<int>(label, cv::CC_STAT_WIDTH))
+                       * stats.at<int>(label, cv::CC_STAT_HEIGHT);
+            // Substantial, compact hotspots. Lettering is too small, a white
+            // housing or washed-out frame too large, thin strokes too sparse.
+            if (area >= config.minHighlightArea && area / box >= config.minHighlightFill
+                && area <= config.maxHighlightAreaFraction * total) {
+                qualifies[static_cast<size_t>(label)] = 1;
+                any = true;
+            }
+        }
+        if (any) {
+            prepared.excluded = cv::Mat::zeros(raw.size(), CV_8UC1);
+            for (int row = 0; row < raw.rows; ++row) {
+                const int *label = labels.ptr<int>(row);
+                uchar *out = prepared.excluded.ptr<uchar>(row);
+                for (int column = 0; column < raw.cols; ++column) {
+                    if (qualifies[static_cast<size_t>(label[column])]) out[column] = 255;
+                }
+            }
+            prepared.excludedFraction = static_cast<float>(cv::countNonZero(prepared.excluded) / total);
+        }
+    }
+
+    if (config.normalizeContrast) tracker.clahe->apply(raw, prepared.image);
+    else prepared.image = raw;
+    return prepared;
+}
+
+/// Drops every feature whose descriptor support touches an excluded pixel.
+/// ORB's rotated BRIEF pattern lies in a 31×31 patch at the keypoint's pyramid
+/// scale (keypoint.size = 31 × scale), smoothed first; a disc of radius
+/// 0.75 × size covers that patch at any rotation plus the smoothing margin.
+int excludeTouching(const cv::Mat &excluded, std::vector<cv::KeyPoint> &keypoints, cv::Mat &descriptors) {
+    if (excluded.empty() || keypoints.empty()) return 0;
+    cv::Mat integral;
+    cv::integral(excluded, integral, CV_32S);
+    auto boxSum = [&](int x0, int y0, int x1, int y1) {  // inclusive-exclusive
+        return integral.at<int>(y1, x1) - integral.at<int>(y0, x1) - integral.at<int>(y1, x0) + integral.at<int>(y0, x0);
+    };
+
+    std::vector<cv::KeyPoint> kept;
+    cv::Mat keptDescriptors;
+    kept.reserve(keypoints.size());
+    for (size_t i = 0; i < keypoints.size(); ++i) {
+        const cv::KeyPoint &keypoint = keypoints[i];
+        double radius = 0.75 * keypoint.size;
+        int x0 = std::max(0, static_cast<int>(std::floor(keypoint.pt.x - radius)));
+        int y0 = std::max(0, static_cast<int>(std::floor(keypoint.pt.y - radius)));
+        int x1 = std::min(excluded.cols, static_cast<int>(std::ceil(keypoint.pt.x + radius)) + 1);
+        int y1 = std::min(excluded.rows, static_cast<int>(std::ceil(keypoint.pt.y + radius)) + 1);
+        bool touches = false;
+        if (x0 < x1 && y0 < y1 && boxSum(x0, y0, x1, y1) > 0) {
+            for (int y = y0; y < y1 && !touches; ++y) {
+                const uchar *row = excluded.ptr<uchar>(y);
+                for (int x = x0; x < x1; ++x) {
+                    double dx = x - keypoint.pt.x, dy = y - keypoint.pt.y;
+                    if (row[x] && dx * dx + dy * dy <= radius * radius) { touches = true; break; }
+                }
+            }
+        }
+        if (!touches) {
+            kept.push_back(keypoint);
+            keptDescriptors.push_back(descriptors.row(static_cast<int>(i)));
+        }
+    }
+    int dropped = static_cast<int>(keypoints.size() - kept.size());
+    keypoints = std::move(kept);
+    descriptors = keptDescriptors;
+    return dropped;
 }
 
 /// Wraps the caller's pixels without copying. Fails on any buffer we cannot
@@ -164,9 +269,14 @@ CFTStatus matchFrame(CFTTracker &tracker, const cv::Mat &frame, CFTMatchResult &
     const CFTConfig &config = tracker.config;
     result.referenceFeatures = static_cast<int32_t>(tracker.activeIDs.size());
 
+    Prepared prepared = prepare(tracker, frame);
+    result.saturatedFraction = prepared.saturatedFraction;
+    result.excludedHighlightFraction = prepared.excludedFraction;
+
     std::vector<cv::KeyPoint> keypoints;
     cv::Mat descriptors;
-    tracker.orb->detectAndCompute(frame, cv::noArray(), keypoints, descriptors);
+    tracker.orb->detectAndCompute(prepared.image, cv::noArray(), keypoints, descriptors);
+    result.excludedFeatures = excludeTouching(prepared.excluded, keypoints, descriptors);
     result.frameFeatures = static_cast<int32_t>(keypoints.size());
     if (descriptors.rows < config.minInliers) return lost(result, CFT_LOSS_TOO_FEW_FRAME_FEATURES);
 
@@ -292,6 +402,14 @@ void cft_default_config(CFTConfig *config) {
         .maxAreaFraction = 4.0f,
         .minDimension = 32,
         .maxDimension = 4096,
+        .excludeHighlights = 1,
+        .normalizeContrast = 0,
+        .saturationThreshold = 250,
+        .minHighlightArea = 256,
+        .minHighlightFill = 0.7f,
+        .maxHighlightAreaFraction = 0.25f,
+        .claheClipLimit = 2.0f,
+        .claheGridSize = 8,
     };
 }
 
@@ -306,6 +424,8 @@ CFTTracker *cft_create(const CFTConfig *config) {
         tracker->config = resolved;
         tracker->orb = cv::ORB::create(resolved.maxFeatures, 1.2f, resolved.pyramidLevels, 31, 0, 2,
                                        cv::ORB::HARRIS_SCORE, 31, resolved.fastThreshold);
+        tracker->clahe = cv::createCLAHE(resolved.claheClipLimit,
+                                         cv::Size(resolved.claheGridSize, resolved.claheGridSize));
         return tracker;
     } catch (...) {
         return nullptr;
@@ -350,9 +470,17 @@ CFTStatus cft_register_reference(CFTTracker *tracker, const CFTGrayImage *refere
         }
         cv::fillConvexPoly(mask, polygon, cv::Scalar(255));
 
+        Prepared prepared = prepare(*tracker, image);
+        if (info != nullptr) {
+            info->saturatedFraction = prepared.saturatedFraction;
+            info->excludedHighlightFraction = prepared.excludedFraction;
+        }
+
         std::vector<cv::KeyPoint> keypoints;
         cv::Mat descriptors;
-        tracker->orb->detectAndCompute(image, mask, keypoints, descriptors);
+        tracker->orb->detectAndCompute(prepared.image, mask, keypoints, descriptors);
+        int excludedFeatures = excludeTouching(prepared.excluded, keypoints, descriptors);
+        if (info != nullptr) info->excludedFeatures = excludedFeatures;
         if (descriptors.rows < tracker->config.minReferenceFeatures) {
             return CFT_STATUS_INSUFFICIENT_FEATURES;
         }

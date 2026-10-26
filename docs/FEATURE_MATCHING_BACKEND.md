@@ -139,3 +139,60 @@ target coverage, loss and recovery, registration failures, stop or replacement
 during preparation, calibration forwarding, and injection into
 `LiveTrackingSource` with a plain 2D camera and no AR.
 
+## Glare and contrast (#83)
+
+Before ORB extraction, the reference and every frame go through the same
+preparation, controlled by `FeatureTrackingOptions` (defaults unchanged:
+highlight exclusion on, contrast normalization off). The Swift wrapper copies
+the options into `CFTConfig`.
+
+1. **Clipped pixels** are those ≥ 250 in the raw grayscale image. Their share of
+   the image is always reported (`saturatedFraction`), even when the frame is lost.
+2. **Glare regions** are 8-connected clipped regions of ≥ 256 px that fill
+   ≥ 70% of their bounding box and cover ≤ 25% of the image. Their share is
+   `excludedHighlightFraction`.
+3. **Contrast** (optional): CLAHE with an 8×8 grid and clip limit 2. It runs
+   after steps 1–2, so enhancement never changes what counts as clipped.
+4. **Features** whose descriptor support touches a glare pixel are dropped
+   (`excludedFeatures`). An ORB descriptor samples a rotated 31×31 patch at its
+   pyramid scale (`keypoint.size` = 31 × scale), so the check uses a disc of
+   radius 0.75 × size around each keypoint. That disc covers the patch at any
+   rotation plus ORB's smoothing margin. Matching and the geometry checks are
+   unchanged.
+
+**Changed from the issue's starting values:** the bounding-box fill threshold is
+0.7, not 0.8. A disc fills π/4 ≈ 78.5% of its box (an axis-aligned ellipse
+too), so at 0.8 round specular hotspots never qualified. Rectangles, discs and
+ellipses qualify at 0.7; hollow outlines and sparse shapes still don't.
+
+**What it does not do:**
+- It doesn't remove reflections. Darker reflections that aren't clipped aren't
+  detected at all.
+- White controls or white label areas that clip are excluded like glare. The
+  synthetic panel has a few, which drops about 10% of its reference features.
+- Camera exposure and asking the user to reposition belong outside this backend.
+
+Measured effect on the synthetic fixtures:
+
+| Case | Highlight exclusion on | Off |
+|---|---|---|
+| Clean view | tracked, 241 inliers (160 reference features excluded as white controls) | tracked, 266 inliers |
+| Rectangle and round hotspot on the panel | tracked, 565 frame features dropped, no inlier within 23 px of glare | tracked |
+| Hotspot in the reference, a different one in the frame | tracked | tracked |
+| Panel mostly washed out (43% of frame clipped) | lost (too few inliers), saturation reported, nothing excluded (region too large) | lost |
+
+In these synthetic cases flat clipped patches don't create false matches, so
+exclusion doesn't change whether tracking succeeds; it removes features at
+glare boundaries. The case it targets, glare features that shift between views
+on a real glossy panel, needs recorded fixtures to measure.
+
+With contrast squeezed into 20 grey levels across the whole scene, registration
+fails honestly (too few features) without CLAHE and tracks within 3 px with it.
+
+`FeatureImagePreparationTests` covers clipped patches (excluded area, reported
+fractions, inlier distance from glare), disabled filtering, which regions
+qualify (lettering, ring, white surface, 249-level patch), contrast leaving the
+glare mask unchanged, low contrast, washout, glare in the reference, and invalid
+settings. `FeaturePanelTrackerTests` checks the options and diagnostics through
+the Swift tracker.
+

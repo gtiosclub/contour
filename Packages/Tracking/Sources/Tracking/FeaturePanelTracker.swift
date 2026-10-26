@@ -183,8 +183,8 @@ public actor FeaturePanelTracker: CalibratablePanelTracking {
             processingMilliseconds: milliseconds,
             message: message,
             inlierPoints: inliers,
-            saturatedFraction: 0,
-            excludedHighlightFraction: 0)
+            saturatedFraction: Double(result?.saturatedFraction ?? 0),
+            excludedHighlightFraction: Double(result?.excludedHighlightFraction ?? 0))
     }
 
     private static func orientation(_ orientation: PhotoOrientation) -> CGImagePropertyOrientation {
@@ -275,6 +275,9 @@ final class FeatureBackend {
     init?(options: FeatureTrackingOptions) {
         var config = CFTConfig()
         cft_default_config(&config)
+        // The same extraction policy for the reference and every frame (#83).
+        config.excludeHighlights = options.excludeHighlights ? 1 : 0
+        config.normalizeContrast = options.normalizeContrast ? 1 : 0
         guard let handle = cft_create(&config) else { return nil }
         self.handle = handle
     }
