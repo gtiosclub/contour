@@ -6,6 +6,27 @@ import Observation
 import OSLog
 import Tracking
 
+struct DisplayedTrackingFrame {
+    let image: CGImage
+    let sample: LiveTrackingSample?
+    let diagnostics: TrackingDiagnostics
+    let standaloneTrackingFrame: TrackingFrame?
+    let standaloneAssessment: TrackingAssessment?
+    let latency: TimeInterval
+
+    var panelQuad: PanelQuad? {
+        sample?.panelQuad
+    }
+
+    var trackingFrame: TrackingFrame? {
+        sample?.frame ?? standaloneTrackingFrame
+    }
+
+    var assessment: TrackingAssessment? {
+        sample?.assessment ?? standaloneAssessment
+    }
+}
+
 @MainActor
 @Observable
 final class TrackingDebugModel {
@@ -14,10 +35,15 @@ final class TrackingDebugModel {
     private(set) var framesProcessed = 0
     private(set) var error: String?
     private(set) var running = false
-    private(set) var image: CGImage?
-    private(set) var panelQuad: PanelQuad?
-    private(set) var trackingFrame: TrackingFrame?
-    private(set) var latency: TimeInterval?
+
+    private(set) var displayedFrame: DisplayedTrackingFrame?
+    private(set) var acceptedFeaturePoints: [ImagePoint] = []
+
+    var image: CGImage? { displayedFrame?.image }
+    var panelQuad: PanelQuad? { displayedFrame?.panelQuad }
+    var trackingFrame: TrackingFrame? { displayedFrame?.trackingFrame }
+    var latency: TimeInterval? { displayedFrame?.latency }
+
     private let sessionFactory: GuidanceSessionFactory
     private let worker: DiagnosticWorker
     private let renderer = FrameImageRenderer()
@@ -25,8 +51,11 @@ final class TrackingDebugModel {
     private var previous: TrackingObservation?
     private var referenceGeneration: UInt64 = 0
     private var lastLogTime: ContinuousClock.Instant?
-    private let logger = Logger(subsystem: "edu.gatech.contour", category: "TrackingDiagnostics")
-
+    private let logger = Logger(
+        subsystem: "edu.gatech.contour",
+        category: "TrackingDiagnostics"
+    )
+    
     init(processor: any TrackingFrameProcessor = FingertipFrameProcessor(),
          sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision) {
         self.sessionFactory = sessionFactory
@@ -47,10 +76,8 @@ final class TrackingDebugModel {
         lastLogTime = nil
         framesProcessed = 0
         error = nil
-        image = nil
-        panelQuad = nil
-        trackingFrame = nil
-        latency = nil
+        displayedFrame = nil
+        acceptedFeaturePoints = []
         running = false
     }
 
@@ -110,16 +137,36 @@ final class TrackingDebugModel {
                         // Production processes every delivered frame; UI draws at most 10 Hz.
                         guard sample.cameraFrame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
                         lastDisplay = sample.cameraFrame.timestamp
-                        let finger = await visualFingertip(in: sample.cameraFrame,
-                            panelTracked: sample.panelQuad != nil, fingertip: sample.imageFingertip)
-                        let rendered = await renderer.image(for: sample.cameraFrame)
-                        guard !Task.isCancelled, referenceGeneration == session else { break }
-                        image = rendered
-                        panelQuad = sample.panelQuad
-                        trackingFrame = sample.frame
-                        assessment = sample.assessment
-                        latency = max(0, Date().timeIntervalSince(sample.cameraFrame.timestamp))
+                        let finger = await visualFingertip(
+                            in: sample.cameraFrame,
+                            panelTracked: sample.panelQuad != nil,
+                            fingertip: sample.imageFingertip
+                        )
+
+                        guard let rendered = await renderer.image(for: sample.cameraFrame) else {
+                            continue
+                        }
+
+                        guard !Task.isCancelled,
+                              referenceGeneration == session else {
+                            break
+                        }
+
+                        let display = DisplayedTrackingFrame(
+                            image: rendered,
+                            sample: sample,
+                            diagnostics: finger,
+                            standaloneTrackingFrame: nil,
+                            standaloneAssessment: nil,
+                            latency: max(
+                                0,
+                                Date().timeIntervalSince(sample.cameraFrame.timestamp)
+                            )
+                        )
+
+                        displayedFrame = display
                         latest = finger
+                        assessment = sample.assessment
                         error = sample.registrationError == nil ? nil
                             : "Panel tracking could not initialize from this reference. Capture again and mark its actual corners."
                         framesProcessed += 1
@@ -135,12 +182,26 @@ final class TrackingDebugModel {
                     guard frame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
                     lastDisplay = frame.timestamp
                     let result = await process(frame)
-                    let rendered = await renderer.image(for: frame)
+                    guard let rendered = await renderer.image(for: frame) else {
+                        continue
+                    }
+
                     try Task.checkCancellation()
                     guard referenceGeneration == session else { break }
-                    image = rendered
-                    latency = max(0, Date().timeIntervalSince(frame.timestamp))
+
                     accept(result, from: session)
+
+                    displayedFrame = DisplayedTrackingFrame(
+                        image: rendered,
+                        sample: nil,
+                        diagnostics: result,
+                        standaloneTrackingFrame: nil,
+                        standaloneAssessment: assessment,
+                        latency: max(
+                            0,
+                            Date().timeIntervalSince(frame.timestamp)
+                        )
+                    )
                 }
             }
         } catch is CancellationError {
@@ -151,9 +212,7 @@ final class TrackingDebugModel {
         if referenceGeneration == session {
             running = false
             latest = nil
-            image = nil
-            panelQuad = nil
-            trackingFrame = nil
+            displayedFrame = nil
             assessment = nil
         }
     }
