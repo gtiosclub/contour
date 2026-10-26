@@ -6,6 +6,7 @@ import Tracking
 struct GuidanceStatusScenariosView: View {
     @State private var index = 0
     @State private var largeText = false
+    @Environment(\.dynamicTypeSize) private var systemTextSize
     private let scenarios: [HybridTrackingDiagnostics] = [
         .init(mode: .visual, message: "Panel visible. Building calibration from accepted views.",
               calibrationFrames: 3, source: .visual),
@@ -28,7 +29,7 @@ struct GuidanceStatusScenariosView: View {
                     .frame(height: 100)
                     .overlay(Text("Preview placeholder"))
                 GuidanceStatusRow(snapshot: GuidanceStatusSnapshot(diagnostics: scenarios[index]))
-                    .dynamicTypeSize(largeText ? .accessibility3 : .large)
+                    .dynamicTypeSize(largeText ? max(systemTextSize, .accessibility3) : systemTextSize)
                 Button("Next status") { index = (index + 1) % scenarios.count }
                 Button("Restart sequence") { index = 0 }
             }

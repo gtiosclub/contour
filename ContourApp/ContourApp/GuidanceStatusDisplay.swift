@@ -119,10 +119,7 @@ struct GuidanceStatusRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Tracking: \(snapshot.source)")
                     .font(.headline)
-                Text(snapshot.calibration)
-                Text(snapshot.verification)
-                Text(snapshot.message)
-                    .foregroundStyle(.secondary)
+                GuidanceStatusDetails(snapshot: snapshot)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -138,5 +135,20 @@ struct GuidanceStatusRow: View {
         Section("Tracking status") {
             GuidanceStatusRow(snapshot: .waiting)
         }
+    }
+}
+
+/// Set a semantic font explicitly so container styling cannot fix the text size.
+struct GuidanceStatusDetails: View {
+    let snapshot: GuidanceStatusSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(snapshot.calibration)
+            Text(snapshot.verification)
+            Text(snapshot.message)
+                .foregroundStyle(.secondary)
+        }
+        .font(.body)
     }
 }
