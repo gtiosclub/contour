@@ -95,6 +95,49 @@ struct FeaturePanelTrackerTests {
         expectQuad(recovered.quad, near: Self.liveQuad, within: 0.006)
     }
 
+    // MARK: Lighting options (#83)
+
+    @Test("Highlight exclusion follows the options and is reported in diagnostics")
+    func highlightOptions() async throws {
+        let frame = Self.camera(Fixture.liveFrame().withGlare())
+
+        let filtering = FeaturePanelTracker()
+        try await filtering.startTracking(Self.reference())
+        let filtered = try #require(try await filtering.track(frame).featureDiagnostics)
+        #expect(filtered.excludedHighlightFraction > 0.02)
+        #expect(filtered.saturatedFraction >= filtered.excludedHighlightFraction)
+
+        let unfiltered = FeaturePanelTracker(options: FeatureTrackingOptions(excludeHighlights: false))
+        try await unfiltered.startTracking(Self.reference())
+        let raw = try #require(try await unfiltered.track(frame).featureDiagnostics)
+        #expect(raw.excludedHighlightFraction == 0)
+        #expect(raw.saturatedFraction > 0.02)
+    }
+
+    @Test("Contrast normalization applies to the reference and frames alike")
+    func contrastOption() async throws {
+        let reference = try Self.reference(Fixture.panel.dimmed(range: 20))
+        await #expect(throws: PanelTrackingError.registrationFailed) {
+            try await FeaturePanelTracker().startTracking(reference)
+        }
+        let tracker = FeaturePanelTracker(options: FeatureTrackingOptions(normalizeContrast: true))
+        try await tracker.startTracking(reference)
+        let observation = try await tracker.track(Self.camera(Fixture.liveFrame().dimmed(range: 20)))
+        #expect(observation.status == .tracked)
+        expectQuad(observation.quad, near: Self.liveQuad, within: 0.006)
+    }
+
+    @Test("Saturation is reported even when a washed-out frame is lost")
+    func washoutDiagnostics() async throws {
+        let tracker = FeaturePanelTracker()
+        try await tracker.startTracking(Self.reference())
+        var washed = Fixture.liveFrame()
+        washed.fill((120, 80, 400, 330), value: 255)
+        let observation = try await tracker.track(Self.camera(washed))
+        #expect(observation.quad == nil)
+        #expect(try #require(observation.featureDiagnostics).saturatedFraction > 0.4)
+    }
+
     // MARK: Lifecycle
 
     @Test("Without a reference every frame is lost as not started")
