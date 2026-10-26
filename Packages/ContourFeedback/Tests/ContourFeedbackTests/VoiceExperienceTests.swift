@@ -73,10 +73,11 @@ func voiceNearTransition() {
 }
 
 @Test("Every vocabulary clip is bundled, decodable, audible, and unclipped")
-@MainActor
-func voiceResources() throws {
+// File decoding and sample scans must not block main-actor feedback timing tests.
+@concurrent
+func voiceResources() async throws {
     for cue in ExperienceVoiceCue.allCases {
-        let url = try #require(VoiceExperienceEngine.resourceURL(for: cue))
+        let url = try #require(await VoiceExperienceEngine.resourceURL(for: cue))
         let file = try AVAudioFile(forReading: url)
         let duration = Double(file.length) / file.processingFormat.sampleRate
         #expect(duration > 0.15 && duration < 4, "\(cue.rawValue): unreasonable duration")
