@@ -391,6 +391,42 @@ enum SyntheticPanel {
         return (try photo(try makeImage(ctx), size: size), labels)
     }
 
+    /// A dark control panel with an optional green clock display and six keys.
+    static func displayPhoto(time: String?) throws -> PanelPhoto {
+        let ctx = try context(size, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(size.width), h = CGFloat(size.height)
+        let display = CGRect(x: 0.16 * w, y: 0.08 * h, width: 0.68 * w, height: 0.22 * h)
+        ctx.setFillColor(CGColor(red: 0.025, green: 0.035, blue: 0.03, alpha: 1))
+        ctx.fill(display)
+        if let time {
+            draw(
+                time,
+                centeredIn: display,
+                in: ctx,
+                size: 80,
+                color: CGColor(red: 0.25, green: 0.95, blue: 0.35, alpha: 1),
+                kern: 14
+            )
+        }
+
+        let labels = ["Popcorn", "Pizza", "Defrost", "Start", "Stop", "Clear"]
+        for (index, label) in labels.enumerated() {
+            let cell = CGRect(
+                x: (0.10 + 0.30 * CGFloat(index % 3)) * w,
+                y: (0.42 + 0.28 * CGFloat(index / 3)) * h,
+                width: 0.20 * w,
+                height: 0.13 * h
+            )
+            ctx.setFillColor(CGColor(gray: 0.88, alpha: 1))
+            ctx.fill(cell)
+            draw(label, centeredIn: cell, in: ctx)
+        }
+        return try photo(try makeImage(ctx), size: size)
+    }
+
     // MARK: - Drawing
 
     private static func render() throws -> CGImage {
@@ -462,18 +498,32 @@ enum SyntheticPanel {
         )
     }
 
-    private static func line(_ text: String) -> CTLine {
-        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 26, nil)
-        let attrs: [NSAttributedString.Key: Any] = [
+    private static func line(
+        _ text: String,
+        size: CGFloat = 26,
+        color: CGColor = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+        kern: CGFloat = 0
+    ) -> CTLine {
+        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, size, nil)
+        var attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-                CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
         ]
+        if kern != 0 {
+            attrs[NSAttributedString.Key(kCTKernAttributeName as String)] = kern
+        }
         return CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
     }
 
-    private static func draw(_ text: String, centeredIn rect: CGRect, in ctx: CGContext) {
-        let line = line(text)
+    private static func draw(
+        _ text: String,
+        centeredIn rect: CGRect,
+        in ctx: CGContext,
+        size: CGFloat = 26,
+        color: CGColor = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+        kern: CGFloat = 0
+    ) {
+        let line = line(text, size: size, color: color, kern: kern)
         let bounds = CTLineGetBoundsWithOptions(line, [])
 
         // Text is drawn y-up; undo the flip locally so glyphs are not mirrored.
