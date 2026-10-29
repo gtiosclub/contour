@@ -14,6 +14,7 @@ import ContourCore
 import ContourMocks
 import Foundation
 import Testing
+import Tracking
 @testable import ContourApp
 
 @MainActor
@@ -148,16 +149,87 @@ struct PipelineWiringTests {
         // Lost for 0.1 s (a blur), back, then lost for 0.5 s.
         let frames = [good(0), .lost(at: at(0.05)), .lost(at: at(0.15)), good(0.2),
                       .lost(at: at(0.3)), .lost(at: at(0.5)), .lost(at: at(0.7)), .lost(at: at(0.8))]
+        let epoch = ContinuousClock.now
+        let offsets = [0, 50, 150, 200, 300, 500, 700, 800]
+        var index = 0
         let pipeline = ContourPipeline(
             surfaceUnderstanding: MockSurfaceUnderstanding(),
             tracking: ScriptedFrames(script: frames),
             feedback: engine,
-            liveComponents: []
+            liveComponents: [],
+            guidanceNow: {
+                defer { index += 1 }
+                return epoch.advanced(by: .milliseconds(offsets[index]))
+            }
         )
 
         await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
 
         #expect(await engine.outcomes == [.lostTracking])
+        let received = await engine.received
+        try #require(received.count == 9)
+        for index in [1, 2, 4, 5, 7] {
+            #expect(received[index].vector == nil && received[index].outcome == nil)
+        }
+        #expect(received[0].vector != nil && received[3].vector != nil)
+        #expect(received[6].outcome == .lostTracking)
+    }
+
+    @Test("Usable AR prediction guides normally and a missing finger stays quiet")
+    func predictionAndMissingFinger() async throws {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let pose = PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+            column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1)
+        let target = MockSurfaceMaps.microwaveStartButton
+        let frames = [
+            TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.1, y: 0.1), panel: pose, trackingQuality: .degraded),
+            TrackingFrame(timestamp: Date(), fingertip: nil, panel: pose, trackingQuality: .good),
+            TrackingFrame(timestamp: Date(), fingertip: target.bounds.center, panel: pose, trackingQuality: .good)
+        ]
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedPrediction(script: frames), feedback: engine, liveComponents: [])
+        await pipeline.guide(to: target)
+        let received = await engine.received
+        try #require(received.count == 3)
+        #expect(received[0].vector != nil && received[0].outcome == nil)
+        #expect(received[1].vector == nil && received[1].outcome == nil)
+        #expect(received[2].outcome == .arrived)
+        #expect(await engine.outcomes == [.arrived])
+    }
+
+    @Test("Stop and reference replacement end an active loss episode", arguments: [false, true])
+    func lossCannotOutliveSession(replace: Bool) async throws {
+        let source = ControlledFrames()
+        let engine = LossFeedback()
+        let epoch = ContinuousClock.now
+        var offset = Duration.zero
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: source, feedback: engine, liveComponents: [],
+            guidanceNow: { epoch.advanced(by: offset) })
+        let guiding = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
+        await source.waitForSubscription()
+        source.send(TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.1, y: 0.1),
+            panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .good))
+        await engine.waitForCount(1)
+        offset = .milliseconds(100)
+        source.send(.lost(at: Date()))
+        await engine.waitForCount(2)
+        if replace {
+            let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
+            let reference = try PanelReference(photo: photo, detection: PanelDetection(
+                referencePhotoID: photo.id, quad: .fullFrame, map: MockSurfaceMaps.microwave))
+            await pipeline.replaceReference(with: reference)
+        } else {
+            await pipeline.stopGuidance()
+        }
+        await guiding.value
+        offset = .seconds(2)
+        source.send(.lost(at: Date()))
+        source.finish()
+        let received = await engine.received
+        #expect(received.count == 3)
+        #expect(received.dropFirst().allSatisfy { $0.vector == nil && $0.outcome == nil })
     }
 }
 
@@ -213,4 +285,30 @@ private actor DeferredSurface: ContourCore.SurfaceUnderstanding {
         await withCheckedContinuation { waiter = $0 }
     }
     func finish() { result?.resume(); result = nil }
+}
+
+private struct ScriptedPrediction: GuidanceTrackingSession {
+    let script: [TrackingFrame]
+    func frames() -> AsyncStream<TrackingFrame> { ScriptedFrames(script: script).frames() }
+    func use(_ reference: PanelReference) async {}
+    func registrationError() async -> PanelTrackingError? { nil }
+    func hybridStatus() async -> HybridTrackingDiagnostics? {
+        HybridTrackingDiagnostics(mode: .predicted, message: "Usable prediction", calibrationFrames: 12,
+            source: .world, calibrationReady: true, visualVerificationAge: 0.2)
+    }
+}
+
+private actor LossFeedback: FeedbackEngine {
+    private(set) var received: [GuidanceState] = []
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    func present(_ state: GuidanceState) {
+        received.append(state)
+        let ready = waiters.filter { received.count >= $0.0 }
+        waiters.removeAll { received.count >= $0.0 }
+        for waiter in ready { waiter.1.resume() }
+    }
+    func waitForCount(_ target: Int) async {
+        if received.count >= target { return }
+        await withCheckedContinuation { waiters.append((target, $0)) }
+    }
 }
