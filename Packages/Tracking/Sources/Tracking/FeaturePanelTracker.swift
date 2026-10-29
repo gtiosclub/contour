@@ -143,16 +143,20 @@ public actor FeaturePanelTracker: CalibratablePanelTracking {
     // MARK: Calibration — forwarded; the hybrid coordinator decides which views count.
 
     /// Count the most recent tracked frame as an accepted calibration view.
+    /// Lost frames and repeated calls for the same frame don't count.
     public func observeCalibrationView() {
         session?.backend.observeCalibrationView()
     }
 
-    /// The number of features now used for matching, or nil if the original
-    /// set was kept.
+    /// Select the original features that persisted across accepted views
+    /// (#84). Returns how many are now matched against, or nil when there's too
+    /// little evidence, count or panel coverage, in which case every original
+    /// feature is used.
     public func finishCalibration() -> Int? {
         session?.backend.finishCalibration()
     }
 
+    /// Forget the counts and match against every original feature again.
     public func resetCalibration() {
         session?.backend.resetCalibration()
     }

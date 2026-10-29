@@ -87,6 +87,13 @@ typedef struct {
     float maxHighlightAreaFraction;   // larger bright regions are a white surface, not glare (0.25)
     float claheClipLimit;             // (2)
     int32_t claheGridSize;            // tiles per side (8)
+
+    // Persistent-feature selection (#84).
+    int32_t calibrationMinViews;      // accepted views before selecting (8)
+    float minPersistence;             // share of accepted views a feature must appear in (0.6)
+    int32_t minAppearances;           // and at least this many times (4)
+    int32_t minSelectedFeatures;      // otherwise keep the original set (40)
+    float minSelectedCoverage;        // selected hull / reference panel area (0.12)
 } CFTConfig;
 
 typedef struct {
@@ -167,17 +174,43 @@ void cft_restore_all_features(CFTTracker *tracker);
 int32_t cft_active_feature_count(const CFTTracker *tracker);
 
 // MARK: Calibration (the hybrid coordinator decides which views count).
+//
+// Each accepted view counts, once, which original reference features were
+// inliers. Finishing selects the features that appeared persistently, if there
+// are enough of them spread across the panel. Original descriptors are never
+// changed and nothing is learned from live frames; a subset only restricts
+// which originals are matched. Registration and reset discard all of it.
 
-/// Records the most recent successful match as one accepted calibration view.
-/// CFT_STATUS_LOST when the latest attempt was not a successful match.
+/// Counts the inliers of the most recent cft_match_frame as one accepted view.
+/// CFT_STATUS_LOST, counting nothing, unless that match was tracked. Calling it
+/// again for the same match does not count it twice.
 CFTStatus cft_observe_calibration_view(CFTTracker *tracker);
 
-/// Ends calibration. Returns the number of features now used for matching when
-/// a selection was accepted, or -1 when the original set is kept.
+/// Selects persistent features: after at least calibrationMinViews views, the
+/// originals that were inliers in >= minPersistence of them (and at least
+/// minAppearances times). Returns the number now matched against, or -1 when
+/// evidence, count or coverage is inadequate, in which case every original
+/// feature is used.
 int32_t cft_finish_calibration(CFTTracker *tracker);
 
-/// Clears calibration evidence and matches against every original feature again.
+/// Clears the counts and matches against every original feature again.
 void cft_reset_calibration(CFTTracker *tracker);
+
+/// Appearances a feature needs after `views` accepted views: the larger of
+/// minAppearances and ceil(minPersistence × views), with minPersistence taken
+/// as the decimal it stands for (0.6f is exactly 60%: 6 of 10, 9 of 15).
+int32_t cft_required_appearances(const CFTConfig *config, int32_t views);
+
+/// Accepted views counted since registration or the last reset.
+int32_t cft_calibration_view_count(const CFTTracker *tracker);
+
+/// Original feature IDs currently matched against. Returns the total count;
+/// copies at most `capacity`.
+int32_t cft_copy_active_feature_ids(const CFTTracker *tracker, int32_t *ids, int32_t capacity);
+
+/// Reference-image positions of the original features, indexed by ID.
+/// Returns the total count; copies at most `capacity`.
+int32_t cft_copy_reference_feature_points(const CFTTracker *tracker, CFTPoint *points, int32_t capacity);
 
 const char *cft_status_description(CFTStatus status);
 const char *cft_loss_reason_description(CFTLossReason reason);

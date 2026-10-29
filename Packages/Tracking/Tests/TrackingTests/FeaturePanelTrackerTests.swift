@@ -288,8 +288,59 @@ struct FeaturePanelTrackerTests {
         try await tracker.startTracking(Self.reference())
         _ = try await tracker.track(Self.camera(Fixture.liveFrame()))
         await tracker.observeCalibrationView()
+        #expect(await tracker.finishCalibration() == nil)  // one view is not enough
         await tracker.resetCalibration()
         #expect(try await tracker.track(Self.camera(Fixture.liveFrame())).status == .tracked)
+    }
+
+    @Test("Accepted views select persistent features; reset and a new reference start over (#84)")
+    func persistentSelection() async throws {
+        let tracker = FeaturePanelTracker()
+        try await tracker.startTracking(Self.reference())
+        let views = (0..<8).map {
+            Self.camera(Fixture.calibrationView($0, hiding: $0 < 5 ? [Fixture.transientPatch] : []))
+        }
+        func calibrate() async throws {
+            for view in views {
+                #expect(try await tracker.track(view).status == .tracked)
+                await tracker.observeCalibrationView()
+            }
+        }
+
+        try await calibrate()
+        let selected = try #require(await tracker.finishCalibration())
+        #expect(selected >= 40)
+        let observation = try await tracker.track(Self.camera(Fixture.liveFrame()))
+        #expect(observation.status == .tracked)
+        #expect(observation.featureDiagnostics?.referenceFeatures == selected)
+        expectQuad(observation.quad, near: Self.liveQuad, within: 0.006)
+
+        await tracker.resetCalibration()
+        #expect(await tracker.finishCalibration() == nil)
+        let restored = try await tracker.track(Self.camera(Fixture.liveFrame()))
+        #expect(try #require(restored.featureDiagnostics).referenceFeatures > selected)
+
+        try await calibrate()
+        try await tracker.startTracking(Self.reference())
+        #expect(await tracker.finishCalibration() == nil)
+    }
+
+    @Test("Frames that are only processed, or lost, never count as calibration views")
+    func unacceptedViews() async throws {
+        let tracker = FeaturePanelTracker()
+        try await tracker.startTracking(Self.reference())
+        for index in 0..<10 {
+            _ = try await tracker.track(Self.camera(Fixture.calibrationView(index, hideTransient: false)))
+        }
+        #expect(await tracker.finishCalibration() == nil)
+
+        for index in 0..<7 {
+            _ = try await tracker.track(Self.camera(Fixture.calibrationView(index, hideTransient: false)))
+            await tracker.observeCalibrationView()
+        }
+        _ = try await tracker.track(Self.camera(SyntheticGray.textured(width: 640, height: 480, seed: 11)))
+        await tracker.observeCalibrationView()
+        #expect(await tracker.finishCalibration() == nil)
     }
 
     // MARK: - Fixtures
