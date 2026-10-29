@@ -85,6 +85,43 @@ struct FeatureSelectionTests {
         #expect(cft_calibration_view_count(tracker.handle) == 1)
     }
 
+    @Test("Exact persistence boundaries need exactly that share of views",
+          arguments: [(Float(0.6), 10, 6), (0.6, 15, 9), (0.6, 5, 3), (0.6, 20, 12), (0.6, 25, 15),
+                      (0.6, 8, 5), (0.6, 11, 7), (0.7, 10, 7), (0.3, 10, 3), (0.1, 30, 3),
+                      (0.15, 20, 3), (0.35, 20, 7), (1.0, 7, 7), (0.0, 9, 1)])
+    func persistenceBoundaries(_ persistence: Float, _ views: Int32, _ expected: Int32) {
+        var config = CFTConfig()
+        cft_default_config(&config)
+        config.minPersistence = persistence
+        config.minAppearances = 1
+        #expect(cft_required_appearances(&config, views) == expected)
+    }
+
+    @Test("The appearance floor still applies", arguments: [(Int32(5), Int32(4)), (8, 5), (10, 6)])
+    func appearanceFloor(_ views: Int32, _ expected: Int32) {
+        var config = CFTConfig()
+        cft_default_config(&config)  // 60%, at least 4 appearances
+        #expect(cft_required_appearances(&config, views) == expected)
+    }
+
+    @Test("Features seen in exactly 60% of views qualify (6 of 10, 9 of 15)",
+          arguments: [(10, 4), (15, 6)])
+    func exactSixtyPercentQualifies(_ views: Int, _ hiddenIn: Int) throws {
+        // The patch is hidden in `hiddenIn` views, so its features can appear in
+        // at most 60% of them. Before the rounding fix, none could qualify.
+        let patch = Fixture.transientPatch
+        let tracker = try Tracker()
+        try tracker.register(Fixture.panel, corners: Fixture.panelCorners)
+        try observe(tracker, views: (0..<views).map {
+            Fixture.calibrationView($0, hiding: $0 < hiddenIn ? [patch] : [])
+        })
+        #expect(cft_finish_calibration(tracker.handle) > 0)
+        let inside = activePoints(tracker).filter {
+            $0.x > Float(patch.0) && $0.x < Float(patch.0 + patch.2) && $0.y > Float(patch.1) && $0.y < Float(patch.1 + patch.3)
+        }
+        #expect(!inside.isEmpty)
+    }
+
     @Test("Too few views keeps the original set")
     func tooFewViews() throws {
         let tracker = try Tracker()

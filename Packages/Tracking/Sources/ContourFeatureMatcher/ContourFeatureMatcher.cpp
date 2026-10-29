@@ -649,8 +649,7 @@ int32_t cft_finish_calibration(CFTTracker *tracker) {
         tracker->activateAll();
         if (tracker->acceptedViews < config.calibrationMinViews) return CFT_STATUS_OK;
 
-        int32_t required = std::max(config.minAppearances, static_cast<int32_t>(std::ceil(
-            config.minPersistence * static_cast<double>(tracker->acceptedViews) - 1e-9)));
+        int32_t required = cft_required_appearances(&config, tracker->acceptedViews);
         std::vector<int32_t> persistent;
         std::vector<cv::Point2f> points;
         for (size_t id = 0; id < tracker->appearances.size(); ++id) {
@@ -686,6 +685,16 @@ void cft_reset_calibration(CFTTracker *tracker) {
         tracker->clearEvidence();
         return CFT_STATUS_OK;
     });
+}
+
+int32_t cft_required_appearances(const CFTConfig *config, int32_t views) {
+    if (config == nullptr) return 0;
+    // minPersistence is a float, and 0.6f is 0.60000002: times ten views that is
+    // just over 6, and a plain ceil demands 7. It is a short decimal fraction,
+    // so round it to six places in double precision before multiplying.
+    double persistence = std::round(static_cast<double>(config->minPersistence) * 1e6) / 1e6;
+    double needed = std::ceil(persistence * std::max(views, 0) - 1e-9);
+    return std::max(config->minAppearances, static_cast<int32_t>(needed));
 }
 
 int32_t cft_calibration_view_count(const CFTTracker *tracker) {
