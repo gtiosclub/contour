@@ -6,6 +6,7 @@
 //
 
 import ContourCore
+import Foundation
 import Testing
 @testable import SurfaceUnderstanding
 
@@ -103,4 +104,32 @@ func threeOverlappingBoxesKeepValidKeys() {
             #expect(!boxesOverlap(found[i].bounds, found[j].bounds))
         }
     }
+}
+
+@Test("boxes just outside the panel edge finish trimming")
+func boxesJustOutsidePanelEdgeFinishTrimming() {
+    let first = PanelRect(
+        x: 0.3041384498417196,
+        y: 0.004629823014080703,
+        width: 0.16787870658274534,
+        height: 0.054682117754759965
+    )
+    let second = PanelRect(
+        x: 0.412155085289509,
+        y: -0.003197852193613776,
+        width: 0.1614892474552609,
+        height: 0.059878604219697346
+    )
+    let results: [(bounds: PanelRect, confidence: Double)] = [
+        (first, 1.0),
+        (second, 1.0)
+    ]
+    let finished = DispatchSemaphore(value: 0)
+
+    DispatchQueue.global().async {
+        _ = removeOverlappingBoxes(results)
+        finished.signal()
+    }
+
+    #expect(finished.wait(timeout: .now() + 3) == .success)
 }

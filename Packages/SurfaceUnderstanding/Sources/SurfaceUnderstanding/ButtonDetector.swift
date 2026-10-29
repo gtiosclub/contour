@@ -104,7 +104,7 @@ public struct ButtonDetector: Sendable {
     }
 }
 
-/// Removes nested boxes so each button is reported once.
+/// Removes nested boxes and trims remaining overlaps so each button is reported once.
 ///
 /// Vision finds rectangles at several levels: a plate or frame around a group of
 /// keys, each key, and sometimes the text or icon printed on a key. Two boxes are
@@ -119,8 +119,7 @@ public struct ButtonDetector: Sendable {
 ///   dropped.
 /// Neither "keep the larger" nor "keep the smaller" works on its own: the first
 /// lets a frame swallow the keys inside it, the second keeps a key's text
-/// instead of the key. The result doesn't depend on the order Vision returned
-/// the boxes in.
+/// instead of the key. Remaining overlaps are trimmed at their shared midpoint.
 func removeOverlappingBoxes(
     _ results: [(bounds: PanelRect, confidence: Double)]
 ) -> [(bounds: PanelRect, confidence: Double)] {
@@ -204,15 +203,10 @@ func removeOverlappingBoxes(
                 let first = kept[i].bounds
                 let second = kept[j].bounds
 
-                let firstMaxX = first.origin.x + first.width
-                let firstMaxY = first.origin.y + first.height
-                let secondMaxX = second.origin.x + second.width
-                let secondMaxY = second.origin.y + second.height
-
-                let overlapWidth = min(firstMaxX, secondMaxX)
-                    - max(first.origin.x, second.origin.x)
-                let overlapHeight = min(firstMaxY, secondMaxY)
-                    - max(first.origin.y, second.origin.y)
+                let overlapWidth = min(first.maxX, second.maxX)
+                    - max(first.minX, second.minX)
+                let overlapHeight = min(first.maxY, second.maxY)
+                    - max(first.minY, second.minY)
 
                 guard overlapWidth > 0, overlapHeight > 0 else {
                     continue
@@ -224,7 +218,7 @@ func removeOverlappingBoxes(
                 if overlapWidth <= overlapHeight {
                     let midpoint = (
                         max(first.origin.x, second.origin.x)
-                        + min(firstMaxX, secondMaxX)
+                        + min(first.maxX, second.maxX)
                     ) / 2
 
                     let firstCenterX = first.origin.x + first.width / 2
@@ -243,39 +237,28 @@ func removeOverlappingBoxes(
 
                         kept[j] = (
                             bounds: PanelRect(
-                                x: midpoint,
+                                x: kept[i].bounds.maxX,
                                 y: second.origin.y,
-                                width: secondMaxX - midpoint,
+                                width: second.maxX - kept[i].bounds.maxX,
                                 height: second.height
                             ),
                             confidence: secondConfidence
                         )
                     } else {
-                        kept[i] = (
-                            bounds: PanelRect(
-                                x: midpoint,
-                                y: first.origin.y,
-                                width: firstMaxX - midpoint,
-                                height: first.height
-                            ),
-                            confidence: firstConfidence
-                        )
+                        var secondBounds = second
+                        secondBounds.width = midpoint - second.minX
+                        kept[j].bounds = secondBounds
 
-                        kept[j] = (
-                            bounds: PanelRect(
-                                x: second.origin.x,
-                                y: second.origin.y,
-                                width: midpoint - second.origin.x,
-                                height: second.height
-                            ),
-                            confidence: secondConfidence
-                        )
+                        var firstBounds = first
+                        firstBounds.origin.x = kept[j].bounds.maxX
+                        firstBounds.width = first.maxX - firstBounds.minX
+                        kept[i].bounds = firstBounds
                     }
                 } else {
                     // Trim vertically
                     let midpoint = (
                         max(first.origin.y, second.origin.y)
-                        + min(firstMaxY, secondMaxY)
+                        + min(first.maxY, second.maxY)
                     ) / 2
 
                     let firstCenterY = first.origin.y + first.height / 2
@@ -295,32 +278,21 @@ func removeOverlappingBoxes(
                         kept[j] = (
                             bounds: PanelRect(
                                 x: second.origin.x,
-                                y: midpoint,
+                                y: kept[i].bounds.maxY,
                                 width: second.width,
-                                height: secondMaxY - midpoint
+                                height: second.maxY - kept[i].bounds.maxY
                             ),
                             confidence: secondConfidence
                         )
                     } else {
-                        kept[i] = (
-                            bounds: PanelRect(
-                                x: first.origin.x,
-                                y: midpoint,
-                                width: first.width,
-                                height: firstMaxY - midpoint
-                            ),
-                            confidence: firstConfidence
-                        )
+                        var secondBounds = second
+                        secondBounds.height = midpoint - second.minY
+                        kept[j].bounds = secondBounds
 
-                        kept[j] = (
-                            bounds: PanelRect(
-                                x: second.origin.x,
-                                y: second.origin.y,
-                                width: second.width,
-                                height: midpoint - second.origin.y
-                            ),
-                            confidence: secondConfidence
-                        )
+                        var firstBounds = first
+                        firstBounds.origin.y = kept[j].bounds.maxY
+                        firstBounds.height = first.maxY - firstBounds.minY
+                        kept[i].bounds = firstBounds
                     }
                 }
 
