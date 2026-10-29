@@ -196,6 +196,11 @@ int32_t cft_finish_calibration(CFTTracker *tracker);
 /// Clears the counts and matches against every original feature again.
 void cft_reset_calibration(CFTTracker *tracker);
 
+/// Appearances a feature needs after `views` accepted views: the larger of
+/// minAppearances and ceil(minPersistence × views), with minPersistence taken
+/// as the decimal it stands for (0.6f is exactly 60%: 6 of 10, 9 of 15).
+int32_t cft_required_appearances(const CFTConfig *config, int32_t views);
+
 /// Accepted views counted since registration or the last reset.
 int32_t cft_calibration_view_count(const CFTTracker *tracker);
 

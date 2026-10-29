@@ -211,8 +211,9 @@ Persistence alone doesn't prove a feature is reflection-free.
   Processing a frame never counts by itself: the hybrid coordinator decides,
   from camera movement and geometry, which views are accepted.
 - **Finish.** `cft_finish_calibration` / `finishCalibration()` needs ≥ 8 accepted
-  views. It keeps originals that were inliers in ≥ 60% of them (rounded up, so
-  5 of 8) and at least 4 times. The subset is activated only if it has ≥ 40
+  views. It keeps originals that were inliers in ≥ 60% of them (rounded up:
+  5 of 8, exactly 6 of 10, 9 of 15) and at least 4 times. The stored float
+  is rounded back to its decimal first, since 0.6f is slightly above 0.6. The subset is activated only if it has ≥ 40
   features whose convex hull covers ≥ 12% of the reference panel. Otherwise it
   returns -1 / `nil` and every original feature is used.
 - **Matching** with a subset still uses the original descriptors and IDs.
