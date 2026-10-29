@@ -175,6 +175,33 @@ struct FeaturePanelTrackerTests {
         #expect(try await tracker.track(Self.camera(Fixture.liveFrame())).status == .lost(.notStarted))
     }
 
+    @Test("Cancelling a start during preparation registers nothing")
+    func cancelledRegistration() async throws {
+        let interruption = Interruption()
+        let tracker = FeaturePanelTracker(afterPreparation: { await interruption.run() })
+        try await tracker.startTracking(Self.reference())
+
+        // The replacement is cancelled while its image is prepared; nothing
+        // else starts or stops, so only cancellation can stop it.
+        await interruption.set { withUnsafeCurrentTask { $0?.cancel() } }
+        let start = Task { try await tracker.startTracking(Self.reference()) }
+        await #expect(throws: CancellationError.self) { try await start.value }
+        #expect(try await tracker.track(Self.camera(Fixture.liveFrame())).status == .lost(.notStarted))
+    }
+
+    @Test("Cancelling a frame during preparation discards its result")
+    func cancelledFrame() async throws {
+        let interruption = Interruption()
+        let tracker = FeaturePanelTracker(afterPreparation: { await interruption.run() })
+        try await tracker.startTracking(Self.reference())
+
+        await interruption.set { withUnsafeCurrentTask { $0?.cancel() } }
+        let frame = Self.camera(Fixture.liveFrame())
+        let track = Task { try await tracker.track(frame) }
+        await #expect(throws: CancellationError.self) { try await track.value }
+        #expect(try await tracker.track(frame).status == .tracked)
+    }
+
     // MARK: Pipeline
 
     @Test("Injected into LiveTrackingSource with a plain 2D camera, without AR")
