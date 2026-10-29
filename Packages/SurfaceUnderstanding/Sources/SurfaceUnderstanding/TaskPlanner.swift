@@ -1,9 +1,6 @@
 //
-//  TaskPanner.swift
-//  SurfaceUnderstanding
-//
-//  Created by Asav Gupta on 10/22/26.
-//
+//  TaskPlanner.swift
+//  SurfaceUnderstanding — Surface / Target Matching
 //
 //  Turns "cook for a minute and a half" into 1, 3, 0, Start. Asks the plan
 //  server, and falls back to TargetMatcher's one key whenever it can't help.
@@ -64,18 +61,25 @@ public protocol PlanService: Sendable {
 
 // MARK: - Live service
 
-/// Talks to the plan server. App Check header gets added once the server is up.
+/// Talks to the plan server. The server answers 401 to any request without a
+/// Firebase App Check token, so the app passes in a closure that returns one.
+/// Firebase stays in ContourApp; this package only sends the header.
 public struct LivePlanService: PlanService {
     public let baseURL: URL
+    private let appCheckToken: (@Sendable () async throws -> String)?
 
-    public init(baseURL: URL) {
+    public init(baseURL: URL, appCheckToken: (@Sendable () async throws -> String)? = nil) {
         self.baseURL = baseURL
+        self.appCheckToken = appCheckToken
     }
 
     public func plan(_ request: PlanRequest) async throws -> PlanResponse {
         var urlRequest = URLRequest(url: baseURL.appending(path: "plan"))
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let appCheckToken {
+            urlRequest.setValue(try await appCheckToken(), forHTTPHeaderField: "X-Firebase-AppCheck")
+        }
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)

@@ -1,8 +1,7 @@
 //
 //  TaskPlannerTests.swift
-//  SurfaceUnderstanding
+//  SurfaceUnderstanding — Surface / Target Matching
 //
-//  Created by Asav Gupta on 10/22/26.
 //  TaskPlanner against a fake server, and the fallback when it can't help.
 //
 
