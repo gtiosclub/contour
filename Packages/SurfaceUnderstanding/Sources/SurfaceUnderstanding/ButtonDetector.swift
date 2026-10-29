@@ -29,8 +29,9 @@ public struct ButtonDetector: Sendable {
     /// display, returning no buttons is correct. `LiveSurfaceUnderstanding` can
     /// then fall back to searching the whole photo.
     ///
-    /// Bounds must not overlap. `ContourMocks` asserts that about its canned
-    /// map and the app assumes it when hit-testing.
+    /// Returned bounds must not overlap. Partial overlaps are trimmed after
+    /// nested boxes are removed. `ContourMocks` asserts this about its canned
+    /// map, and the app assumes it when hit-testing.
     public func detectButtons(
         in photo: PanelPhoto,
         panel: PanelQuad
@@ -103,7 +104,7 @@ public struct ButtonDetector: Sendable {
     }
 }
 
-/// Removes nested boxes so each button is reported once.
+/// Removes nested boxes and trims remaining overlaps so each button is reported once.
 ///
 /// Vision finds rectangles at several levels: a plate or frame around a group of
 /// keys, each key, and sometimes the text or icon printed on a key. Two boxes are
@@ -118,8 +119,7 @@ public struct ButtonDetector: Sendable {
 ///   dropped.
 /// Neither "keep the larger" nor "keep the smaller" works on its own: the first
 /// lets a frame swallow the keys inside it, the second keeps a key's text
-/// instead of the key. The result doesn't depend on the order Vision returned
-/// the boxes in.
+/// instead of the key. Remaining overlaps are trimmed at their shared midpoint.
 func removeOverlappingBoxes(
     _ results: [(bounds: PanelRect, confidence: Double)]
 ) -> [(bounds: PanelRect, confidence: Double)] {
@@ -188,7 +188,131 @@ func removeOverlappingBoxes(
 
     dropped.formUnion(frames)
     dropped.formUnion(details)
-    return results.indices.filter { !dropped.contains($0) }.map { results[$0] }
+
+    var kept = results.indices
+        .filter { !dropped.contains($0) }
+        .map { results[$0] }
+
+    var changed = true
+
+    while changed {
+        changed = false
+
+        for i in kept.indices {
+            for j in kept.indices where j > i {
+                let first = kept[i].bounds
+                let second = kept[j].bounds
+
+                let overlapWidth = min(first.maxX, second.maxX)
+                    - max(first.minX, second.minX)
+                let overlapHeight = min(first.maxY, second.maxY)
+                    - max(first.minY, second.minY)
+
+                guard overlapWidth > 0, overlapHeight > 0 else {
+                    continue
+                }
+
+                let firstConfidence = kept[i].confidence
+                let secondConfidence = kept[j].confidence
+
+                if overlapWidth <= overlapHeight {
+                    let midpoint = (
+                        max(first.origin.x, second.origin.x)
+                        + min(first.maxX, second.maxX)
+                    ) / 2
+
+                    let firstCenterX = first.origin.x + first.width / 2
+                    let secondCenterX = second.origin.x + second.width / 2
+
+                    if firstCenterX <= secondCenterX {
+                        kept[i] = (
+                            bounds: PanelRect(
+                                x: first.origin.x,
+                                y: first.origin.y,
+                                width: midpoint - first.origin.x,
+                                height: first.height
+                            ),
+                            confidence: firstConfidence
+                        )
+
+                        kept[j] = (
+                            bounds: PanelRect(
+                                x: kept[i].bounds.maxX,
+                                y: second.origin.y,
+                                width: second.maxX - kept[i].bounds.maxX,
+                                height: second.height
+                            ),
+                            confidence: secondConfidence
+                        )
+                    } else {
+                        var secondBounds = second
+                        secondBounds.width = midpoint - second.minX
+                        kept[j].bounds = secondBounds
+
+                        var firstBounds = first
+                        firstBounds.origin.x = kept[j].bounds.maxX
+                        firstBounds.width = first.maxX - firstBounds.minX
+                        kept[i].bounds = firstBounds
+                    }
+                } else {
+                    // Trim vertically
+                    let midpoint = (
+                        max(first.origin.y, second.origin.y)
+                        + min(first.maxY, second.maxY)
+                    ) / 2
+
+                    let firstCenterY = first.origin.y + first.height / 2
+                    let secondCenterY = second.origin.y + second.height / 2
+
+                    if firstCenterY <= secondCenterY {
+                        kept[i] = (
+                            bounds: PanelRect(
+                                x: first.origin.x,
+                                y: first.origin.y,
+                                width: first.width,
+                                height: midpoint - first.origin.y
+                            ),
+                            confidence: firstConfidence
+                        )
+
+                        kept[j] = (
+                            bounds: PanelRect(
+                                x: second.origin.x,
+                                y: kept[i].bounds.maxY,
+                                width: second.width,
+                                height: second.maxY - kept[i].bounds.maxY
+                            ),
+                            confidence: secondConfidence
+                        )
+                    } else {
+                        kept[i] = (
+                            bounds: PanelRect(
+                                x: first.origin.x,
+                                y: midpoint,
+                                width: first.width,
+                                height: first.maxY - midpoint
+                            ),
+                            confidence: firstConfidence
+                        )
+
+                        kept[j] = (
+                            bounds: PanelRect(
+                                x: second.origin.x,
+                                y: kept[i].bounds.maxY,
+                                width: second.width,
+                                height: second.maxY - kept[i].bounds.maxY
+                            ),
+                            confidence: secondConfidence
+                        )
+                    }
+                }
+
+                changed = true
+            }
+        }
+    }
+
+    return kept
 }
 
 /// Returns the intersection area divided by the area of the smaller box.

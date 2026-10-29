@@ -301,50 +301,6 @@ enum SyntheticPanel {
         return (try photo(image, size: size), keyRect)
     }
 
-    static func halfOverlappingPhoto() throws -> (photo: PanelPhoto, key: PanelRect) {
-        let ctx = try context(
-            size,
-            background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1)
-        )
-
-        ctx.translateBy(x: 0, y: CGFloat(size.height))
-        ctx.scaleBy(x: 1, y: -1)
-
-        let key = CGRect(
-            x: 0.25 * CGFloat(size.width),
-            y: 0.30 * CGFloat(size.height),
-            width: 0.30 * CGFloat(size.width),
-            height: 0.30 * CGFloat(size.height)
-        )
-
-        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
-        ctx.fill(key)
-
-        let overlapping = CGRect(
-            x: key.midX,
-            y: key.minY - 20,
-            width: key.width * 0.8,
-            height: key.height + 40
-        )
-
-        ctx.setStrokeColor(CGColor(red: 0.40, green: 0.40, blue: 0.40, alpha: 1))
-        ctx.setLineWidth(8)
-        ctx.stroke(overlapping)
-
-        let panelRect = PanelRect(
-            x: Double(key.minX / CGFloat(size.width)),
-            y: Double(key.minY / CGFloat(size.height)),
-            width: Double(key.width / CGFloat(size.width)),
-            height: Double(key.height / CGFloat(size.height))
-        )
-
-        return (
-            try photo(try makeImage(ctx), size: size),
-            panelRect
-        )
-    }
-    
-
     /// Three dark keys on a light panel with their labels printed UNDER them,
     /// not on them, like a ▷ key with "START" below it. Returns the keys and
     /// their labels in panel space; the panel fills the frame.
