@@ -199,3 +199,32 @@ func largePhotoIsUnchanged() throws {
     #expect(LiveSurfaceUnderstanding.labelPhoto(for: large) == large)
 }
 
+@Test("Printed buttons stay on the panel, with slack for real edge labels")
+func printedButtonsStayOnPanel() {
+    let cases: [(String, Double, Double, Double, Double)] = [
+        ("Delay Start", 2.28, 0.85, 0.28, 0.47),
+        ("Start Pause", 1.31, 0.19, 0.43, 0.46),
+        ("START", 0.12, 3.75, 0.20, 0.08),
+        ("CANCEL STOP", 2.78, 0.87, 0.24, 0.04),
+        ("Unlock", 0.56, 1.02, 0.21, 0.06),
+        ("START CANCEL", 0.87, 0.17, 0.22, 0.11)
+    ]
+    let input = cases.map { label, x, y, width, height in
+        (label: label, bounds: PanelRect(x: x - width / 2, y: y - height / 2, width: width, height: height))
+    }
+    let buttons = LiveSurfaceUnderstanding.printedButtons(from: input)
+    #expect(buttons.map(\.label) == ["Unlock", "START CANCEL"])
+    #expect(buttons.map(\.bounds) == Array(input.suffix(2)).map(\.bounds))
+    #expect(buttons.allSatisfy { $0.confidence == 0.5 })
+    // Boundaries are inclusive; the centre, not the whole box, is checked.
+    let edges = [-0.05, 1.05].flatMap { value in
+        [(label: "x edge", bounds: PanelRect(x: value, y: 0.5, width: 0, height: 0)),
+         (label: "y edge", bounds: PanelRect(x: 0.5, y: value, width: 0, height: 0))]
+    }
+    #expect(LiveSurfaceUnderstanding.printedButtons(from: edges).count == 4)
+    let outside = [-0.051, 1.051].flatMap { value in
+        [(label: "x off", bounds: PanelRect(x: value, y: 0.5, width: 0, height: 0)),
+         (label: "y off", bounds: PanelRect(x: 0.5, y: value, width: 0, height: 0))]
+    }
+    #expect(LiveSurfaceUnderstanding.printedButtons(from: outside).isEmpty)
+}

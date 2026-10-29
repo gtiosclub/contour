@@ -96,12 +96,20 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             }
         // Labels with no key outline around them are keys too on a flat
         // membrane panel. Less certain than an outlined key, so lower confidence.
-        let printedOnly = reading.textButtons.map {
-            SurfaceMap.Button(label: $0.label, bounds: $0.bounds, confidence: 0.5)
-        }
+        let printedOnly = Self.printedButtons(from: reading.textButtons)
         let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
         logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
+    }
+
+    /// Keep edge labels, but never guide to printed text outside the panel.
+    static func printedButtons(from textButtons: [(label: String, bounds: PanelRect)]) -> [SurfaceMap.Button] {
+        textButtons.filter {
+            let center = $0.bounds.center
+            return (-0.05...1.05).contains(center.x) && (-0.05...1.05).contains(center.y)
+        }.map {
+            SurfaceMap.Button(label: $0.label, bounds: $0.bounds, confidence: 0.5)
+        }
     }
 
     /// Buttons inside `panel`. A failure here (Vision's own errors aren't
