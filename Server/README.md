@@ -88,7 +88,7 @@ contract says.
 |---|---|
 | `request` | 1 to 300 characters |
 | `buttons`, `boxes` | at most 120, ids unique, 1 to 64 characters |
-| button `label` | at most 60 characters |
+| button `label` | longer labels are cut to 60 characters |
 | `image` | at most 1,500,000 base64 characters (about 1.1 MB of JPEG) |
 | body | 64 KB for /plan, 1.6 MB for /label |
 | plan length | at most 20 steps |

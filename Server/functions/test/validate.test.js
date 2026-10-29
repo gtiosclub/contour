@@ -33,6 +33,14 @@ test("plan: accepts the contract example and trims the request", () => {
   });
 });
 
+test("plan: a label over the limit is cut down, not rejected", () => {
+  const long = "Potato Reheat Cook Power ".repeat(5);
+  const r = validatePlanRequest({ request: "x", buttons: [{ id: "a", label: long }] });
+  assert.equal(r.ok, true);
+  assert.equal(r.value.buttons[0].label.length <= L.MAX_BUTTON_LABEL_CHARS, true);
+  assert.equal(r.value.buttons[0].label.startsWith("Potato Reheat Cook Power"), true);
+});
+
 test("plan: null, missing and blank labels all mean unlabeled", () => {
   const r = validatePlanRequest({
     request: "start",
@@ -81,7 +89,6 @@ test("plan: rejects malformed bodies", () => {
     { request: "x", buttons: [{ id: 7, label: "1" }] },
     { request: "x", buttons: [{ id: "a".repeat(L.MAX_ID_CHARS + 1), label: "1" }] },
     { request: "x", buttons: [{ id: "a", label: 1 }] },
-    { request: "x", buttons: [{ id: "a", label: "x".repeat(L.MAX_BUTTON_LABEL_CHARS + 1) }] },
     { request: "x", buttons: [{ id: "a", label: "1" }, { id: "a", label: "2" }] },
   ];
   for (const body of bad) {

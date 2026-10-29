@@ -62,10 +62,13 @@ function validatePlanRequest(body) {
     // "there is a button here but it could not be read".
     let label = null;
     if (b.label !== undefined && b.label !== null) {
-      if (typeof b.label !== "string" || b.label.length > L.MAX_BUTTON_LABEL_CHARS) {
-        return fail(`${where}.label must be a string of at most ${L.MAX_BUTTON_LABEL_CHARS} characters, or null`);
+      if (typeof b.label !== "string") {
+        return fail(`${where}.label must be a string or null`);
       }
-      label = b.label.trim() || null;
+      // LabelReader sometimes merges a whole row of text into one label. Cut it
+      // down instead of rejecting the plan, so one long label can't force the
+      // app back to its single-button fallback.
+      label = b.label.trim().slice(0, L.MAX_BUTTON_LABEL_CHARS).trim() || null;
     }
     buttons.push({ id: b.id, label });
   }
