@@ -82,6 +82,8 @@ jobs:
             -only-testing:ContourTests/GuidanceStatusLifecycleTests \
             -only-testing:ContourTests/GuidanceStatusLayoutTests \
             -only-testing:ContourTests/GuidanceTrackingSettingsTests \
+            -only-testing:ContourTests/GuidanceLossEpisodeTests \
+            -only-testing:ContourTests/PipelineWiringTests \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 
