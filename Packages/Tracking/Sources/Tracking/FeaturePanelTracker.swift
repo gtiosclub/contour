@@ -69,6 +69,9 @@ public actor FeaturePanelTracker: CalibratablePanelTracking {
         let upright = CIImage(cgImage: image).oriented(Self.orientation(reference.photo.orientation))
         let prepared = await Self.prepare(upright, maximumDimension: maximumDimension)
         await afterPreparation?()
+        // A cancelled start registers nothing, even when no other start or stop
+        // superseded it while the image was prepared.
+        try Task.checkCancellation()
         guard generation == id else { throw PanelTrackingError.superseded }
         guard let prepared else { throw PanelTrackingError.unreadableReferencePhoto }
 
