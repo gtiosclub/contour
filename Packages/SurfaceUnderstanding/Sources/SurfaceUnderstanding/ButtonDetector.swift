@@ -278,6 +278,26 @@ func removeOverlappingBoxes(
                         kept[j] = (
                             bounds: PanelRect(
                                 x: second.origin.x,
+                                y: midpoint,
+                                width: second.width,
+                                height: secondMaxY - midpoint
+                            ),
+                            confidence: secondConfidence
+                        )
+                    } else {
+                        kept[i] = (
+                            bounds: PanelRect(
+                                x: first.origin.x,
+                                y: midpoint,
+                                width: first.width,
+                                height: firstMaxY - midpoint
+                            ),
+                            confidence: firstConfidence
+                        )
+
+                        kept[j] = (
+                            bounds: PanelRect(
+                                x: second.origin.x,
                                 y: kept[i].bounds.maxY,
                                 width: second.width,
                                 height: second.maxY - kept[i].bounds.maxY
