@@ -70,7 +70,7 @@ jobs:
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Test manual reference setup
+      - name: Test app reference, session lifecycle, and status display
         run: |
           set -o pipefail
           xcodebuild test \
@@ -78,6 +78,12 @@ jobs:
             -scheme ContourApp \
             -destination "platform=iOS Simulator,name=iPhone 17,OS=27.0" \
             -only-testing:ContourTests/ManualPanelReferenceTests \
+            -only-testing:ContourTests/GuidanceStatusDisplayTests \
+            -only-testing:ContourTests/GuidanceStatusLifecycleTests \
+            -only-testing:ContourTests/GuidanceStatusLayoutTests \
+            -only-testing:ContourTests/GuidanceTrackingSettingsTests \
+            -only-testing:ContourTests/GuidanceLossEpisodeTests \
+            -only-testing:ContourTests/PipelineWiringTests \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 

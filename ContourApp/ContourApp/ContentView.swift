@@ -44,11 +44,15 @@ struct ContentView: View {
                     NavigationLink("Tracking Diagnostics") {
                         TrackingDebugView(camera: camera, pipeline: pipeline)
                     }
+                    NavigationLink("Tracking status scenarios") { GuidanceStatusScenariosView() }
                     NavigationLink("Model image spike (Surface)") {
                         ModelImageSpikeView()
                     }
                     NavigationLink("Haptics") {
                         HapticsDebugView()
+                    }
+                    NavigationLink("Test Experience") {
+                        TestExperienceView()
                     }
                 }
                 #endif
@@ -99,9 +103,6 @@ struct ContentView: View {
                     if let lastError {
                         Text(lastError).foregroundStyle(.red)
                     }
-                    if let trackingError = pipeline.trackingError {
-                        Text(trackingError).foregroundStyle(.red)
-                    }
                 }
 
                 if let reference = pipeline.panelReference, !reference.photo.data.isEmpty {
@@ -115,10 +116,12 @@ struct ContentView: View {
                 Section("Run the pipeline") {
                     if surfaceIsLive {
                         // What the scan will capture, so you can aim at the panel.
-                        CameraPreview(session: camera.session)
+                        CameraFeedView(camera: camera, revision: camera.status.revision)
                             .frame(height: 360)
                             .task { try? await camera.start() }
                     }
+                    GuidanceStatusRow(snapshot: pipeline.guidanceStatus.current)
+                        .task { await pipeline.guidanceStatus.run() }
                     Button("Scan panel") { scan() }
                     #if DEBUG
                     if pipeline.liveComponents.contains(.tracking) {
@@ -127,7 +130,7 @@ struct ContentView: View {
                     }
                     #endif
                     Button(guidanceTask == nil ? guidanceTitle : "Stop") { toggleGuidance() }
-                        .disabled(map == nil || !pipeline.canGuide || scanTask != nil)
+                        .disabled(guidanceTask == nil && (map == nil || !pipeline.canGuide || scanTask != nil))
                     Button(listenTask == nil ? "Say a button" : "Listening…") { sayAButton() }
                         .disabled(map == nil || !pipeline.canGuide || scanTask != nil
                                   || listenTask != nil || guidanceTask != nil)
@@ -296,6 +299,7 @@ struct ContentView: View {
     private func toggleGuidance() {
         if let guidanceTask {
             guidanceTask.cancel()
+            pipeline.guidanceStatus.reset(to: .stopped)
             self.guidanceTask = nil
             guidanceID = nil
             return

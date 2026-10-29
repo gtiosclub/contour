@@ -146,3 +146,55 @@ LiveTrackingSource retains its existing cancellation behavior: termination cance
 the producing task and releases its camera subscription. Coordinating explicit
 stopTracking() cleanup with reference/restart races belongs to the assembly task;
 S0 does not claim to change that lifecycle policy.
+
+## Guidance settings and session handoff (#90)
+
+`ContourPipeline.requestTrackingSettings(method:options:)` accepts a requested
+configuration synchronously and returns a task to await for completion. Its
+observable `trackingSettings` is the single in-memory choice for guidance and
+the diagnostics view. The view requests changes through that method and builds
+its own diagnostic session with the same factory, method and options; it never
+shares the guidance tracker. Highlight exclusion starts on and contrast
+enhancement off.
+
+Each settings or reference request cancels active guidance, clears old error and
+hybrid evidence, and asks the injected factory for a fresh guidance session.
+The latest request alone may activate its session after async registration;
+unsupported methods leave guidance unavailable with an explicit error. A
+failed selection can be retried with the same settings. `stopGuidance()` also
+invalidates pending registration without discarding the requested reference.
+The default injected live configuration is hybrid for the future integrated
+factory. The current device-only `live(camera:)` stays on its actual Vision
+implementation until Integration installs a hybrid-capable factory; it never
+labels Vision output as hybrid. `LiveTrackingSource` itself still defaults to
+Vision. Status presentation and brief-loss feedback are follow-up tasks #91
+and #92.
+
+## Stable guidance status (#91)
+
+The main guidance screen owns a persistent `GuidanceStatusRow` before its
+controls. It reserves a 180-point viewport scaled with the body font. Long
+messages scroll inside that area rather than shifting the preview or buttons;
+Dynamic Type can enlarge the viewport, but ordinary evidence changes cannot.
+No per-frame insertion, removal, transition, or implicit animation is used.
+
+`ContourPipeline.guidanceStatus` receives every supplied diagnostic snapshot.
+Its separate `ContinuousClock` display loop publishes at most once per 100 ms,
+coalesces intermediate samples, skips unchanged values, and flushes pending
+evidence even when no newer frame arrives. Tracking and feedback do not await
+that display loop. Source is read from policy diagnostics, independently of
+calibration readiness. Missing/invalid visual verification ages stay unavailable;
+messages and reposition blockers come from the supplied evidence.
+
+Scan, settings/reference replacement, Start, Stop, and natural completion clear
+both pending and displayed evidence. The existing session generation check
+rejects a diagnostic read that finishes after replacement. Factory errors appear
+immediately in the same reserved area. Stop remains enabled during guidance.
+
+Use **Developer tools > Tracking status scenarios** for scripted visual,
+corrected AR, prediction, and retained-calibration/no-output examples, including
+long messages and accessibility text. Simulator tests check the row's unchanged
+height across evidence changes at 320/430-point widths and three text sizes,
+frame feedback independent of UI publication, Stop clearing, and a delayed
+old-session status read. This is component acceptance; production hybrid/device
+acceptance remains with Integration.
