@@ -46,15 +46,26 @@ struct TrackingDebugView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if let image = model.image {
-                    TrackingImageView(image: image,
-                        quad: showOverlay ? model.panelQuad : nil,
-                        fingertip: showOverlay ? model.latest?.fingertip : nil,
-                        buttons: showOverlay ? manualReference.reference?.detection.map.buttons ?? [] : [],
-                        targetID: manualReference.selectedTargetID)
+                if let displayed = model.displayedFrame {
+                    TrackingImageView(
+                        image: displayed.image,
+                        quad: showOverlay ? displayed.panelQuad : nil,
+                        fingertip: showOverlay ? displayed.diagnostics.fingertip : nil,
+                        buttons: showOverlay
+                            ? manualReference.reference?.detection.map.buttons ?? []
+                            : [],
+                        targetID: manualReference.selectedTargetID,
+                        acceptedFeaturePoints: showOverlay ? model.acceptedFeaturePoints : []
+                    )
                 } else {
-                    Rectangle().fill(.black).aspectRatio(9.0 / 16, contentMode: .fit)
-                        .overlay { Text(model.error ?? "Waiting for camera frames…").foregroundStyle(.white).padding() }
+                    Rectangle()
+                        .fill(.black)
+                        .aspectRatio(9.0 / 16, contentMode: .fit)
+                        .overlay {
+                            Text(model.error ?? "Waiting for camera frames…")
+                                .foregroundStyle(.white)
+                                .padding()
+                        }
                 }
                 Text("Yellow: panel. Green: fingertip. Cyan: buttons. Orange: selected target. Pixels and overlays come from the same processed frame.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -127,8 +138,10 @@ struct TrackingDebugView: View {
                     LabeledContent("Tracking quality", value: frame.trackingQuality.rawValue.capitalized)
                     LabeledContent("Panel confidence", value: frame.panel.confidence.formatted(.percent))
                 }
-                if let assessment = model.assessment {
-                    Text(assessment.reason.message).font(.caption).foregroundStyle(.secondary)
+                if let assessment = model.displayedFrame?.assessment {
+                    Text(assessment.reason.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let latency = model.latency {
                     LabeledContent("Capture-to-display age", value: "\(Int(latency * 1_000)) ms")
