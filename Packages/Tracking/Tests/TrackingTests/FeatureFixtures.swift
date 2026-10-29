@@ -227,3 +227,41 @@ extension SyntheticGray {
 
     private static let context = CIContext()
 }
+
+// MARK: - Lighting
+
+extension SyntheticGray {
+    /// The same scene in dim, flat light: every value squeezed into `range` levels.
+    func dimmed(range: Int, floor: Int = 118) -> SyntheticGray {
+        var out = self
+        out.pixels = pixels.map { UInt8(floor + Int($0) * range / 255) }
+        return out
+    }
+
+    /// Clipped specular hotspots: a rectangle and a round spot.
+    static let glare: [(rect: (Int, Int, Int, Int)?, disc: (Int, Int, Int)?)] = [
+        ((220, 150, 90, 70), nil), (nil, (400, 300, 30)),
+    ]
+
+    func withGlare() -> SyntheticGray {
+        var out = self
+        for spot in Self.glare {
+            if let rect = spot.rect { out.fill(rect, value: 255) }
+            if let (x, y, r) = spot.disc { out.disc(cx: x, cy: y, r: r, value: 255) }
+        }
+        return out
+    }
+
+    /// Distance from `point` to the nearest glare pixel (0 inside).
+    static func distanceToGlare(_ point: CFTPoint) -> Float {
+        glare.map { spot -> Float in
+            if let (x, y, w, h) = spot.rect {
+                let dx = max(Float(x) - point.x, 0, point.x - Float(x + w - 1))
+                let dy = max(Float(y) - point.y, 0, point.y - Float(y + h - 1))
+                return hypot(dx, dy)
+            }
+            let (x, y, r) = spot.disc!
+            return max(0, hypot(point.x - Float(x), point.y - Float(y)) - Float(r))
+        }.min()!
+    }
+}

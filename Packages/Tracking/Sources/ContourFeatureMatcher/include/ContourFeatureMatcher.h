@@ -77,10 +77,24 @@ typedef struct {
     float maxAreaFraction;            // (4.0)
     int32_t minDimension;             // buffer width/height bounds (32)
     int32_t maxDimension;             // (4096)
+
+    // Image preparation (#83), applied identically to the reference and every frame.
+    int32_t excludeHighlights;        // nonzero: drop features touching clipped glare (1)
+    int32_t normalizeContrast;        // nonzero: CLAHE before extraction (0)
+    int32_t saturationThreshold;      // a pixel >= this is clipped (250)
+    int32_t minHighlightArea;         // glare region pixel floor (256)
+    float minHighlightFill;           // region area / bounding box, compact hotspots only (0.7)
+    float maxHighlightAreaFraction;   // larger bright regions are a white surface, not glare (0.25)
+    float claheClipLimit;             // (2)
+    int32_t claheGridSize;            // tiles per side (8)
 } CFTConfig;
 
 typedef struct {
     int32_t referenceFeatures;
+    /// Features dropped because their descriptor support touched excluded glare.
+    int32_t excludedFeatures;
+    float saturatedFraction;          // of the whole reference image
+    float excludedHighlightFraction;
 } CFTRegistrationInfo;
 
 /// Evidence is filled in for lost frames too, as far as matching got.
@@ -98,6 +112,10 @@ typedef struct {
     float coverage;
     float reprojectionError;    // mean inlier error, processing pixels
     float processingMilliseconds;
+    /// Input quality, reported whenever the frame was valid, even if lost.
+    float saturatedFraction;          // pixels >= saturationThreshold, before any contrast change
+    float excludedHighlightFraction;  // pixels in qualifying glare regions
+    int32_t excludedFeatures;         // features dropped for touching them
 } CFTMatchResult;
 
 void cft_default_config(CFTConfig *config);
