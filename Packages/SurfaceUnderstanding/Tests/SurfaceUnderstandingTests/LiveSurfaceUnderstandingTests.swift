@@ -182,6 +182,36 @@ func printedLabelsBecomeButtons() async throws {
     }
 }
 
+// MARK: - 2x copy for LabelReader
+
+@Test("a 720x1280 photo gets a 1440x2560 upright copy")
+func smallPhotoIsDoubled() throws {
+    let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+    let copy = LiveSurfaceUnderstanding.labelInput(for: small, panel: .fullFrame).photo
+    let image = try copy.cgImage()
+    #expect(image.width == 1440 && image.height == 2560)
+    #expect(copy.orientation == .up)
+}
+
+@Test("a 1080x1920 photo is used as is")
+func largePhotoIsUnchanged() throws {
+    let large = photo(try pngData(width: 1080, height: 1920) { _ in }, width: 1080, height: 1920)
+    #expect(LiveSurfaceUnderstanding.labelInput(for: large, panel: .fullFrame).photo == large)
+}
+
+@Test("a small photo's panel is cropped out and doubled")
+  func panelIsCroppedAndDoubled() throws {
+      let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+      let middle = PanelQuad(topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
+                             bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
+      let input = LiveSurfaceUnderstanding.labelInput(for: small, panel: middle)
+      let image = try input.photo.cgImage()
+      // Middle half plus a 5% margin, doubled: about 792x1408.
+      #expect(abs(image.width - 792) <= 4 && abs(image.height - 1408) <= 4)
+      // The panel now sits just inside the crop.
+      #expect(input.panel.topLeft.x > 0 && input.panel.topLeft.x < 0.1)
+  }
+
 @Test("Printed buttons stay on the panel, with slack for real edge labels")
 func printedButtonsStayOnPanel() {
     let cases: [(String, Double, Double, Double, Double)] = [

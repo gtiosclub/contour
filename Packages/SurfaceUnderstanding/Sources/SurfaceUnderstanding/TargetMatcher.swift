@@ -107,6 +107,13 @@ public struct TargetMatcher: Sendable {
         "pause": ["stop"],
         "cancel": ["stop"],
     ]
+    
+    /// Labels over 2.5x the panel's median label height are merged keys.
+    /// Real Start keys are 1.0–1.9x; merged labels 2.9–3.5x.
+    private func heightLimit(_ map: SurfaceMap) -> Double {
+        let heights = map.buttons.filter { $0.label != nil }.map(\.bounds.height).sorted()
+        return heights.isEmpty ? 1 : 2.5 * heights[heights.count / 2]
+    }
 
     // MARK: - Text helpers
 
@@ -170,7 +177,7 @@ public struct TargetMatcher: Sendable {
         let wantsNumber = wanted.allSatisfy { $0.allSatisfy(\.isNumber) }
         if wantsNumber && have != wanted { return nil }
         // "start" never means Delay Start or Time Start.
-        if wanted.contains("start"), have.contains("delay") || have.contains("time") { return nil }
+        if wanted.contains("start"), have.contains("delay") || have.contains("time") || have.contains("cancel") { return nil }
         return have
     }
 
@@ -193,6 +200,7 @@ public struct TargetMatcher: Sendable {
         let wanted = canonical(normalizedRequest)
 
         var matches: [TargetMatch] = []
+        
         for button in map.buttons {
             guard let label = button.label else { continue }
             let whole = normalize(label)
@@ -209,8 +217,11 @@ public struct TargetMatcher: Sendable {
         guard !wanted.isEmpty else { return [] }
 
         var candidates: [(button: SurfaceMap.Button, extra: Int)] = []
+        let maxLabelHeight = wanted.contains("start") ? heightLimit(map) : .infinity
+
         for button in map.buttons {
-            guard let label = button.label, let have = keyWords(label, for: wanted) else { continue }
+            guard let label = button.label, button.bounds.height <= maxLabelHeight,
+                  let have = keyWords(label, for: wanted) else { continue }
             guard Set(wanted).isSubset(of: Set(have)) else { continue }
             candidates.append((button: button, extra: have.count - wanted.count))
         }
