@@ -200,10 +200,9 @@ public struct TargetMatcher: Sendable {
         let wanted = canonical(normalizedRequest)
 
         var matches: [TargetMatch] = []
-        let maxLabelHeight = heightLimit(map)
-
+        
         for button in map.buttons {
-            guard let label = button.label, button.bounds.height <= maxLabelHeight else { continue }
+            guard let label = button.label else { continue }
             let whole = normalize(label)
             guard !whole.isEmpty, canonical(whole) == wanted else { continue }
             let confidence = (whole == normalizedRequest) ? 1.0 : 0.9
@@ -218,7 +217,7 @@ public struct TargetMatcher: Sendable {
         guard !wanted.isEmpty else { return [] }
 
         var candidates: [(button: SurfaceMap.Button, extra: Int)] = []
-        let maxLabelHeight = heightLimit(map)
+        let maxLabelHeight = wanted.contains("start") ? heightLimit(map) : .infinity
 
         for button in map.buttons {
             guard let label = button.label, button.bounds.height <= maxLabelHeight,

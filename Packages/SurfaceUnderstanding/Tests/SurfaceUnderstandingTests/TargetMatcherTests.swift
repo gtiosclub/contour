@@ -148,3 +148,9 @@ func startCancelIsSkipped() {
     #expect(TargetMatcher().match("start", in: map) == nil)
 }
 
+@Test("the height rule only applies to start")
+func heightRuleIsStartOnly() {
+    let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
+    #expect(TargetMatcher().match("unlock", in: map)?.button.label == "Start Pause Door Unlock")
+}
+
