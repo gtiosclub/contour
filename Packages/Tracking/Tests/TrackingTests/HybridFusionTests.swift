@@ -355,3 +355,42 @@ func fusionThresholdsAreConfigurable() throws {
 
     #expect(result.hybridDiagnostics?.source == .fused)
 }
+
+@Test("a correction outside the retained plane does not refresh verification or change geometry")
+func rejectedCorrectionDoesNotVerify() throws {
+    var driver = HybridDriver(planes: [HybridScene.surface(at: 0.5, extent: SIMD2(0.1, 0.15))])
+    try driver.calibrate()
+    let before = try #require(driver.alignment.model?.corners)
+    let result = try driver.stepDisplaced(by: 0.02, offset: .zero)
+    #expect(result.hybridDiagnostics?.source == .world)
+    #expect(abs((result.hybridDiagnostics?.visualVerificationAge ?? 0) - 0.15) < 0.00001)
+    #expect(driver.alignment.model?.corners.topLeft == before.topLeft)
+    #expect(driver.alignment.model?.corners.bottomRight == before.bottomRight)
+}
+
+@Test("a rejected correction cannot resume prediction after unreliable world tracking")
+func rejectedCorrectionPreservesRecoveryPause() throws {
+    var driver = HybridDriver(planes: [HybridScene.surface(at: 0.5, extent: SIMD2(0.1, 0.15))])
+    try driver.calibrate()
+    _ = try driver.stepLost(by: .zero, normalTracking: false)
+    let rejected = try driver.stepDisplaced(by: 0.02, offset: .zero)
+    #expect(rejected.quad == nil)
+    #expect(rejected.hybridDiagnostics?.source == .unavailable)
+    #expect(abs((rejected.hybridDiagnostics?.visualVerificationAge ?? 0) - 0.3) < 0.00001)
+    let lost = try driver.stepLost(by: .zero)
+    #expect(lost.quad == nil)
+    let recovered = try driver.step(by: .zero)
+    #expect(recovered.hybridDiagnostics?.source == .fused)
+}
+
+@Test("a rejected correction does not clear pending conflict grace")
+func rejectedCorrectionPreservesConflict() throws {
+    var driver = HybridDriver(planes: [HybridScene.surface(at: 0.5, extent: SIMD2(0.1, 0.15))])
+    try driver.calibrate()
+    _ = try driver.stepDisplaced(by: 0.06, offset: .zero)
+    _ = try driver.stepDisplaced(by: 0.02, offset: .zero)
+    driver.interval = 0.3
+    let result = try driver.stepLost(by: .zero)
+    #expect(result.quad == nil)
+    #expect(result.hybridDiagnostics?.source == .unavailable)
+}

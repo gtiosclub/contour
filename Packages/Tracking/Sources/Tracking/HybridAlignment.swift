@@ -328,21 +328,39 @@ public struct HybridAlignment: PanelAlignmentPolicy {
         model: inout CalibratedPanelModel, towards quad: PanelQuad, visual: PanelObservation,
         geometry: PanelWorldGeometry, fallback: PanelQuad, at now: Date
     ) -> PanelObservation {
+        // Corrections stay on the retained plane: a correction is about where on
+        // that surface the panel is, never about changing its depth. Validate
+        // both the measurements and their smoothed projection before committing
+        // geometry or treating this match as verification.
+        guard let measured = try? geometry.corners(of: quad, on: model.plane) else {
+            return rejectedCorrection(visual, fallback: fallback, at: now)
+        }
+        let corners = Self.smoothed(model.corners, towards: measured, keeping: thresholds.smoothing)
+        guard let corrected = try? geometry.quad(for: corners) else {
+            return rejectedCorrection(visual, fallback: fallback, at: now)
+        }
+
+        model.corners = corners
+        self.model = model
         verifiedAt = now
         conflicts.removeAll()
         predictionPaused = false
         requestedRestore = false
 
-        // Corrections stay on the retained plane: a correction is about where on
-        // that surface the panel is, never about changing its depth.
-        if let measured = try? geometry.corners(of: quad, on: model.plane) {
-            model.corners = Self.smoothed(model.corners, towards: measured, keeping: thresholds.smoothing)
-            self.model = model
-        }
-
-        let corrected = (try? geometry.quad(for: model.corners)) ?? fallback
         return accepted(corrected, confidence: visual.confidence, from: visual,
                         source: .fused, mode: .corrected, message: "2D-corrected AR")
+    }
+
+    /// A rejected measurement cannot verify the stored model or clear recovery.
+    private mutating func rejectedCorrection(
+        _ visual: PanelObservation, fallback: PanelQuad, at now: Date
+    ) -> PanelObservation {
+        noteRestoreRequest(at: now)
+        guard !predictionPaused, !graceExpired(at: now) else {
+            return unavailable(visual, message: "Correction rejected: waiting for valid verification")
+        }
+        return accepted(fallback, confidence: thresholds.worldConfidence, from: visual,
+                        source: .world, mode: .predicted, message: "Correction rejected: using AR prediction")
     }
 
     /// A strong match that does not agree. It corrects nothing, and it does not
