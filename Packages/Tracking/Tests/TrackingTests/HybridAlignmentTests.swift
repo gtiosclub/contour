@@ -357,3 +357,67 @@ func conformsToPanelAlignmentPolicy() {
     #expect(!policy.isCalibrated)
     #expect(policy.update(visual: .lost(.notStarted, at: start), world: nil).quad == nil)
 }
+
+@Test("weak continuation views preserve progress without approving calibration")
+func weakContinuationCannotCalibrate() throws {
+    var alignment = HybridAlignment()
+    let first = camera(at: .zero, planes: [surface(at: 0.5)])
+    _ = alignment.update(visual: try seen(from: first, at: 0), world: first)
+    for i in 1..<12 {
+        let view = camera(at: sideways * Float(i), planes: [surface(at: 0.5)])
+        let result = alignment.update(visual: try seen(from: view, at: Double(i) * 0.15, confidence: 0.1), world: view)
+        #expect(!alignment.acceptedCalibrationView)
+        #expect(result.hybridDiagnostics?.calibrationFrames == 1)
+        #expect(!alignment.didReset)
+    }
+    #expect(!alignment.isCalibrated)
+    for i in 12..<23 {
+        let view = camera(at: sideways * Float(i - 12), planes: [surface(at: 0.5)])
+        _ = alignment.update(visual: try seen(from: view, at: Double(i) * 0.15), world: view)
+    }
+    #expect(alignment.isCalibrated)
+}
+
+@Test("persistent reliable disagreement releases a wrong candidate and accepts the correct surface")
+func persistentCandidateDisagreementRecovers() throws {
+    var alignment = HybridAlignment()
+    let first = camera(at: .zero, planes: [surface(at: 1.5)])
+    _ = alignment.update(visual: try seen(from: first, at: 0), world: first)
+    var reset = false
+    for i in 1..<5 {
+        let view = camera(at: SIMD3(0, 0.08 + Float(i) * 0.01, 0), planes: [surface(at: 0.5)])
+        let result = alignment.update(visual: try seen(from: view, at: Double(i) * 0.25), world: view)
+        reset = reset || alignment.didReset
+        #expect(result.quad != nil)
+    }
+    #expect(reset)
+    for i in 5..<18 {
+        let view = camera(at: sideways * Float(i - 5), planes: [surface(at: 0.5)])
+        _ = alignment.update(visual: try seen(from: view, at: Double(i) * 0.25), world: view)
+    }
+    #expect(alignment.isCalibrated)
+    let model = try #require(alignment.model)
+    #expect(abs(model.plane.transform.columns.3.z + 0.5) < 0.001)
+}
+
+@Test("brief candidate disagreement and weak conflicting views preserve calibration progress")
+func briefCandidateDisagreementHoldsProgress() throws {
+    var alignment = HybridAlignment()
+    try walk(&alignment, steps: 4, step: sideways, planes: [surface(at: 0.5)])
+    let badView = camera(at: sideways * 4, planes: [surface(at: 0.5)])
+    let wrong = PanelObservation.tracked(.fullFrame, confidence: 0.9, at: start.addingTimeInterval(0.6))
+    _ = alignment.update(visual: wrong, world: badView)
+    #expect(!alignment.didReset)
+    for i in 5..<10 {
+        let view = camera(at: sideways * Float(i), planes: [surface(at: 0.5)])
+        let weak = PanelObservation.tracked(.fullFrame, confidence: 0.1, at: start.addingTimeInterval(Double(i) * 0.15))
+        _ = alignment.update(visual: weak, world: view)
+        #expect(!alignment.didReset)
+        #expect(!alignment.acceptedCalibrationView)
+    }
+    for i in 10..<20 {
+        let view = camera(at: sideways * Float(i - 10), planes: [surface(at: 0.5)])
+        _ = alignment.update(visual: try seen(from: view, at: Double(i) * 0.15), world: view)
+    }
+    #expect(alignment.isCalibrated)
+}
