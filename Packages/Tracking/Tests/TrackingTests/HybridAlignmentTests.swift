@@ -125,18 +125,19 @@ func approvedCornersMatchTheTruePanel() throws {
     }
 }
 
-@Test("calibration never substitutes its own geometry for the visual output")
-func visualOutputIsPassedThrough() throws {
+@Test("while calibrating, the caller keeps getting its own 2D alignment back")
+func visualOutputIsPassedThroughWhileCalibrating() throws {
     var alignment = HybridAlignment()
-    var inputs: [PanelQuad] = []
 
     for i in 0..<10 {
         let snapshot = camera(at: sideways * Float(i), planes: [surface(at: 0.5)])
         let observation = try seen(from: snapshot, at: Double(i) * 0.15)
-        inputs.append(try #require(observation.quad))
+        let wasCalibrated = alignment.isCalibrated
         let out = alignment.update(visual: observation, world: snapshot)
-        #expect(out.quad == inputs[i], "the caller gets its own 2D alignment back")
-        #expect(out.hybridDiagnostics?.source == .visual, "nothing is fused yet — that is task 3")
+
+        guard !wasCalibrated else { break }  // fusion takes over from here
+        #expect(out.quad == observation.quad)
+        #expect(out.hybridDiagnostics?.source == .visual, "calibration fuses nothing")
     }
 }
 
