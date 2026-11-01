@@ -77,6 +77,10 @@ public struct HybridAlignment: PanelAlignmentPolicy {
         /// Projected-vs-observed worst corner, in normalized image units.
         public var agreementCornerError = 0.025
 
+        /// Reject a candidate only after repeated reliable disagreement.
+        public var candidateDisagreementsBeforeReset = 3
+        public var candidateDisagreementSpan: TimeInterval = 0.4
+
         /// Readiness needs this many accepted views...
         public var readyViews = 8
         /// ...spanning this long...
@@ -129,6 +133,8 @@ public struct HybridAlignment: PanelAlignmentPolicy {
         var depthVerified = false
         var lastRMS: Double?
         var lastCornerError: Double?
+        var disagreementCount = 0
+        var disagreementBegan: Date?
     }
 
     public private(set) var isCalibrated = false
@@ -259,6 +265,10 @@ public struct HybridAlignment: PanelAlignmentPolicy {
     ) -> PanelObservation {
         guard var candidate else { return report(visual, mode: .visual, message: "2D only") }
 
+        guard visual.confidence >= thresholds.strongVisualConfidence else {
+            return report(visual, mode: .calibrating, message: "Weak visual evidence: holding progress")
+        }
+
         let camera = cameraPosition(world)
         let sinceAccepted = visual.timestamp.timeIntervalSince(candidate.lastAcceptedTimestamp)
         let moved = simd_distance(camera, candidate.lastAcceptedCamera)
@@ -280,10 +290,20 @@ public struct HybridAlignment: PanelAlignmentPolicy {
 
         guard let rms, cornerError <= thresholds.agreementCornerError,
               rms <= thresholds.agreementRMS else {
+            candidate.disagreementCount += 1
+            if candidate.disagreementBegan == nil { candidate.disagreementBegan = visual.timestamp }
             self.candidate = candidate
+            if candidate.disagreementCount >= thresholds.candidateDisagreementsBeforeReset,
+               let began = candidate.disagreementBegan,
+               visual.timestamp.timeIntervalSince(began) >= thresholds.candidateDisagreementSpan {
+                discard(reason: "Persistent visual disagreement with candidate")
+                return report(visual, mode: .visual, message: "Rejected that surface: visual disagreement")
+            }
             return report(visual, mode: .calibrating, message: "View disagrees with the candidate")
         }
 
+        candidate.disagreementCount = 0
+        candidate.disagreementBegan = nil
         candidate.acceptedViews += 1
         candidate.lastAcceptedTimestamp = visual.timestamp
         candidate.lastAcceptedCamera = camera
