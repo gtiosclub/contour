@@ -38,7 +38,7 @@ public struct PanelReadout: Sendable {
 
         for button in map.buttons {
             guard let rawLabel = button.label?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !rawLabel.isEmpty else {
+                  rawLabel.contains(where: { $0.isLetter || $0.isNumber }) else {
                 unreadCount += 1
                 continue
             }
@@ -49,7 +49,9 @@ public struct PanelReadout: Sendable {
         let buttonCount = items.count + unreadCount
         guard buttonCount > 0 else { return "I can't find any buttons." }
         guard !items.isEmpty else {
-            return "\(buttonCount) buttons, but I can't read any of them."
+            return buttonCount == 1
+                ? "1 button, but I can't read it."
+                : "\(buttonCount) buttons, but I can't read any of them."
         }
 
         items = Self.consolidatingNumberPad(in: items)
@@ -115,7 +117,7 @@ public struct PanelReadout: Sendable {
         guard text.range(of: #"^\d{1,2}:\d{2}$"#, options: .regularExpression) != nil else {
             return nil
         }
-        if text.hasPrefix("0") {
+        if text.range(of: #"^0\d:"#, options: .regularExpression) != nil {
             text.removeFirst()
         }
         return text
@@ -123,7 +125,8 @@ public struct PanelReadout: Sendable {
 
     private static func canBeAKey(_ label: String) -> Bool {
         if label.range(of: #"\d:\d"#, options: .regularExpression) != nil { return false }
-        let words = label.split(whereSeparator: \.isWhitespace)
+        let words = label.replacingOccurrences(of: "/", with: " ")
+            .split(whereSeparator: \.isWhitespace)
         if words.count > 4 { return false }
         if label.allSatisfy(\.isNumber), label.count > 2 { return false }
         return true
@@ -138,7 +141,7 @@ public struct PanelReadout: Sendable {
               CharacterSet.punctuationCharacters.contains(last) {
             result.removeLast()
         }
-        return result
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func consolidatingNumberPad(in source: [Item]) -> [Item] {

@@ -368,11 +368,12 @@ enum SyntheticPanel {
 
     /// A dark control panel with an optional green clock display and six keys.
     static func displayPhoto(time: String?) throws -> PanelPhoto {
-        let ctx = try context(size, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
-        ctx.translateBy(x: 0, y: CGFloat(size.height))
+        let displaySize = PixelSize(width: 900, height: 1200)
+        let ctx = try context(displaySize, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(displaySize.height))
         ctx.scaleBy(x: 1, y: -1)
 
-        let w = CGFloat(size.width), h = CGFloat(size.height)
+        let w = CGFloat(displaySize.width), h = CGFloat(displaySize.height)
         let display = CGRect(x: 0.16 * w, y: 0.08 * h, width: 0.68 * w, height: 0.22 * h)
         ctx.setFillColor(CGColor(red: 0.025, green: 0.035, blue: 0.03, alpha: 1))
         ctx.fill(display)
@@ -381,9 +382,8 @@ enum SyntheticPanel {
                 time,
                 centeredIn: display,
                 in: ctx,
-                size: 80,
-                color: CGColor(red: 0.25, green: 0.95, blue: 0.35, alpha: 1),
-                kern: 14
+                size: 96,
+                color: CGColor(red: 0.25, green: 0.95, blue: 0.35, alpha: 1)
             )
         }
 
@@ -399,7 +399,7 @@ enum SyntheticPanel {
             ctx.fill(cell)
             draw(label, centeredIn: cell, in: ctx)
         }
-        return try photo(try makeImage(ctx), size: size)
+        return try photo(try makeImage(ctx), size: displaySize)
     }
 
     // MARK: - Drawing

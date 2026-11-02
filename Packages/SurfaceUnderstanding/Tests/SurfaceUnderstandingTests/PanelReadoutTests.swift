@@ -71,6 +71,8 @@ func realPanelLabelRules() {
 func smallMapMessages() {
     let rect = PanelRect(x: 0.1, y: 0.1, width: 0.2, height: 0.1)
     #expect(PanelReadout().buttonList(for: readoutMap([("Start", rect)])) == "1 button. Start.")
+    #expect(PanelReadout().buttonList(for: readoutMap([(nil, rect)])) ==
+        "1 button, but I can't read it.")
     #expect(PanelReadout().buttonList(for: readoutMap([("Start", rect), (nil, rect)])) ==
         "2 buttons. Start. And 1 I can't read.")
     #expect(PanelReadout().buttonList(for: readoutMap([(nil, rect), ("", rect), (nil, rect)])) ==
@@ -101,12 +103,54 @@ func keyOnNumberPadRight() {
         "4 buttons. The number pad, 1, 2, 3, with Start on its right.")
 }
 
+@Test("number pad can be the first or last of several rows")
+func numberPadAtPanelEdge() {
+    let digits: [(String?, PanelRect)] = [
+        ("1", PanelRect(x: 0.1, y: 0.1, width: 0.1, height: 0.08)),
+        ("2", PanelRect(x: 0.3, y: 0.1, width: 0.1, height: 0.08)),
+        ("3", PanelRect(x: 0.5, y: 0.1, width: 0.1, height: 0.08)),
+    ]
+    let bottom: (String?, PanelRect) = ("Stop", PanelRect(x: 0.2, y: 0.5, width: 0.2, height: 0.08))
+    #expect(PanelReadout().buttonList(for: readoutMap(digits + [bottom])) ==
+        "4 buttons. The number pad, 1, 2, 3. Bottom row: Stop.")
+
+    let shiftedDigits = digits.map {
+        ($0.0, PanelRect(x: $0.1.minX, y: $0.1.minY + 0.4, width: $0.1.width, height: $0.1.height))
+    }
+    let top: (String?, PanelRect) = ("Stop", PanelRect(x: 0.2, y: 0.1, width: 0.2, height: 0.08))
+    #expect(PanelReadout().buttonList(for: readoutMap([top] + shiftedDigits)) ==
+        "4 buttons. Top row: Stop. The number pad, 1, 2, 3.")
+}
+
+@Test("partial number pad includes zero in keypad order")
+func partialNumberPadWithZero() {
+    let map = readoutMap([
+        ("1", PanelRect(x: 0.1, y: 0.1, width: 0.1, height: 0.08)),
+        ("2", PanelRect(x: 0.3, y: 0.1, width: 0.1, height: 0.08)),
+        ("0", PanelRect(x: 0.3, y: 0.3, width: 0.1, height: 0.08)),
+    ])
+    #expect(PanelReadout().buttonList(for: map) ==
+        "3 buttons. The number pad, 1, 2, 0.")
+}
+
 @Test("speech cleanup removes slashes, extra spaces, and trailing punctuation")
 func labelSpeechCleanup() {
     let map = readoutMap([("  START/PAUSE   →vûsec.  ", PanelRect(x: 0, y: 0, width: 1, height: 1))])
     let list = PanelReadout().buttonList(for: map)
     #expect(list == "1 button. START PAUSE →vûsec.")
     #expect(!list.hasSuffix(".."))
+}
+
+@Test("punctuation-only and overlong slash-separated labels are not spoken")
+func invalidLabels() {
+    let rect = PanelRect(x: 0, y: 0, width: 0.2, height: 0.1)
+    let map = readoutMap([
+        ("Dinner Popcorn •", rect),
+        ("•", rect),
+        ("Timer Set/Off Light Oven", rect),
+    ])
+    #expect(PanelReadout().buttonList(for: map) ==
+        "2 buttons. Dinner Popcorn. And 1 I can't read.")
 }
 
 private func microwave08Words(clockText: String?) -> [LabelReader.Word] {
@@ -120,6 +164,15 @@ private func microwave08Words(clockText: String?) -> [LabelReader.Word] {
         readoutWord("Start", x: 0.598, y: 0.247, width: 0.088, height: 0.016),
         readoutWord("Express", x: 0.416, y: 0.395, width: 0.185, height: 0.027),
         readoutWord("Cook", x: 0.599, y: 0.396, width: 0.130, height: 0.024),
+        readoutWord("1", x: 0.390, y: 0.433, width: 0.041, height: 0.017),
+        readoutWord("2", x: 0.523, y: 0.433, width: 0.052, height: 0.019),
+        readoutWord("5", x: 0.528, y: 0.480, width: 0.047, height: 0.020),
+        readoutWord("6", x: 0.671, y: 0.482, width: 0.041, height: 0.018),
+        readoutWord("7", x: 0.390, y: 0.527, width: 0.043, height: 0.018),
+        readoutWord("8", x: 0.523, y: 0.528, width: 0.053, height: 0.019),
+        readoutWord("9", x: 0.668, y: 0.528, width: 0.048, height: 0.020),
+        readoutWord("display", x: 0.506, y: 0.609, width: 0.116, height: 0.016),
+        readoutWord("on/aft", x: 0.508, y: 0.621, width: 0.111, height: 0.016),
     ]
     if let clockText {
         words.insert(readoutWord(clockText, x: 0.387, y: 0.194, width: 0.326, height: 0.056), at: 4)
@@ -132,6 +185,8 @@ func displayTextDecisions() {
     #expect(PanelReadout.displayText(from: microwave08Words(clockText: "300")) == "3:00")
     #expect(PanelReadout.displayText(from: microwave08Words(clockText: "12.03")) == "12:03")
     #expect(PanelReadout.displayText(from: microwave08Words(clockText: "03:00")) == "3:00")
+    #expect(PanelReadout.displayText(from: microwave08Words(clockText: "0:00")) == "0:00")
+    #expect(PanelReadout.displayText(from: microwave08Words(clockText: "0:30")) == "0:30")
     #expect(PanelReadout.displayText(from: microwave08Words(clockText: "13:0")) == nil)
     #expect(PanelReadout.displayText(from: microwave08Words(clockText: nil)) == nil)
     #expect(PanelReadout.displayText(from: []) == nil)
@@ -147,6 +202,8 @@ func resizedDisplayText() {
         readoutWord("Start", x: 0.590, y: 0.261, width: 0.074, height: 0.012),
         readoutWord("Express", x: 0.403, y: 0.413, width: 0.185, height: 0.027),
         readoutWord("Cook", x: 0.587, y: 0.414, width: 0.126, height: 0.023),
+        readoutWord("display", x: 0.501, y: 0.626, width: 0.113, height: 0.014),
+        readoutWord("on/aft", x: 0.511, y: 0.639, width: 0.101, height: 0.014),
     ]
     #expect(PanelReadout.displayText(from: words) == "3:00")
 }

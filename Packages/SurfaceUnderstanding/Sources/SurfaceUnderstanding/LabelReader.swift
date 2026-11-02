@@ -317,6 +317,7 @@ public struct LabelReader: Sendable {
         guard let clock = clocks.max(by: { $0.height < $1.height }) else { return nil }
         return (clock, medianHeight)
     }
+
     /// The words split into labels: words that belong together end up in one
     /// group.
     static func groups(of words: [Word]) -> [[Word]] {
