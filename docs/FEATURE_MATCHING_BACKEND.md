@@ -1,4 +1,4 @@
-# OpenCV feature matching backend (Visual tracking 1, #81)
+# OpenCV feature tracking (Visual tracking, #81–#84)
 
 `Packages/Tracking/Sources/ContourFeatureMatcher` locates the registered panel
 in a live grayscale frame by matching labels and texture, not the outer
@@ -20,6 +20,7 @@ pixels of the buffer passed in (x right, y down).
 | `cft_copy_inlier_points` / `cft_copy_inlier_feature_ids` | Evidence of the most recent attempt only (live points, stable reference IDs). |
 | `cft_set_active_features` / `cft_restore_all_features` | Hooks for #84: restrict matching to original feature IDs, or restore all. |
 | `cft_reset` | Drop the reference. |
+| `cft_observe_calibration_view` / `cft_finish_calibration` / `cft_reset_calibration` | Calibration hooks the Swift wrapper forwards. An observe only counts a frame that was actually tracked. |
 
 Lifecycle rules the wrapper can rely on:
 
@@ -93,3 +94,48 @@ with known homographies (debug build, M-series Mac, 640×480):
 `Packages/Tracking/THIRD_PARTY_NOTICES.md`). `Scripts/check-dependencies.sh`
 allows that one exact-pinned remote for Tracking and fails if OpenCV is included
 outside the matcher's `.cpp` or imported from Swift anywhere.
+
+## Swift wrapper: `FeaturePanelTracker` (#82)
+
+`Packages/Tracking/Sources/Tracking/FeaturePanelTracker.swift` is an actor
+conforming to `CalibratablePanelTracking`, so it drops into
+`LiveTrackingSource(camera:panelTracker:)` in place of the Vision `PanelTracker`.
+Building the production factory is integration's job (#96).
+
+- **Reference.** The photo's raw pixels are decoded, turned upright with
+  `PanelPhoto.orientation`, converted to grayscale and downsampled; the
+  normalized reference quad is converted to backend pixels and registered.
+- **Frames.** Each `CameraFrame` is turned upright with its `orientation`,
+  converted and downsampled the same way, then matched. Corners and inlier
+  points come back as normalized upright `ImagePoint`s with TL/TR/BR/BL kept.
+  Normalized 0 and 1 are the outer pixel edges, so downsampling doesn't move them.
+- **Processing size.** Longest side ≤ 640 px (`maximumDimension`), aspect ratio
+  preserved, Lanczos downsampling. Preparation runs off the actor.
+- **Observations.** The capture timestamp is kept. A loss carries no quad and
+  confidence 0, but does carry `FeatureTrackingDiagnostics`. Backend loss
+  reasons map onto the shared `LossReason`: too few features, matches or inliers,
+  or no homography → `notFound`; low inlier ratio or coverage → `lowConfidence`;
+  bad projected shape or size → `invalidGeometry`; backend errors →
+  `trackerFailed`. The exact reason is in the diagnostics `message`.
+  `processingMilliseconds` covers preparation and matching together.
+- **Lifecycle.** `startTracking` drops the old reference first, so any failure
+  (`invalidReferenceQuad`, `unreadableReferencePhoto`, `registrationFailed`)
+  leaves nothing registered. This differs from the Vision tracker, which keeps
+  its old session when a new quad is invalid. A start or stop while a frame
+  or reference is being prepared makes that call throw `superseded`, and its
+  result is never used. Each registration gets a fresh backend, so old
+  calibration state can't leak into a new reference.
+- **Calibration.** `observeCalibrationView`, `finishCalibration` and
+  `resetCalibration` are forwarded to the backend. The hybrid coordinator decides
+  which views count.
+
+Measured on an M-series Mac, a 1920×1440 BGRA frame takes 11–14 ms from
+preparation to observation (debug and release builds are similar). Device
+timing still needs measuring.
+
+`FeaturePanelTrackerTests` covers upright and rotated camera frames (all four
+orientations), rotated reference photos, camera-resolution inputs, corner and
+target coverage, loss and recovery, registration failures, stop or replacement
+during preparation, calibration forwarding, and injection into
+`LiveTrackingSource` with a plain 2D camera and no AR.
+

@@ -24,7 +24,8 @@ let package = Package(
     targets: [
         .target(
             name: "ContourFeedback",
-            dependencies: [.product(name: "ContourCore", package: "ContourCore")]
+            dependencies: [.product(name: "ContourCore", package: "ContourCore")],
+            resources: [.copy("Resources/VoicePrompts")]
         ),
         .testTarget(
             name: "ContourFeedbackTests",

@@ -81,6 +81,95 @@ public struct SampleScore: Hashable, Sendable {
     }
 }
 
+/// The scoreboard measurements for one labelled photo.
+public struct ScoreboardResult: Hashable, Sendable {
+
+    public enum Panel: String, Hashable, Sendable {
+        case quad
+        case fullFrame = "full frame"
+        case none
+    }
+
+    public enum Start: Hashable, Sendable, CustomStringConvertible {
+        case rightKey
+        case wrongKey(String?)
+        case notFound
+
+        public var description: String {
+            switch self {
+            case .rightKey:
+                return "right key"
+            case .wrongKey(let label):
+                return "wrong key (\(label ?? "no key"))"
+            case .notFound:
+                return "not found"
+            }
+        }
+    }
+
+    public var photo: String
+    public var panel: Panel
+    public var labelledCount: Int
+    public var detectedCount: Int
+    public var centerHits: Int
+    public var iouHits: Int
+    public var correctLabels: Int
+    public var start: Start
+    public var seconds: Double
+
+    public var recall: Double {
+        labelledCount == 0 ? 0 : Double(centerHits) / Double(labelledCount)
+    }
+
+    public var precision: Double? {
+        detectedCount == 0 ? nil : Double(centerHits) / Double(detectedCount)
+    }
+
+    public var labelAccuracy: Double? {
+        centerHits == 0 ? nil : Double(correctLabels) / Double(centerHits)
+    }
+}
+
+/// Corpus totals, calculated from summed counts rather than averaged percentages.
+public struct ScoreboardTotals: Hashable, Sendable {
+    public var labelledCount: Int
+    public var detectedCount: Int
+    public var centerHits: Int
+    public var iouHits: Int
+    public var correctLabels: Int
+    public var startRightKey: Int
+    public var startWrongKey: Int
+    public var startNotFound: Int
+    public var seconds: Double
+
+    public init(_ results: [ScoreboardResult]) {
+        labelledCount = results.reduce(0) { $0 + $1.labelledCount }
+        detectedCount = results.reduce(0) { $0 + $1.detectedCount }
+        centerHits = results.reduce(0) { $0 + $1.centerHits }
+        iouHits = results.reduce(0) { $0 + $1.iouHits }
+        correctLabels = results.reduce(0) { $0 + $1.correctLabels }
+        startRightKey = results.count { $0.start == .rightKey }
+        startWrongKey = results.count {
+            if case .wrongKey = $0.start { return true }
+            return false
+        }
+        startNotFound = results.count { $0.start == .notFound }
+        seconds = results.reduce(0) { $0 + $1.seconds }
+    }
+
+    public var recall: Double {
+        labelledCount == 0 ? 0 : Double(centerHits) / Double(labelledCount)
+    }
+
+    public var precision: Double? {
+        detectedCount == 0 ? nil : Double(centerHits) / Double(detectedCount)
+    }
+
+    public var labelAccuracy: Double? {
+        centerHits == 0 ? nil : Double(correctLabels) / Double(centerHits)
+    }
+}
+
 /// The hand-labelled corpus and the scoring that runs against it.
 public enum TestSet {
 
@@ -174,6 +263,97 @@ public enum TestSet {
         )
     }
 
+    /// Score a detector result after mapping it into the labelled panel's space.
+    public static func scoreboardResult(
+        photo: String,
+        detected: SurfaceMap,
+        detectedPanel: PanelQuad?,
+        sample: LabelledSample,
+        seconds: Double
+    ) -> ScoreboardResult {
+        let mappedAllButtons: [SurfaceMap.Button]
+        let panel: ScoreboardResult.Panel
+        if let detectedPanel {
+            panel = detectedPanel == .fullFrame ? .fullFrame : .quad
+            mappedAllButtons = detected.buttons.map { button in
+                SurfaceMap.Button(
+                    label: button.label,
+                    bounds: bounds(button.bounds, from: detectedPanel, to: sample.panel),
+                    confidence: button.confidence
+                )
+            }
+        } else {
+            panel = .none
+            mappedAllButtons = []
+        }
+
+        let mapped = SurfaceMap(buttons: mappedAllButtons, confidence: detected.confidence)
+        let centerMatches = centerMatches(detected: mapped.buttons, expected: sample.expected.buttons)
+        let overlapMatches = iouMatches(detected: mapped.buttons, expected: sample.expected.buttons)
+        let correctLabels = centerMatches.count { match in
+            labelsMatch(
+                detected: mapped.buttons[match.detected].label,
+                expected: sample.expected.buttons[match.expected].label
+            )
+        }
+
+        return ScoreboardResult(
+            photo: photo,
+            panel: panel,
+            labelledCount: sample.expected.buttons.count,
+            detectedCount: mapped.buttons.count,
+            centerHits: centerMatches.count,
+            iouHits: overlapMatches.count,
+            correctLabels: correctLabels,
+            start: startResult(in: mapped, expected: sample.expected),
+            seconds: seconds
+        )
+    }
+
+    /// Move a detector-space rectangle through upright image space into another panel.
+    public static func bounds(
+        _ bounds: PanelRect,
+        from source: PanelQuad,
+        to destination: PanelQuad
+    ) -> PanelRect {
+        let detector = PanelDetector()
+
+        // `rectify` maps image → panel. Build the inverse homography by mapping
+        // the image unit square into `source`, then rectifying panel points within it.
+        func sourcePanelPoint(_ x: Double, _ y: Double) -> ImagePoint {
+            let point = detector.rectify(ImagePoint(x: x, y: y), within: source)
+            return ImagePoint(x: point.x, y: point.y)
+        }
+        let inverseSource = PanelQuad(
+            topLeft: sourcePanelPoint(0, 0),
+            topRight: sourcePanelPoint(1, 0),
+            bottomRight: sourcePanelPoint(1, 1),
+            bottomLeft: sourcePanelPoint(0, 1)
+        )
+
+        let corners = [
+            PanelPoint(x: bounds.minX, y: bounds.minY),
+            PanelPoint(x: bounds.maxX, y: bounds.minY),
+            PanelPoint(x: bounds.maxX, y: bounds.maxY),
+            PanelPoint(x: bounds.minX, y: bounds.maxY),
+        ].map { point -> PanelPoint in
+            let image = detector.rectify(
+                ImagePoint(x: point.x, y: point.y),
+                within: inverseSource
+            )
+            return detector.rectify(
+                ImagePoint(x: image.x, y: image.y),
+                within: destination
+            )
+        }
+
+        let minX = corners.map(\.x).min() ?? .nan
+        let maxX = corners.map(\.x).max() ?? .nan
+        let minY = corners.map(\.y).min() ?? .nan
+        let maxY = corners.map(\.y).max() ?? .nan
+        return PanelRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
     /// Intersection over union for two normalized panel-space rectangles.
     static func iou(_ a: PanelRect, _ b: PanelRect) -> Double {
         let left = max(a.minX, b.minX)
@@ -183,6 +363,105 @@ public enum TestSet {
         let intersection = max(0, right - left) * max(0, bottom - top)
         let union = a.width * a.height + b.width * b.height - intersection
         return union > 0 ? intersection / union : 0
+    }
+
+    private static func centerMatches(
+        detected: [SurfaceMap.Button],
+        expected: [SurfaceMap.Button]
+    ) -> [(detected: Int, expected: Int)] {
+        var candidates: [(detected: Int, expected: Int, distance: Double)] = []
+        for (detectedIndex, detectedButton) in detected.enumerated() {
+            for (expectedIndex, expectedButton) in expected.enumerated()
+            where expectedButton.bounds.contains(detectedButton.bounds.center) {
+                candidates.append((
+                    detected: detectedIndex,
+                    expected: expectedIndex,
+                    distance: detectedButton.bounds.center.distance(to: expectedButton.bounds.center)
+                ))
+            }
+        }
+        candidates.sort {
+            if $0.distance != $1.distance { return $0.distance < $1.distance }
+            if $0.detected != $1.detected { return $0.detected < $1.detected }
+            return $0.expected < $1.expected
+        }
+        return oneToOne(candidates.map { ($0.detected, $0.expected) })
+    }
+
+    private static func iouMatches(
+        detected: [SurfaceMap.Button],
+        expected: [SurfaceMap.Button]
+    ) -> [(detected: Int, expected: Int)] {
+        var candidates: [(detected: Int, expected: Int, overlap: Double)] = []
+        for (detectedIndex, detectedButton) in detected.enumerated() {
+            for (expectedIndex, expectedButton) in expected.enumerated() {
+                let overlap = iou(detectedButton.bounds, expectedButton.bounds)
+                if overlap >= 0.5 {
+                    candidates.append((detectedIndex, expectedIndex, overlap))
+                }
+            }
+        }
+        candidates.sort {
+            if $0.overlap != $1.overlap { return $0.overlap > $1.overlap }
+            if $0.detected != $1.detected { return $0.detected < $1.detected }
+            return $0.expected < $1.expected
+        }
+        return oneToOne(candidates.map { ($0.detected, $0.expected) })
+    }
+
+    private static func oneToOne(
+        _ candidates: [(detected: Int, expected: Int)]
+    ) -> [(detected: Int, expected: Int)] {
+        var usedDetected = Set<Int>()
+        var usedExpected = Set<Int>()
+        var matches: [(detected: Int, expected: Int)] = []
+        for candidate in candidates
+        where !usedDetected.contains(candidate.detected)
+            && !usedExpected.contains(candidate.expected) {
+            usedDetected.insert(candidate.detected)
+            usedExpected.insert(candidate.expected)
+            matches.append(candidate)
+        }
+        return matches
+    }
+
+    private static func startResult(
+        in detected: SurfaceMap,
+        expected: SurfaceMap
+    ) -> ScoreboardResult.Start {
+        guard let match = TargetMatcher().match("Start", in: detected) else {
+            return .notFound
+        }
+        let containing = expected.buttons
+            .filter { $0.bounds.contains(match.button.bounds.center) }
+            .min {
+                match.button.bounds.center.distance(to: $0.bounds.center)
+                    < match.button.bounds.center.distance(to: $1.bounds.center)
+            }
+        guard let containing else { return .wrongKey(nil) }
+        return labelVariants(containing.label).contains("start")
+            ? .rightKey
+            : .wrongKey(containing.label)
+    }
+
+    private static func labelsMatch(detected: String?, expected: String?) -> Bool {
+        guard let detected else { return false }
+        let normalizedDetected = normalizedForScoreboard(detected)
+        return !normalizedDetected.isEmpty
+            && labelVariants(expected).contains(normalizedDetected)
+    }
+
+    private static func labelVariants(_ label: String?) -> Set<String> {
+        guard let label else { return [] }
+        var variants = Set([normalizedForScoreboard(label)])
+        variants.formUnion(label.split(separator: "/").map {
+            normalizedForScoreboard(String($0))
+        })
+        return variants.filter { !$0.isEmpty }
+    }
+
+    private static func normalizedForScoreboard(_ label: String) -> String {
+        String(label.lowercased().unicodeScalars.filter(CharacterSet.alphanumerics.contains))
     }
 
     private static func normalized(_ label: String) -> String {

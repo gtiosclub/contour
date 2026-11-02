@@ -93,6 +93,14 @@ final class HapticPlayer {
         }
     }
 
+    /// Cancel queued outcome taps as well as continuous proximity playback.
+    func stop() {
+        signal?.cancel()
+        signal = nil
+        stopPulsing()
+        manager?.stop()
+    }
+
     private func tap(_ event: HapticEvent) {
         requireManager().tap(intensity: Float(event.intensity), sharpness: Float(event.sharpness))
     }

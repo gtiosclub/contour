@@ -126,14 +126,169 @@ func neat1ReadingOrder() {
             == ["Add", "30", "Sec"]
     )
 }
+
 @Test("Words with close vertical centres stay on one line")
 func closeVerticalCentresStayOnOneLine() {
+    let start = word("Start", x: 0.10, y: 0.5059, width: 0.07, height: 0.012)
+    let pause = word("Pause", x: 0.175, y: 0.5000, width: 0.07, height: 0.012)
+
+    let buttons = LabelReader.textButtons(from: [pause, start])
+
+    #expect(buttons.map(\.label) == ["Start Pause"])
+}
+
+@Test("a clock and words inside its display are removed, but Express Cook stays")
+func clockDisplayWordsAreRemoved() {
+    let clock = word("300", x: 0.40, y: 0.20, width: 0.16, height: 0.056)
+    let displayStart = word("Start", x: 0.52, y: 0.235, width: 0.06, height: 0.012)
+    let express = word("Express", x: 0.40, y: 0.30, width: 0.08, height: 0.018)
+    let cook = word("Cook", x: 0.49, y: 0.30, width: 0.05, height: 0.018)
+
+    let remaining = LabelReader.removingClockWords(
+        from: [clock, displayStart, express, cook]
+    )
+
+    #expect(remaining.map(\.text) == ["Express", "Cook"])
+    #expect(LabelReader.textButtons(from: remaining).map(\.label) == ["Express Cook"])
+}
+
+@Test("a long barcode is not mistaken for a clock")
+func barcodeIsNotAClock() {
+    let barcode = word(
+        "0000017272",
+        x: 0.30, y: 0.10,
+        width: 0.20, height: 0.056
+    )
+
     let words = [
-        word("Start", x: 0.10, y: 0.5000, width: 0.07, height: 0.012),
-        word("Pause", x: 0.175, y: 0.5059, width: 0.07, height: 0.012)
+        barcode,
+        word("Popcorn", x: 0.10, y: 0.20, height: 0.018),
+        word("Beverage", x: 0.30, y: 0.20, height: 0.018),
+        word("Defrost", x: 0.50, y: 0.20, height: 0.018),
+        word("Start", x: 0.40, y: 0.30, height: 0.018)
+    ]
+
+    let remaining = LabelReader.removingClockWords(from: words)
+
+    #expect(remaining.count == words.count)
+    #expect(remaining.contains(where: { $0.text == "0000017272" }))
+    #expect(remaining.contains(where: { $0.text == "Start" }))
+}
+
+@Test("words outside the clock columns remain")
+func wordsOutsideClockColumnsRemain() {
+    let clock = word("3:00", x: 0.40, y: 0.20, width: 0.16, height: 0.056)
+    let pizza = word("Pizza", x: 0.20, y: 0.22, height: 0.018)
+    let potato = word("Potato", x: 0.62, y: 0.22, height: 0.018)
+
+    let remaining = LabelReader.removingClockWords(from: [clock, pizza, potato])
+
+    #expect(remaining.map(\.text).sorted() == ["Pizza", "Potato"])
+}
+
+@Test("microwave-08: display text is removed but Express Cook stays")
+func microwave08DisplayTextIsNotAButton() {
+    let words = [
+        word("GA", x: 0.251, y: 0.016, width: 0.069, height: 0.015),
+        word("TECH", x: 0.317, y: 0.015, width: 0.107, height: 0.016),
+        word("HOUSING", x: 0.422, y: 0.011, width: 0.179, height: 0.019),
+        word("0000017272", x: 0.282, y: 0.059, width: 0.299, height: 0.025),
+        word("300", x: 0.387, y: 0.194, width: 0.326, height: 0.056),
+        word("Cook", x: 0.204, y: 0.245, width: 0.087, height: 0.014),
+        word("Time", x: 0.405, y: 0.246, width: 0.082, height: 0.012),
+        word("Start", x: 0.598, y: 0.247, width: 0.088, height: 0.016),
+        word("Express", x: 0.416, y: 0.395, width: 0.185, height: 0.027),
+        word("Cook", x: 0.599, y: 0.396, width: 0.130, height: 0.024),
+        word("1", x: 0.390, y: 0.433, width: 0.041, height: 0.017),
+        word("2", x: 0.523, y: 0.433, width: 0.052, height: 0.019),
+        word("5", x: 0.528, y: 0.480, width: 0.047, height: 0.020),
+        word("6", x: 0.671, y: 0.482, width: 0.041, height: 0.018),
+        word("7", x: 0.390, y: 0.527, width: 0.043, height: 0.018),
+        word("8", x: 0.523, y: 0.528, width: 0.053, height: 0.019),
+        word("9", x: 0.668, y: 0.528, width: 0.048, height: 0.020),
+        word("display", x: 0.506, y: 0.609, width: 0.116, height: 0.016),
+        word("on/aft", x: 0.508, y: 0.621, width: 0.111, height: 0.016)
     ]
 
     let buttons = LabelReader.textButtons(from: words)
+    let labels = buttons.map(\.label)
 
-    #expect(buttons.map(\.label) == ["Start Pause"])
+    #expect(!labels.contains { $0.localizedCaseInsensitiveContains("start") })
+    #expect(labels.contains("Express Cook"))
+}
+
+@Test("a separate digit on the clock row is removed")
+func splitClockDigitIsRemoved() {
+    let words = [
+        word("12:0", x: 0.40, y: 0.20, width: 0.16, height: 0.056),
+        word("1", x: 0.58, y: 0.20, width: 0.03, height: 0.056),
+        word("Start", x: 0.40, y: 0.30, height: 0.018),
+        word("Express", x: 0.40, y: 0.40, height: 0.018),
+        word("Cook", x: 0.49, y: 0.40, height: 0.018)
+    ]
+
+    let remaining = LabelReader.removingClockWords(from: words)
+
+    #expect(!remaining.contains(where: { $0.text == "12:0" }))
+    #expect(!remaining.contains(where: { $0.text == "1" }))
+    #expect(remaining.contains(where: { $0.text == "Start" }))
+    #expect(Set(remaining.map(\.text)).isSuperset(of: ["Express", "Cook"]))
+}
+
+@Test("a nearly square 000 icon is not mistaken for a clock")
+func nearlySquareZeroIconIsNotAClock() {
+    let zeros = word("000", x: 0.35, y: 0.20,
+                     width: 0.29, height: 0.295)
+    let start = word("START", x: 0.35, y: 0.51, height: 0.018)
+    let time = word("TIME", x: 0.45, y: 0.51, height: 0.018)
+    let popcorn = word("Popcorn", x: 0.10, y: 0.60, height: 0.018)
+    let defrost = word("Defrost", x: 0.60, y: 0.60, height: 0.018)
+
+    let words = [zeros, start, time, popcorn, defrost]
+    let remaining = LabelReader.removingClockWords(from: words)
+
+    #expect(remaining.contains(where: { $0.text == "000" }))
+    #expect(remaining.contains(where: { $0.text == "START" }))
+    #expect(remaining.contains(where: { $0.text == "TIME" }))
+}
+
+@Test("microwave-08 at 960x1280: display text is not a button")
+func microwave08ResizedDisplayTextIsNotAButton() {
+    let words = [
+        word("GA", x: 0.204, y: 0.018, width: 0.074, height: 0.016),
+        word("TECH", x: 0.276, y: 0.016, width: 0.110, height: 0.017),
+        word("HOUSING", x: 0.384, y: 0.013, width: 0.192, height: 0.020),
+        word("3:00", x: 0.359, y: 0.206, width: 0.337, height: 0.062),
+        word("Start", x: 0.590, y: 0.261, width: 0.074, height: 0.012),
+        word("Express", x: 0.403, y: 0.413, width: 0.185, height: 0.027),
+        word("Cook", x: 0.587, y: 0.414, width: 0.126, height: 0.023),
+        word("display", x: 0.501, y: 0.626, width: 0.113, height: 0.014),
+        word("on/aft", x: 0.511, y: 0.639, width: 0.101, height: 0.014)
+    ]
+
+    let labels = LabelReader.textButtons(from: words).map(\.label)
+
+    #expect(!labels.contains {
+        $0.localizedCaseInsensitiveContains("start")
+    })
+    #expect(labels.contains("Express Cook"))
+}
+
+@Test("oven1_glare: keys above the clock are preserved")
+func oven1GlarePreservesKeysAboveClock() {
+    let words = [
+        word("WARM", x: 0.145, y: 0.589, width: 0.059, height: 0.055),
+        word("COOK", x: 0.283, y: 0.613, width: 0.058, height: 0.060),
+        word("TIME", x: 0.289, y: 0.675, width: 0.045, height: 0.054),
+        word("TIMER", x: 0.568, y: 0.617, width: 0.059, height: 0.056),
+        word("SET", x: 0.553, y: 0.679, width: 0.033, height: 0.059),
+        word("OFF", x: 0.601, y: 0.674, width: 0.041, height: 0.059),
+        word("0008", x: 0.273, y: 0.715, width: 0.357, height: 0.281)
+    ]
+
+    let labels = LabelReader.textButtons(from: words).map(\.label)
+
+    #expect(labels.contains("WARM"))
+    #expect(labels.contains("COOK TIME"))
+    #expect(labels.contains("TIMER SET OFF"))
 }
