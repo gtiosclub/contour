@@ -165,6 +165,7 @@ final class TrackingDebugModel {
                         )
 
                         displayedFrame = display
+                        acceptedFeaturePoints = sample.featureDiagnostics?.inlierPoints ?? []
                         latest = finger
                         assessment = sample.assessment
                         error = sample.registrationError == nil ? nil
