@@ -181,3 +181,33 @@ func optionOEmptyVisionSkipsCall() async throws {
     #expect(result == .empty)
     #expect(await counter.value() == 0)
 }
+
+@Test("Option O keeps V's label when the server sends an empty one")
+func optionOEmptyLabelKeepsVisionLabel() async throws {
+    let (photo, vision) = try optionVFixture()
+    let result = await applyOpenAILabels(
+        to: photo,
+        vision: vision,
+        using: FakeLabelService(mode: .answer(LabelReply(
+            boxes: [LabelReply.Box(id: "b1", label: "", isButton: true)],
+            start: nil
+        )))
+    )
+    #expect(result.buttons[0].label == vision.map.buttons[0].label)
+}
+
+@Test("Option O names the Start box when it has no label from V or the server")
+func optionOEmptyStartLabelBecomesStart() async throws {
+    let (photo, vision) = try optionVFixture()
+    var unread = vision.map
+    unread.buttons[0].label = nil
+    let result = await applyOpenAILabels(
+        to: photo,
+        vision: OptionVResult(panel: vision.panel, map: unread),
+        using: FakeLabelService(mode: .answer(LabelReply(
+            boxes: [LabelReply.Box(id: "b1", label: "", isButton: true)],
+            start: "b1"
+        )))
+    )
+    #expect(result.buttons[0].label == "Start")
+}

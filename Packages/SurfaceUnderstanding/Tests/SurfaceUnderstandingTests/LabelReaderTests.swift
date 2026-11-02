@@ -56,6 +56,8 @@ func slowAccurateFallsBackToFast() async throws {
     let photo = try SyntheticPanel.photo()
     let image = try photo.cgImage()
     let counter = FastCallCounter()
+    let clock = ContinuousClock()
+    let start = clock.now
 
     let result = try await LabelReader.recognizeText(
         in: image,
@@ -71,9 +73,12 @@ func slowAccurateFallsBackToFast() async throws {
         }
     )
 
+    let elapsed = start.duration(to: clock.now)
+
     #expect(result.isEmpty)
-    let fastCalls = await counter.count()
-    #expect(fastCalls == 1)
+    #expect(await counter.count() == 1)
+    #expect(elapsed < .seconds(3),
+            "Slow recognition took \(elapsed); expected under 3 seconds")
 }
 
 @Test("Quick accurate recognition does not call fast")
@@ -81,6 +86,8 @@ func quickAccurateSkipsFast() async throws {
     let photo = try SyntheticPanel.photo()
     let image = try photo.cgImage()
     let counter = FastCallCounter()
+    let clock = ContinuousClock()
+    let start = clock.now
 
     let result = try await LabelReader.recognizeText(
         in: image,
@@ -96,9 +103,12 @@ func quickAccurateSkipsFast() async throws {
         }
     )
 
+    let elapsed = start.duration(to: clock.now)
+
     #expect(result.isEmpty)
-    let fastCalls = await counter.count()
-    #expect(fastCalls == 0)
+    #expect(await counter.count() == 0)
+    #expect(elapsed < .seconds(1),
+            "Quick recognition took \(elapsed); expected under 1 second")
 }
 
 @Test("Accurate recognition error falls back to fast")
@@ -153,6 +163,7 @@ func bothRecognizersFail() async throws {
     }
 }
 
+
 @Test("Cancelling recognition produces a cancelled error")
 func cancellingRecognition() async throws {
     let photo = try SyntheticPanel.photo()
@@ -171,7 +182,11 @@ func cancellingRecognition() async throws {
         )
     }
 
+    // Allow the recognition task to begin.
     try await Task.sleep(for: .milliseconds(100))
+
+    let clock = ContinuousClock()
+    let cancelTime = clock.now
     task.cancel()
 
     do {
@@ -186,4 +201,9 @@ func cancellingRecognition() async throws {
     } catch {
         Issue.record("Unexpected error type: \(error)")
     }
+
+    let elapsed = cancelTime.duration(to: clock.now)
+    #expect(elapsed < .milliseconds(500),
+            "Cancellation took \(elapsed); expected under 500 ms")
 }
+

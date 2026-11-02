@@ -38,20 +38,20 @@ public struct ButtonDetector: Sendable {
         panel: PanelQuad
     ) async throws -> [(bounds: PanelRect, confidence: Double)] {
         let sourceImage = try photo.cgImage()
+
+        // A quad that covers only the display straightens into big digit
+        // shapes that look like keys. Digits are small in the whole photo, so
+        // if a search of the whole photo finds nothing key-sized inside the
+        // quad, return nothing and let the caller fall back to the whole photo.
+        if panel != .fullFrame, try !hasBox(in: sourceImage, inside: panel) {
+            return []
+        }
+
         let image = try panel == .fullFrame
             ? sourceImage
             : straighten(sourceImage, panel: panel)
 
-        let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 30
-        request.minimumSize = 0.03
-        request.minimumConfidence = 0.5
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-
-        try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
-
-        let observations = request.results ?? []
+        let observations = try rectangles(in: image)
 
         var results: [(bounds: PanelRect, confidence: Double)] = []
 
@@ -88,13 +88,6 @@ public struct ButtonDetector: Sendable {
                 continue
             }
 
-            // A straightened display can make each digit look like a tall
-            // button-shaped rectangle. Physical keys in this detector are
-            // wider than they are tall; reject those display glyphs.
-            if bounds.height > bounds.width * 2 {
-                continue
-            }
-            
             // ignore if centers are outside the panel
             if !bounds.center.isOnPanel {
                 continue
@@ -108,6 +101,41 @@ public struct ButtonDetector: Sendable {
             )
         }
         return removeOverlappingBoxes(results)
+    }
+}
+
+private func rectangles(in image: CGImage) throws -> [VNRectangleObservation] {
+    let request = VNDetectRectanglesRequest()
+    request.maximumObservations = 30
+    request.minimumSize = 0.03
+    request.minimumConfidence = 0.5
+    request.minimumAspectRatio = 0.3
+    request.maximumAspectRatio = 1.0
+
+    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+
+    return request.results ?? []
+}
+
+/// Whether a whole-photo search finds a box centred on `panel` and no bigger
+/// than half of it.
+private func hasBox(in image: CGImage, inside panel: PanelQuad) throws -> Bool {
+    let detector = PanelDetector()
+    return try rectangles(in: image).contains { observation in
+        let corners = [
+            observation.topLeft,
+            observation.topRight,
+            observation.bottomRight,
+            observation.bottomLeft
+        ].map {
+            detector.rectify(ImagePoint(x: Double($0.x), y: 1.0 - Double($0.y)), within: panel)
+        }
+        let minX = corners.map(\.x).min()!
+        let maxX = corners.map(\.x).max()!
+        let minY = corners.map(\.y).min()!
+        let maxY = corners.map(\.y).max()!
+        let bounds = PanelRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        return bounds.width <= 0.5 && bounds.height <= 0.5 && bounds.center.isOnPanel
     }
 }
 

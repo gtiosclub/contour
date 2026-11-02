@@ -183,8 +183,11 @@ private func apply(_ reply: LabelReply, to map: SurfaceMap) throws -> SurfaceMap
             return nil
         }
         var result = button
-        result.label = labeled.label
-        if reply.start == id, !result.label!.localizedCaseInsensitiveContains("start") {
+        // The server sends "" when it has no text for a key. Keep V's label.
+        if !labeled.label.isEmpty {
+            result.label = labeled.label
+        }
+        if reply.start == id, result.label?.localizedCaseInsensitiveContains("start") != true {
             result.label = "Start"
         }
         return result

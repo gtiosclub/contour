@@ -158,8 +158,12 @@ func pulsingFollowsTheState() async {
 }
 
 @Test("present returns right away and never traps, for every kind of state")
+@MainActor
 func presentReturnsPromptly() async {
     let engine = LiveFeedbackEngine()
+    // Policy/lifecycle timing is deterministic without opening an audio device.
+    // Actual combined playback is verified on a physical phone.
+    engine.setChannels(audio: false, voice: false, haptics: false)
     let states = [state(distance: 1), state(distance: 0.4), state(distance: 0), state(distance: nil)]
         + OutcomeSignal.allCases.map { GuidanceState.outcome($0, at: Date(timeIntervalSince1970: 0)) }
 
