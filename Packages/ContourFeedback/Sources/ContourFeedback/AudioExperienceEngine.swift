@@ -21,8 +21,20 @@ public final class AudioExperienceEngine {
         distance.flatMap { Self.frequency(for: $0) }
     }
 
-    @ObservationIgnored private let audioEngine = AVAudioEngine()
-    @ObservationIgnored private let player = AVAudioPlayerNode()
+    @ObservationIgnored private var preparedEngine: AVAudioEngine?
+    @ObservationIgnored private var preparedPlayer: AVAudioPlayerNode?
+    private var audioEngine: AVAudioEngine {
+        if let preparedEngine { return preparedEngine }
+        let engine = AVAudioEngine()
+        preparedEngine = engine
+        return engine
+    }
+    private var player: AVAudioPlayerNode {
+        if let preparedPlayer { return preparedPlayer }
+        let node = AVAudioPlayerNode()
+        preparedPlayer = node
+        return node
+    }
     @ObservationIgnored private var tone: AVAudioPCMBuffer?
     @ObservationIgnored private var successTone: AVAudioPCMBuffer?
     @ObservationIgnored private var successID: UUID?
@@ -33,8 +45,8 @@ public final class AudioExperienceEngine {
 
     isolated deinit {
         pulseTask?.cancel()
-        player.stop()
-        audioEngine.stop()
+        preparedPlayer?.stop()
+        preparedEngine?.stop()
     }
 
     /// Distance is in normalized panel units. d=0 → 6 Hz, d=0.5 → 3.5 Hz,
@@ -120,8 +132,8 @@ public final class AudioExperienceEngine {
         isRunning = false
         pulseTask?.cancel()
         pulseTask = nil
-        player.stop()
-        audioEngine.stop()
+        preparedPlayer?.stop()
+        preparedEngine?.stop()
         lastPulse = nil
         distance = nil
     }
