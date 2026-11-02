@@ -46,7 +46,8 @@ final class TrackingDebugModel {
 
     private let sessionFactory: GuidanceSessionFactory
     private let worker: DiagnosticWorker
-    private let renderer = FrameImageRenderer()
+    private let renderImage: @MainActor (CameraFrame) async -> CGImage?
+    private let displayNow: @MainActor () -> ContinuousClock.Instant
     private let evaluator: TrackingQualityEvaluator
     private var previous: TrackingObservation?
     private var referenceGeneration: UInt64 = 0
@@ -55,11 +56,16 @@ final class TrackingDebugModel {
         subsystem: "edu.gatech.contour",
         category: "TrackingDiagnostics"
     )
-    
+
     init(processor: any TrackingFrameProcessor = FingertipFrameProcessor(),
-         sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision) {
+         sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision,
+         renderImage: (@MainActor (CameraFrame) async -> CGImage?)? = nil,
+         displayNow: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) {
         self.sessionFactory = sessionFactory
         self.worker = DiagnosticWorker(processor: processor)
+        let renderer = FrameImageRenderer()
+        self.renderImage = renderImage ?? { await renderer.image(for: $0) }
+        self.displayNow = displayNow
         var thresholds = TrackingQualityThresholds()
         thresholds.panelRequired = false
         self.evaluator = TrackingQualityEvaluator(thresholds: thresholds)
@@ -124,6 +130,7 @@ final class TrackingDebugModel {
                 let pair = AsyncStream<LiveTrackingSample>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 let source = try sessionFactory(camera, method, options, { pair.continuation.yield($0) })
                 await source.use(reference)
+                guard !Task.isCancelled, referenceGeneration == session else { return }
                 let drive = Task {
                     for await _ in source.frames() {
                         if Task.isCancelled { break }
@@ -131,19 +138,18 @@ final class TrackingDebugModel {
                     pair.continuation.finish()
                 }
                 await withTaskCancellationHandler {
-                    var lastDisplay = Date.distantPast
+                    var lastDisplay: ContinuousClock.Instant?
                     for await sample in pair.stream {
                         guard !Task.isCancelled, referenceGeneration == session else { break }
                         // Production processes every delivered frame; UI draws at most 10 Hz.
-                        guard sample.cameraFrame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
-                        lastDisplay = sample.cameraFrame.timestamp
+                        guard lastDisplay.map({ $0.duration(to: displayNow()) >= .milliseconds(100) }) ?? true else { continue }
                         let finger = await visualFingertip(
                             in: sample.cameraFrame,
                             panelTracked: sample.panelQuad != nil,
                             fingertip: sample.imageFingertip
                         )
 
-                        guard let rendered = await renderer.image(for: sample.cameraFrame) else {
+                        guard let rendered = await renderImage(sample.cameraFrame) else {
                             continue
                         }
 
@@ -165,6 +171,7 @@ final class TrackingDebugModel {
                         )
 
                         displayedFrame = display
+                        lastDisplay = displayNow()
                         acceptedFeaturePoints = sample.featureDiagnostics?.inlierPoints ?? []
                         latest = finger
                         assessment = sample.assessment
@@ -176,14 +183,13 @@ final class TrackingDebugModel {
                 drive.cancel()
                 await drive.value
             } else {
-                var lastDisplay = Date.distantPast
+                var lastDisplay: ContinuousClock.Instant?
                 for await frame in await camera.cameraFrames() {
                     try Task.checkCancellation()
                     guard referenceGeneration == session else { break }
-                    guard frame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
-                    lastDisplay = frame.timestamp
+                    guard lastDisplay.map({ $0.duration(to: displayNow()) >= .milliseconds(100) }) ?? true else { continue }
                     let result = await process(frame)
-                    guard let rendered = await renderer.image(for: frame) else {
+                    guard let rendered = await renderImage(frame) else {
                         continue
                     }
 
@@ -203,6 +209,7 @@ final class TrackingDebugModel {
                             Date().timeIntervalSince(frame.timestamp)
                         )
                     )
+                    lastDisplay = displayNow()
                 }
             }
         } catch is CancellationError {
@@ -214,6 +221,7 @@ final class TrackingDebugModel {
             running = false
             latest = nil
             displayedFrame = nil
+            acceptedFeaturePoints = []
             assessment = nil
         }
     }
