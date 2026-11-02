@@ -77,7 +77,7 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 15, panel: "hand-labelled microwave-04.jpg", say: "pause", expect: "Stop/Cancel"),
     PanelRow(n: 16, panel: "microwave1_neat.heif", say: "pause",  expect: nil),
     // No Stop or Cancel key: stop must not fall back to Start Pause.
-    // PanelRow(n: 44, panel: "angle_microwave.jpg",  say: "stop",   expect: nil),
+    PanelRow(n: 44, panel: "angle_microwave.jpg",  say: "stop",   expect: nil),
 
     // Time, timer, clock
     PanelRow(n: 17, panel: "microwave1_neat.heif", say: "timer",         expect: "Timer Set/Off"),
@@ -130,8 +130,8 @@ private func panel(with label: String, width: Double, height: Double) -> Surface
     return SurfaceMap(buttons: others + [target], confidence: 1)
 }
 
-@Test("a label taller than a quarter of the panel isn't Start (TestSet microwave-02)")
-func tallMergedLabelIsSkipped() {
+@Test("a label far taller than the panel's other labels isn't Start (TestSet microwave-02)")
+func tallMergedLabelIsNotStart() {
     let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
     #expect(TargetMatcher().match("start", in: map) == nil)
 }
@@ -152,5 +152,31 @@ func startCancelIsSkipped() {
 func heightRuleIsStartOnly() {
     let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
     #expect(TargetMatcher().match("unlock", in: map)?.button.label == "Start Pause Door Unlock")
+}
+
+@Test("a printed Start in the display loses to the taller Start Pause key (Neat1, microwave-08)")
+func printedStartLosesToKey() {
+    var map = panel(with: "Start Pause", width: 0.24, height: 0.05)
+    map.buttons.append(SurfaceMap.Button(label: "Start", bounds: PanelRect(x: 0.57, y: 0.26, width: 0.07, height: 0.01), confidence: 0.5))
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
+}
+
+@Test("\"Start Pause Unlock Door\" isn't Start (angle_microwave at 720)")
+func startUnlockDoorIsNotStart() {
+    let map = panel(with: "Start Pause Unlock Door", width: 0.1, height: 0.1)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
+@Test("cancel doesn't land on a merged Start Cancel (neat-oven)")
+func cancelIsNotStartCancel() {
+    let merged = SurfaceMap.Button(label: "Start Cancel", bounds: PanelRect(x: 0.78, y: 0.03, width: 0.22, height: 0.1), confidence: 0.5)
+    #expect(TargetMatcher().match("cancel", in: SurfaceMap(buttons: [merged], confidence: 1)) == nil)
+}
+
+@Test("a label with no finite height doesn't break the height rule")
+func nonFiniteHeightIsIgnored() {
+    var map = panel(with: "Start Pause", width: 0.33, height: 0.11)
+    map.buttons.append(SurfaceMap.Button(label: "Clock", bounds: PanelRect(x: 0, y: 0, width: 0.1, height: .nan), confidence: 1))
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
 }
 

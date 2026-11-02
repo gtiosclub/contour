@@ -111,8 +111,9 @@ public struct TargetMatcher: Sendable {
     /// Labels over 2.5x the panel's median label height are merged keys.
     /// Real Start keys are 1.0–1.9x; merged labels 2.9–3.5x.
     private func heightLimit(_ map: SurfaceMap) -> Double {
-        let heights = map.buttons.filter { $0.label != nil }.map(\.bounds.height).sorted()
-        return heights.isEmpty ? 1 : 2.5 * heights[heights.count / 2]
+        let heights = map.buttons.filter { $0.label != nil }.map(\.bounds.height)
+                    .filter(\.isFinite).sorted()
+        return heights.isEmpty ? .infinity : 2.5 * heights[heights.count / 2]
     }
 
     // MARK: - Text helpers
@@ -176,8 +177,12 @@ public struct TargetMatcher: Sendable {
         // A number only matches a key that is exactly that number.
         let wantsNumber = wanted.allSatisfy { $0.allSatisfy(\.isNumber) }
         if wantsNumber && have != wanted { return nil }
-        // "start" never means Delay Start or Time Start.
-        if wanted.contains("start"), have.contains("delay") || have.contains("time") || have.contains("cancel") { return nil }
+        // "start" never means Delay Start, Time Start, or a merged
+        // Start Cancel or Start Pause Unlock Door.
+        let notStart: Set = ["delay", "time", "cancel", "unlock", "door"]
+        if wanted.contains("start"), !notStart.isDisjoint(with: have) { return nil }
+        // "cancel" never lands on a merged Start Cancel.
+        if wanted.contains("cancel"), have.contains("start") { return nil }
         return have
     }
 
@@ -232,7 +237,20 @@ public struct TargetMatcher: Sendable {
     /// Empty = not on the panel, one = a match, several = a tie.
     private func lookup(_ request: String, in map: SurfaceMap) -> [TargetMatch] {
         let exact = exactMatches(request, in: map)
-        return exact.isEmpty ? wordMatches(request, in: map) : exact
+        if exact.isEmpty { return wordMatches(request, in: map) }
+        // A printed "Start" (like a light in the display) loses to the one
+        // taller key with start on it.
+        if exact.count == 1, exact[0].button.confidence < 1, words(request).contains("start") {
+            let printed = exact[0].button
+            let limit = heightLimit(map)
+            let keys = map.buttons.filter { button in
+                guard let label = button.label else { return false }
+                return button.bounds.height > printed.bounds.height && button.bounds.height <= limit
+                    && keyWords(label, for: ["start"])?.contains("start") == true
+            }
+            if keys.count == 1 { return [TargetMatch(button: keys[0], confidence: 0.8)] }
+        }
+        return exact
     }
 
     // MARK: - Match
