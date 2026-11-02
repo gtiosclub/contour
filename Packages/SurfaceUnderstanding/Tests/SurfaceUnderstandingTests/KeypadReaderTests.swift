@@ -495,3 +495,61 @@ func quadMissingTheKeypad() async throws {
     #expect(!reading.added)
     #expect(reading.buttons == buttons)
 }
+
+// MARK: - Recorded camera frames
+
+/// Point CONTOUR_FRAMES_DIR at a folder of NAME.jpg with NAME.json beside it, as
+/// the app's frame recorder writes them, for a table of what real scans get. The
+/// frames aren't in the repo, so this skips everywhere else, CI included.
+@Test(
+    "real frames scoreboard",
+    .enabled(
+        if: ProcessInfo.processInfo.environment["CONTOUR_FRAMES_DIR"]?.isEmpty == false,
+        "Set CONTOUR_FRAMES_DIR to a folder of recorded camera frames."
+    ),
+    .timeLimit(.minutes(10))
+)
+func realFramesScoreboard() async throws {
+    let directory = URL(fileURLWithPath: try #require(ProcessInfo.processInfo.environment["CONTOUR_FRAMES_DIR"]))
+    let frames = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        .filter { $0.pathExtension == "jpg" }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    let first = try #require(frames.first)
+    guard try await accurateWorks(on: try recordedPhoto(first)) else {
+        Issue.record(".accurate text recognition doesn't run on this machine")
+        return
+    }
+
+    print("| Frame | Quad | Digits | Types 1,3,0 | Start | Seconds |")
+    print("| --- | --- | ---: | --- | --- | ---: |")
+    var typeable = 0, typeableWithStart = 0, seconds: [Double] = []
+    for url in frames {
+        let photo = try recordedPhoto(url)
+        let started = ContinuousClock.now
+        let detection = try await LiveSurfaceUnderstanding().detectPanel(from: photo)
+        let duration = started.duration(to: .now).components
+        seconds.append(Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
+
+        let matcher = TargetMatcher()
+        let digits = (0...9).filter { matcher.match(String($0), in: detection.map) != nil }.count
+        let types = ["1", "3", "0"].allSatisfy { matcher.match($0, in: detection.map) != nil }
+        let start = matcher.match("start", in: detection.map) != nil
+        typeable += types ? 1 : 0
+        typeableWithStart += types && start ? 1 : 0
+        print("| \(url.deletingPathExtension().lastPathComponent) | \(detection.quad == .fullFrame ? "full frame" : "quad") | \(digits) | \(types ? "yes" : "no") | \(start ? "yes" : "no") | \(String(format: "%.2f", seconds.last!)) |")
+    }
+    let middle = seconds.sorted()[seconds.count / 2]
+    print("Of \(frames.count) frames: \(typeable) can type 1,3,0 and \(typeableWithStart) also find Start. Median \(String(format: "%.2f", middle)) s, slowest \(String(format: "%.2f", seconds.max() ?? 0)) s. This counts keys on the map; whether they're on the right spot takes an eye on the frame.")
+}
+
+private func recordedPhoto(_ url: URL) throws -> PanelPhoto {
+    let sidecar = url.deletingPathExtension().appendingPathExtension("json")
+    let meta = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: sidecar)) as? [String: Any])
+    let size = try #require(meta["pixelSize"] as? [String: Int])
+    return PanelPhoto(
+        data: try Data(contentsOf: url),
+        pixelSize: PixelSize(width: try #require(size["width"]), height: try #require(size["height"])),
+        orientation: PhotoOrientation(rawValue: meta["orientation"] as? String ?? "up") ?? .up,
+        timestamp: .distantPast
+    )
+}
