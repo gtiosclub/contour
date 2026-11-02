@@ -106,6 +106,44 @@ func threeOverlappingBoxesKeepValidKeys() {
     }
 }
 
+@Test("half-overlapping boxes remain valid in both horizontal orders")
+func halfOverlappingBoxesRemainValidInBothHorizontalOrders() {
+    let first = PanelRect(x: 0.10, y: 0.10, width: 0.20, height: 0.20)
+    let second = PanelRect(x: 0.25, y: 0.15, width: 0.20, height: 0.10)
+
+    for results in [
+        [(bounds: first, confidence: 1.0), (bounds: second, confidence: 1.0)],
+        [(bounds: second, confidence: 1.0), (bounds: first, confidence: 1.0)]
+    ] {
+        let found = removeOverlappingBoxes(results)
+
+        #expect(found.count == 2)
+        #expect(found.allSatisfy { $0.bounds.width > 0 && $0.bounds.height > 0 })
+        #expect(found.contains { $0.bounds.contains(first.center) })
+        #expect(found.contains { $0.bounds.contains(second.center) })
+        #expect(!boxesOverlap(found[0].bounds, found[1].bounds))
+    }
+}
+
+@Test("half-overlapping boxes remain valid in both vertical orders")
+func halfOverlappingBoxesRemainValidInBothVerticalOrders() {
+    let first = PanelRect(x: 0.10, y: 0.50, width: 0.20, height: 0.20)
+    let second = PanelRect(x: 0.10, y: 0.42, width: 0.20, height: 0.10)
+
+    for results in [
+        [(bounds: first, confidence: 1.0), (bounds: second, confidence: 1.0)],
+        [(bounds: second, confidence: 1.0), (bounds: first, confidence: 1.0)]
+    ] {
+        let found = removeOverlappingBoxes(results)
+
+        #expect(found.count == 2)
+        #expect(found.allSatisfy { $0.bounds.width > 0 && $0.bounds.height > 0 })
+        #expect(found.contains { $0.bounds.contains(first.center) })
+        #expect(found.contains { $0.bounds.contains(second.center) })
+        #expect(!boxesOverlap(found[0].bounds, found[1].bounds))
+    }
+}
+
 @Test("boxes just outside the panel edge finish trimming")
 func boxesJustOutsidePanelEdgeFinishTrimming() {
     let first = PanelRect(
@@ -131,5 +169,14 @@ func boxesJustOutsidePanelEdgeFinishTrimming() {
         finished.signal()
     }
 
-    #expect(finished.wait(timeout: .now() + 3) == .success)
+    let waitResult = finished.wait(timeout: .now() + 3)
+    #expect(waitResult == .success)
+    guard waitResult == .success else {
+        return
+    }
+
+    let found = removeOverlappingBoxes(results)
+    #expect(found.count == 2)
+    #expect(found.allSatisfy { $0.bounds.width > 0 && $0.bounds.height > 0 })
+    #expect(!boxesOverlap(found[0].bounds, found[1].bounds))
 }
