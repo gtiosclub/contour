@@ -237,6 +237,12 @@ public final class HapticEngineManager {
 
     private func requireEngine() throws -> CHHapticEngine {
         if let engine { return engine }
+        let began = ContinuousClock.now
+        defer {
+            let elapsed = began.duration(to: .now).components
+            let milliseconds = Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
+            logger.debug("Haptic engine creation attempt: \(milliseconds, privacy: .public) ms")
+        }
         let engine = try CHHapticEngine()
         engine.playsHapticsOnly = true
         engine.resetHandler = { [weak self] in
@@ -252,6 +258,12 @@ public final class HapticEngineManager {
     private func startEngineIfNeeded() throws {
         let engine = try requireEngine()
         if engineIsStarted { return }
+        let began = ContinuousClock.now
+        defer {
+            let elapsed = began.duration(to: .now).components
+            let milliseconds = Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
+            logger.debug("Haptic engine start attempt: \(milliseconds, privacy: .public) ms")
+        }
         try engine.start()
         engineIsStarted = true
     }

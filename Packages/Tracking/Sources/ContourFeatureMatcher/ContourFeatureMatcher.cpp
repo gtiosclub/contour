@@ -42,10 +42,14 @@ struct CFTTracker {
 
     std::vector<CFTPoint> lastInlierPoints;
     std::vector<int32_t> lastInlierIDs;
+    /// Whether the most recent match was accepted. Lost frames keep their
+    /// inliers as diagnostics but never count as calibration evidence.
+    bool lastTracked = false;
 
     void clearEvidence() {
         lastInlierPoints.clear();
         lastInlierIDs.clear();
+        lastTracked = false;
     }
 
     void unregister() {
@@ -389,6 +393,7 @@ CFTStatus cft_match_frame(CFTTracker *tracker, const CFTGrayImage *frame, CFTMat
         out = CFTMatchResult{};
         tracker->clearEvidence();
     }
+    tracker->lastTracked = status == CFT_STATUS_OK;
     if (status == CFT_STATUS_LOST) {
         std::fill(std::begin(out.corners), std::end(out.corners), CFTPoint{0, 0});
         out.confidence = 0;
@@ -457,6 +462,22 @@ void cft_restore_all_features(CFTTracker *tracker) {
 int32_t cft_active_feature_count(const CFTTracker *tracker) {
     if (tracker == nullptr || !tracker->registered) return 0;
     return static_cast<int32_t>(tracker->activeIDs.size());
+}
+
+CFTStatus cft_observe_calibration_view(CFTTracker *tracker) {
+    if (tracker == nullptr) return CFT_STATUS_INVALID_ARGUMENT;
+    if (!tracker->registered) return CFT_STATUS_NOT_REGISTERED;
+    // Counting persistent features is Visual tracking 4 (#84).
+    return tracker->lastTracked ? CFT_STATUS_OK : CFT_STATUS_LOST;
+}
+
+int32_t cft_finish_calibration(CFTTracker *tracker) {
+    (void)tracker;
+    return -1;
+}
+
+void cft_reset_calibration(CFTTracker *tracker) {
+    cft_restore_all_features(tracker);
 }
 
 const char *cft_status_description(CFTStatus status) {

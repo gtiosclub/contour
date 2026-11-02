@@ -21,6 +21,7 @@ public final class HapticsExperienceEngine {
         case continuous = "Continuous"
     }
 
+    public private(set) var isHoldingTarget = false
     public private(set) var distance: Double?
     public private(set) var isRunning = false
     public private(set) var mode: Mode = .pulsed
@@ -40,6 +41,8 @@ public final class HapticsExperienceEngine {
     #if os(iOS)
     @ObservationIgnored private let successFeedback = UINotificationFeedbackGenerator()
     #endif
+    @ObservationIgnored private let onSuccess: (@MainActor () -> Void)?
+    @ObservationIgnored private var entryPlayer: (any CHHapticPatternPlayer)?
     @ObservationIgnored private let onPulse: (@MainActor () -> Void)?
     @ObservationIgnored private var hardwareEngine: CHHapticEngine?
     @ObservationIgnored private var continuousPlayer: (any CHHapticAdvancedPatternPlayer)?
@@ -53,8 +56,9 @@ public final class HapticsExperienceEngine {
     @ObservationIgnored private var externallyClocked = false
 
     /// An injected callback observes beats without creating a hardware engine.
-    public init(onPulse: (@MainActor () -> Void)? = nil) {
+    public init(onPulse: (@MainActor () -> Void)? = nil, onSuccess: (@MainActor () -> Void)? = nil) {
         self.onPulse = onPulse
+        self.onSuccess = onSuccess
         #if os(iOS)
         isSupported = CHHapticEngine.capabilitiesForHardware().supportsHaptics
         #else
@@ -115,6 +119,11 @@ public final class HapticsExperienceEngine {
     /// With an external clock, the caller supplies far beats using pulse(at:).
     /// The internal loop only smooths continuous parameters and checks lifecycle.
     public func start(distance: Double, externallyClocked: Bool = false) {
+        if isHoldingTarget {
+            try? entryPlayer?.stop(atTime: CHHapticTimeImmediate)
+            entryPlayer = nil
+        }
+        isHoldingTarget = false
         update(distance: distance)
         guard self.distance != nil, !isRunning else { return }
         lastError = nil
@@ -146,6 +155,40 @@ public final class HapticsExperienceEngine {
         } catch {
             fail(error)
         }
+    }
+
+    /// Distinct, strong, smooth on-target texture. Timing belongs to guidance.
+    public func holdOnTarget() {
+        let entering = !isHoldingTarget
+        if !isRunning { start(distance: 0, externallyClocked: true) }
+        guard isRunning else { return }
+        isHoldingTarget = true
+        distance = 0
+        mode = .continuous
+        sharpness = 0.12
+        do {
+            if entering { try playTargetEntryTap() }
+            try synchronizeContinuousOutput()
+        } catch { fail(error) }
+    }
+
+    /// An 80 ms maximum-strength contact pulse layered over the smooth hold.
+    /// Muting still suppresses it; the strength slider controls the sustained hold.
+    private func playTargetEntryTap() throws {
+        guard overallIntensity > 0 else { return }
+        if let onPulse { onPulse(); return }
+        guard let hardwareEngine else { return }
+        let tap = CHHapticEvent(eventType: .hapticContinuous, parameters: [
+            CHHapticEventParameter(parameterID: .hapticIntensity, value: 1),
+            CHHapticEventParameter(parameterID: .hapticSharpness, value: 1),
+        ], relativeTime: 0, duration: 0.08)
+        entryPlayer = try hardwareEngine.makePlayer(with: CHHapticPattern(events: [tap], parameters: []))
+        try entryPlayer?.start(atTime: CHHapticTimeImmediate)
+    }
+
+    private var continuousTarget: (intensity: Double, sharpness: Double) {
+        if isHoldingTarget { return (overallIntensity, 0.12) }
+        return Self.continuousParameters(for: distance ?? 0, intensity: overallIntensity)!
     }
 
     public func update(distance: Double?) {
@@ -199,7 +242,9 @@ public final class HapticsExperienceEngine {
     /// The caller decides when arrival occurs and ensures one signal per arrival.
     public func playSuccess() {
         stop()
-        guard isSupported, overallIntensity > 0, onPulse == nil else { return }
+        guard overallIntensity > 0 else { return }
+        if let onSuccess { onSuccess(); return }
+        guard isSupported, onPulse == nil else { return }
         #if os(iOS)
         guard UIApplication.shared.applicationState == .active else { return }
         successFeedback.notificationOccurred(.success)
@@ -208,9 +253,12 @@ public final class HapticsExperienceEngine {
 
     public func stop() {
         isRunning = false
+        isHoldingTarget = false
         sessionID = nil
         renderTask?.cancel()
         renderTask = nil
+        try? entryPlayer?.stop(atTime: CHHapticTimeImmediate)
+        entryPlayer = nil
         try? beatPlayer?.stop(atTime: CHHapticTimeImmediate)
         stopContinuousOutput()
         hardwareEngine?.stop(completionHandler: nil)
@@ -227,7 +275,7 @@ public final class HapticsExperienceEngine {
     }
 
     private func tick() -> Bool {
-        guard isRunning, let distance, let frequencyHz else { return false }
+        guard isRunning, distance != nil, let frequencyHz else { return false }
         #if os(iOS)
         guard UIApplication.shared.applicationState == .active else {
             stop()
@@ -238,7 +286,7 @@ public final class HapticsExperienceEngine {
         let elapsed = lastRender.map { $0.duration(to: now) }
         let dt = elapsed.map { Double($0.components.seconds) + Double($0.components.attoseconds) / 1e18 } ?? 0.02
         lastRender = now
-        let target = Self.continuousParameters(for: distance, intensity: overallIntensity)!
+        let target = continuousTarget
         let blend = 1 - exp(-max(0, dt) / 0.06)
         // Ease texture changes; the smooth distance curve also scales strength
         // within 70–100% of the selected maximum.
@@ -279,11 +327,11 @@ public final class HapticsExperienceEngine {
 
     private func synchronizeContinuousOutput() throws {
         intensity = overallIntensity
-        guard mode == .continuous, overallIntensity > 0, let distance else {
+        guard mode == .continuous, overallIntensity > 0, distance != nil else {
             stopContinuousOutput()
             return
         }
-        let target = Self.continuousParameters(for: distance, intensity: overallIntensity)!
+        let target = continuousTarget
         intensity = target.intensity
         if onPulse != nil {
             continuousPlayerActive = true

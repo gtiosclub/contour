@@ -148,6 +148,19 @@ void cft_restore_all_features(CFTTracker *tracker);
 /// Number of features currently used for matching.
 int32_t cft_active_feature_count(const CFTTracker *tracker);
 
+// MARK: Calibration (the hybrid coordinator decides which views count).
+
+/// Records the most recent successful match as one accepted calibration view.
+/// CFT_STATUS_LOST when the latest attempt was not a successful match.
+CFTStatus cft_observe_calibration_view(CFTTracker *tracker);
+
+/// Ends calibration. Returns the number of features now used for matching when
+/// a selection was accepted, or -1 when the original set is kept.
+int32_t cft_finish_calibration(CFTTracker *tracker);
+
+/// Clears calibration evidence and matches against every original feature again.
+void cft_reset_calibration(CFTTracker *tracker);
+
 const char *cft_status_description(CFTStatus status);
 const char *cft_loss_reason_description(CFTLossReason reason);
 

@@ -69,7 +69,10 @@ nonisolated final class CameraService: NSObject, CameraControl,
                         }
                     }
                     // A run is live again, so an earlier failure no longer applies.
-                    self.onMain { $0.error = nil }
+                    self.onMain { status in
+                        status.error = nil
+                        status.revision &+= 1
+                    }
                     continuation.resume()
                 } catch {
                     self.frames.end()
@@ -98,7 +101,6 @@ nonisolated final class CameraService: NSObject, CameraControl,
         await stop()
         do { try await start() }
         catch { status.error = error.localizedDescription }
-        status.revision &+= 1
     }
 
     /// Starting values for comparing glare handling, in EV. The device's range
