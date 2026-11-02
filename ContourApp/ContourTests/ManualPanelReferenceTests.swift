@@ -84,11 +84,20 @@ struct ManualPanelReferenceTests {
             target: ImagePoint(x: 0.5, y: 0.5))
         let target = try #require(reference.detection.map.buttons.first)
         let feedback = PrintingFeedbackEngine(isPrinting: false)
+        // Arrival is only confirmed after GuidanceArrivalHold's dwell, so the
+        // finger rests on the target and the guidance clock advances 100 ms
+        // per frame: 16 frames span 1.5 s, past the 1.25 s hold.
+        let onTarget = PanelPoint(x: 0.5, y: 0.5)
+        let epoch = ContinuousClock.now
+        var tick = 0
         let pipeline = ContourPipeline(
             surfaceUnderstanding: MockSurfaceUnderstanding(failure: .noPanelFound),
-            tracking: MockTrackingSource(target: PanelPoint(x: 0.5, y: 0.5),
-                                         steps: 3, interval: .milliseconds(1)),
-            feedback: feedback, liveComponents: [])
+            tracking: MockTrackingSource(start: onTarget, target: onTarget,
+                                         steps: 15, interval: .milliseconds(1)),
+            feedback: feedback, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
         await pipeline.replaceReference(with: reference)
         #expect(pipeline.canGuide)
         await pipeline.guide(to: target)
