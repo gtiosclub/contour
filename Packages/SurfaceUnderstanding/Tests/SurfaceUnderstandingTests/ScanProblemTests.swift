@@ -1,7 +1,6 @@
-
 //
 //  ScanProblemTests.swift
-//  SurfaceUnderstandingTests
+//  SurfaceUnderstanding - Surface / Labels
 //
 
 import ContourCore
@@ -100,6 +99,7 @@ func scanProblemSpokenMessages() {
         .scanFailed,
         .panelCutOff,
         .noButtons,
+        .aim(target: "Start", advice: .moveCloser),
         .cantRead(target: "Start"),
         .notOnPanel(target: "Start")
     ]
@@ -108,6 +108,7 @@ func scanProblemSpokenMessages() {
 
     #expect(messages.allSatisfy { !$0.isEmpty })
     #expect(Set(messages).count == messages.count)
+    #expect(ScanProblem.aim(target: "Start", advice: .moveCloser).spoken == "I couldn't find Start. Move closer")
 }
 
 @Test("full-frame detection reports a cut-off panel")
@@ -178,6 +179,48 @@ func scanProblemCantRead() {
     )
 }
 
+@Test("near misses are classified through after")
+func scanProblemNearMissesThroughAfter() {
+    let photo = testPhoto()
+    let original = MockSurfaceMaps.microwave
+
+    func detection(replacing oldLabel: String, with newLabel: String?) -> PanelDetection {
+        let buttons = original.buttons.map { button in
+            SurfaceMap.Button(
+                id: button.id,
+                label: button.label == oldLabel ? newLabel : button.label,
+                bounds: button.bounds,
+                confidence: button.confidence
+            )
+        }
+
+        let map = SurfaceMap(
+            buttons: buttons,
+            confidence: original.confidence
+        )
+
+        return testDetection(photo: photo, quad: neatQuad, map: map)
+    }
+
+    let tart = detection(replacing: "Start", with: "TART")
+    #expect(
+        ScanProblem.after(tart, photo: photo, target: "Start")
+            == .cantRead(target: "Start")
+    )
+
+    let missing = detection(replacing: "Start", with: nil)
+    #expect(
+        ScanProblem.after(missing, photo: photo, target: "Start")
+            == .notOnPanel(target: "Start")
+    )
+
+    let timer = detection(replacing: "Popcorn", with: "Timer")
+    #expect(
+        ScanProblem.after(timer, photo: photo, target: "time")
+            == .notOnPanel(target: "time")
+    )
+}
+
 
 @Test(
     "synthetic full-frame panel reports panelCutOff",
@@ -225,6 +268,10 @@ func scanProblemSyntheticSmallPanel() async throws {
             photo: photo,
             target: "Start"
         ) == nil
+    )
+    #expect(
+        ScanProblem.after(detection, photo: photo, target: "Pizza")
+            == .aim(target: "Pizza", advice: .moveCloser)
     )
 }
 
@@ -280,47 +327,86 @@ func scanProblemMultiwordNearMiss() {
     )
 }
 
-@Test("near miss requires exactly one edit")
-func scanProblemEditDistance() {
+@Test("Angle requires moving closer for a missing target")
+func scanProblemAngleAim() {
+    let photo = testPhoto()
+    let quad = testQuad(
+        (0.38, 0.28),
+        (0.71, 0.27),
+        (0.66, 0.70),
+        (0.39, 0.80)
+    )
+
+    let detection = testDetection(photo: photo, quad: quad)
+
+    #expect(
+        ScanProblem.after(detection, photo: photo, target: "Pizza")
+            == .aim(target: "Pizza", advice: .moveCloser)
+    )
+
+    #expect(
+        ScanProblem.after(detection, photo: photo, target: "Start") == nil
+    )
+}
+
+@Test("Angled panel advice works for upright and rotated photos")
+func scanProblemAngledOrientations() {
+    let quad = testQuad(
+        (0.36, 0.04),
+        (0.70, 0.05),
+        (0.63, 0.80),
+        (0.20, 0.95)
+    )
+
+    for photo in [
+        testPhoto(orientation: .up, width: 720, height: 1280),
+        testPhoto(orientation: .right, width: 1280, height: 720)
+    ] {
+        let detection = testDetection(photo: photo, quad: quad)
+
+        #expect(
+            ScanProblem.after(detection, photo: photo, target: "Pizza")
+                == .aim(target: "Pizza", advice: .tooAngled)
+        )
+    }
+}
+
+@Test("Framing advice takes priority over an OCR near miss")
+func scanProblemGlarePriority() {
+    let photo = testPhoto()
+    let quad = testQuad(
+        (0.41, 0.12),
+        (0.90, 0.11),
+        (0.89, 0.84),
+        (0.02, 0.87)
+    )
+
     let original = MockSurfaceMaps.microwave
 
-    func mapWithStartLabel(_ label: String) -> SurfaceMap {
-        let buttons = original.buttons.map { button in
-            SurfaceMap.Button(
-                id: button.id,
-                label: button.label == "Start"
-                    ? label
-                    : button.label,
-                bounds: button.bounds,
-                confidence: button.confidence
-            )
-        }
-
-        return SurfaceMap(
-            buttons: buttons,
-            confidence: original.confidence
+    let changedButtons = original.buttons.map { button in
+        SurfaceMap.Button(
+            id: button.id,
+            label: button.label == "Start" ? "SIART" : button.label,
+            bounds: button.bounds,
+            confidence: button.confidence
         )
     }
 
+    let map = SurfaceMap(
+        buttons: changedButtons,
+        confidence: original.confidence
+    )
+
+    let detection = testDetection(photo: photo, quad: quad, map: map)
+
     #expect(
-        ScanProblem.isNearMiss(
-            target: "Start",
-            in: mapWithStartLabel("TART")
-        )
+        ScanProblem.after(detection, photo: photo, target: "Pizza")
+            == .aim(target: "Pizza", advice: .tooAngled)
     )
 
     #expect(
-        ScanProblem.isNearMiss(
-            target: "Start",
-            in: mapWithStartLabel("SIART")
-        )
-    )
-
-    #expect(
-        !ScanProblem.isNearMiss(
-            target: "Start",
-            in: mapWithStartLabel("XYZ")
-        )
+        ScanProblem.after(detection, photo: photo, target: "Start")
+            == .aim(target: "Start", advice: .tooAngled)
     )
 }
 

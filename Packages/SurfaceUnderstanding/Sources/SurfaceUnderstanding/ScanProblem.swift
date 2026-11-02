@@ -1,7 +1,6 @@
-
 //
 //  ScanProblem.swift
-//  SurfaceUnderstanding
+//  SurfaceUnderstanding - Surface / Labels
 //
 //  Converts scan failures and missing targets into feedback
 //  that Experience can speak.
@@ -15,6 +14,7 @@ public enum ScanProblem: Hashable, Sendable {
     case scanFailed
     case panelCutOff
     case noButtons
+    case aim(target: String, advice: PanelFraming.Advice)
     case cantRead(target: String)
     case notOnPanel(target: String)
 
@@ -32,6 +32,9 @@ public enum ScanProblem: Hashable, Sendable {
         case .noButtons:
             return "I can't find any buttons. Point the phone at the control panel"
 
+        case .aim(let target, let advice):
+            return "I couldn't find \(target). \(advice.spoken)"
+
         case .cantRead(let target):
             return "I think I see \(target), but I can't read it. Hold still and scan again"
 
@@ -40,6 +43,7 @@ public enum ScanProblem: Hashable, Sendable {
         }
     }
 
+    /// Converts a scan error into a problem, or nil when the scan was cancelled.
     public static func after(_ error: any Error) -> ScanProblem? {
         if error is CancellationError {
             return nil
@@ -61,6 +65,7 @@ public enum ScanProblem: Hashable, Sendable {
         return .scanFailed
     }
 
+    /// Explains why a detected panel cannot guide to the requested target.
     public static func after(
         _ detection: PanelDetection,
         photo: PanelPhoto,
@@ -80,6 +85,30 @@ public enum ScanProblem: Hashable, Sendable {
 
         if TargetMatcher().match(target, in: detection.map) != nil {
             return nil
+        }
+
+        // Determine the upright dimensions of the photo.
+        let frame: PixelSize
+
+        switch photo.orientation {
+        case .up, .down:
+            frame = photo.pixelSize
+
+        case .left, .right:
+            frame = PixelSize(
+                width: photo.pixelSize.height,
+                height: photo.pixelSize.width
+            )
+        }
+
+        // Check whether the camera needs to be repositioned.
+        let advice = PanelFraming().advice(
+            for: detection.quad,
+            frame: frame
+        )
+
+        if advice != .ready {
+            return .aim(target: target, advice: advice)
         }
 
         if isNearMiss(target: target, in: detection.map) {
