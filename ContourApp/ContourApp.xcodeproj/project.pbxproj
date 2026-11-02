@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		B6BDEE2D309942FD002C1137 /* Tracking in Frameworks */ = {isa = PBXBuildFile; productRef = B6BDEE2C309942FD002C1137 /* Tracking */; };
 		C04700020000000000000028 /* ContourCore in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000014 /* ContourCore */; };
 		C04700020000000000000029 /* SurfaceUnderstanding in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000015 /* SurfaceUnderstanding */; };
 		C0470002000000000000002A /* Tracking in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000016 /* Tracking */; };
@@ -15,7 +16,6 @@
 		C0470002000000000000002D /* ContourMocks in Frameworks */ = {isa = PBXBuildFile; productRef = C04700020000000000000019 /* ContourMocks */; };
 		C04700020000000000000050 /* ContourCore in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003C /* ContourCore */; };
 		C04700020000000000000051 /* ContourMocks in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003D /* ContourMocks */; };
-		C04700020000000000000052 /* Tracking in Frameworks */ = {isa = PBXBuildFile; productRef = C0470002000000000000003E /* Tracking */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -67,7 +67,7 @@
 			files = (
 				C04700020000000000000050 /* ContourCore in Frameworks */,
 				C04700020000000000000051 /* ContourMocks in Frameworks */,
-				C04700020000000000000052 /* Tracking in Frameworks */,
+				B6BDEE2D309942FD002C1137 /* Tracking in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -80,6 +80,7 @@
 				C04700020000000000000060 /* Config/Development.xcconfig */,
 				14A1805830536BAC00FEEF08 /* ContourApp */,
 				14A1806830536BAD00FEEF08 /* ContourTests */,
+				B6BDEE2B309942FD002C1137 /* Frameworks */,
 				14A1805730536BAC00FEEF08 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -91,6 +92,13 @@
 				14A1806530536BAD00FEEF08 /* ContourTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		B6BDEE2B309942FD002C1137 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -135,6 +143,7 @@
 			buildRules = (
 			);
 			dependencies = (
+				B6BDEE2A3092A058002C1137 /* PBXTargetDependency */,
 				14A1806730536BAD00FEEF08 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
@@ -144,7 +153,7 @@
 			packageProductDependencies = (
 				C0470002000000000000003C /* ContourCore */,
 				C0470002000000000000003D /* ContourMocks */,
-				C0470002000000000000003E /* Tracking */,
+				B6BDEE2C309942FD002C1137 /* Tracking */,
 			);
 			productName = ContourTests;
 			productReference = 14A1806530536BAD00FEEF08 /* ContourTests.xctest */;
@@ -237,6 +246,10 @@
 			target = 14A1805530536BAC00FEEF08 /* ContourApp */;
 			targetProxy = 14A1806630536BAD00FEEF08 /* PBXContainerItemProxy */;
 		};
+		B6BDEE2A3092A058002C1137 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = B6BDEE293092A058002C1137 /* Tracking */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -277,6 +290,7 @@
 				COPY_PHASE_STRIP = NO;
 				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = "$(CONTOUR_DEVELOPMENT_TEAM)";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
@@ -368,6 +382,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "$(CONTOUR_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -402,6 +417,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				XROS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Debug;
 		};
@@ -413,6 +429,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "$(CONTOUR_DEVELOPMENT_TEAM)";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -447,6 +464,7 @@
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				XROS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Release;
 		};
@@ -457,6 +475,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "$(CONTOUR_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
@@ -471,6 +490,7 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ContourApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ContourApp";
+				XROS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Debug;
 		};
@@ -481,6 +501,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = "$(CONTOUR_DEVELOPMENT_TEAM)";
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 27.0;
 				MARKETING_VERSION = 1.0;
@@ -495,6 +516,7 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ContourApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ContourApp";
+				XROS_DEPLOYMENT_TARGET = 27.0;
 			};
 			name = Release;
 		};
@@ -558,6 +580,15 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		B6BDEE293092A058002C1137 /* Tracking */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C04700020000000000000002 /* XCLocalSwiftPackageReference "../Packages/Tracking" */;
+			productName = Tracking;
+		};
+		B6BDEE2C309942FD002C1137 /* Tracking */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Tracking;
+		};
 		C04700020000000000000014 /* ContourCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ContourCore;
@@ -589,10 +620,6 @@
 		C0470002000000000000003D /* ContourMocks */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ContourMocks;
-		};
-		C0470002000000000000003E /* Tracking */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = Tracking;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

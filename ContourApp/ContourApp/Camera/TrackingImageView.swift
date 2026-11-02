@@ -11,58 +11,187 @@ struct TrackingImageView: View {
     var fingertip: ImagePoint?
     var buttons: [SurfaceMap.Button] = []
     var targetID: UUID?
+    var acceptedFeaturePoints: [ImagePoint] = []
 
     var body: some View {
-        Image(decorative: image, scale: 1)
-            .resizable()
-            .aspectRatio(CGFloat(image.width) / CGFloat(image.height), contentMode: .fit)
-            .overlay {
-                Canvas { context, size in
-                    func point(_ p: ImagePoint) -> CGPoint { CGPoint(x: p.x * size.width, y: p.y * size.height) }
+        GeometryReader { geometry in
+            let viewSize = geometry.size
+            let imageWidth = CGFloat(image.width)
+            let imageHeight = CGFloat(image.height)
+
+            let scale = min(
+                viewSize.width / imageWidth,
+                viewSize.height / imageHeight
+            )
+
+            let fittedWidth = imageWidth * scale
+            let fittedHeight = imageHeight * scale
+
+            let imageRect = CGRect(
+                x: (viewSize.width - fittedWidth) / 2,
+                y: (viewSize.height - fittedHeight) / 2,
+                width: fittedWidth,
+                height: fittedHeight
+            )
+
+            ZStack {
+                Color.black
+
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .frame(
+                        width: imageRect.width,
+                        height: imageRect.height
+                    )
+                    .position(x: imageRect.midX, y: imageRect.midY)
+
+                Canvas { context, _ in
+                    // Convert normalized image coordinates to the displayed
+                    // image rectangle, excluding the black bars.
+                    func point(_ p: ImagePoint) -> CGPoint {
+                        CGPoint(
+                            x: imageRect.minX + p.x * imageRect.width,
+                            y: imageRect.minY + p.y * imageRect.height
+                        )
+                    }
+
                     func polygon(_ corners: [ImagePoint]) -> Path {
                         var path = Path()
+
                         for (index, corner) in corners.enumerated() {
-                            if index == 0 { path.move(to: point(corner)) } else { path.addLine(to: point(corner)) }
+                            let mapped = point(corner)
+
+                            if index == 0 {
+                                path.move(to: mapped)
+                            } else {
+                                path.addLine(to: mapped)
+                            }
                         }
+
                         path.closeSubpath()
                         return path
                     }
+
+                    // NEW: draw supplied accepted feature points in purple.
+                    for feature in acceptedFeaturePoints {
+                        let p = point(feature)
+                        let radius: CGFloat = 3
+
+                        context.fill(
+                            Path(
+                                ellipseIn: CGRect(
+                                    x: p.x - radius,
+                                    y: p.y - radius,
+                                    width: radius * 2,
+                                    height: radius * 2
+                                )
+                            ),
+                            with: .color(.purple)
+                        )
+                    }
+
+                    // Existing panel outline.
                     if let quad {
-                        context.stroke(polygon([quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]),
-                                       with: .color(.yellow), lineWidth: 3)
-                        if let geometry = try? PanelHomography(quad: quad) {
+                        context.stroke(
+                            polygon([
+                                quad.topLeft,
+                                quad.topRight,
+                                quad.bottomRight,
+                                quad.bottomLeft
+                            ]),
+                            with: .color(.yellow),
+                            lineWidth: 3
+                        )
+
+                        // Existing control and target overlays.
+                        if let homography = try? PanelHomography(quad: quad) {
                             for button in buttons {
-                                let b = button.bounds
-                                let corners = [PanelPoint(x: b.minX, y: b.minY), PanelPoint(x: b.maxX, y: b.minY),
-                                               PanelPoint(x: b.maxX, y: b.maxY), PanelPoint(x: b.minX, y: b.maxY)]
-                                    .compactMap { geometry.imagePoint(for: $0) }
+                                let bounds = button.bounds
+
+                                let corners = [
+                                    PanelPoint(x: bounds.minX, y: bounds.minY),
+                                    PanelPoint(x: bounds.maxX, y: bounds.minY),
+                                    PanelPoint(x: bounds.maxX, y: bounds.maxY),
+                                    PanelPoint(x: bounds.minX, y: bounds.maxY)
+                                ].compactMap {
+                                    homography.imagePoint(for: $0)
+                                }
+
                                 guard corners.count == 4 else { continue }
+
                                 let selected = button.id == targetID
-                                context.stroke(polygon(corners), with: .color(selected ? .orange : .cyan), lineWidth: 2)
-                                if let center = geometry.imagePoint(for: b.center) {
+
+                                context.stroke(
+                                    polygon(corners),
+                                    with: .color(selected ? .orange : .cyan),
+                                    lineWidth: 2
+                                )
+
+                                if let center = homography.imagePoint(
+                                    for: bounds.center
+                                ) {
                                     let location = point(center)
+
                                     if selected {
-                                        context.stroke(Path(ellipseIn: CGRect(x: location.x - 12, y: location.y - 12,
-                                                                              width: 24, height: 24)),
-                                                       with: .color(.orange), lineWidth: 3)
+                                        context.stroke(
+                                            Path(
+                                                ellipseIn: CGRect(
+                                                    x: location.x - 12,
+                                                    y: location.y - 12,
+                                                    width: 24,
+                                                    height: 24
+                                                )
+                                            ),
+                                            with: .color(.orange),
+                                            lineWidth: 3
+                                        )
                                     }
-                                    context.draw(Text(button.label ?? "Unlabelled").font(.caption2)
-                                        .foregroundColor(selected ? .orange : .cyan),
-                                                 at: CGPoint(x: location.x, y: location.y - 15))
+
+                                    context.draw(
+                                        Text(button.label ?? "Unlabelled")
+                                            .font(.caption2)
+                                            .foregroundColor(
+                                                selected ? .orange : .cyan
+                                            ),
+                                        at: CGPoint(
+                                            x: location.x,
+                                            y: location.y - 15
+                                        )
+                                    )
                                 }
                             }
                         }
                     }
+
+                    // Existing raw fingertip overlay.
                     if let fingertip {
                         let p = point(fingertip)
-                        context.fill(Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)),
-                                     with: .color(.green))
+                        let radius: CGFloat = 6
+
+                        context.fill(
+                            Path(
+                                ellipseIn: CGRect(
+                                    x: p.x - radius,
+                                    y: p.y - radius,
+                                    width: radius * 2,
+                                    height: radius * 2
+                                )
+                            ),
+                            with: .color(.green)
+                        )
                     }
                 }
                 .allowsHitTesting(false)
             }
-            .background(.black)
+            .frame(width: viewSize.width, height: viewSize.height)
             .clipped()
+        }
+        .background(.black)
+        .aspectRatio(
+            CGFloat(image.width) / CGFloat(image.height),
+            contentMode: .fit
+        )
+        .clipped()
     }
 }
 
