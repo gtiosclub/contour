@@ -12,6 +12,7 @@
 
 import ContourCore
 import ContourMocks
+import ContourFeedback
 import Foundation
 import Testing
 import Tracking
@@ -57,8 +58,9 @@ struct PipelineWiringTests {
         await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
 
         let received = await engine.received
-        #expect(received.count == 4)
-        #expect(await engine.outcomes.last == .arrived)
+        #expect(received.count == 5)
+        #expect(received[3].vector == .onTarget && received[3].outcome == nil)
+        #expect(await engine.outcomes.isEmpty, "A stream ending on target does not complete the hold")
     }
 
     @Test("stopping guidance leaves the feedback engine with nothing to play")
@@ -190,11 +192,12 @@ struct PipelineWiringTests {
             tracking: ScriptedPrediction(script: frames), feedback: engine, liveComponents: [])
         await pipeline.guide(to: target)
         let received = await engine.received
-        try #require(received.count == 3)
+        try #require(received.count == 4)
         #expect(received[0].vector != nil && received[0].outcome == nil)
         #expect(received[1].vector == nil && received[1].outcome == nil)
-        #expect(received[2].outcome == .arrived)
-        #expect(await engine.outcomes == [.arrived])
+        #expect(received[2].vector == .onTarget && received[2].outcome == nil)
+        #expect(received[3].vector == nil)
+        #expect(await engine.outcomes.isEmpty)
     }
 
     @Test("Stop and reference replacement end an active loss episode", arguments: [false, true])
@@ -231,6 +234,97 @@ struct PipelineWiringTests {
         #expect(received.count == 3)
         #expect(received.dropFirst().allSatisfy { $0.vector == nil && $0.outcome == nil })
     }
+    private func targetFrame(fingertip: PanelPoint? = MockSurfaceMaps.microwaveStartButton.bounds.center,
+                             confidence: Double = 1) -> TrackingFrame {
+        TrackingFrame(timestamp: Date(), fingertip: fingertip,
+            panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: confidence), trackingQuality: .good)
+    }
+
+    @Test("Pipeline confirms arrival once after fresh target frames complete the hold")
+    func arrivalDwell() async {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let epoch = ContinuousClock.now
+        var tick = 0
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: (0..<16).map { _ in targetFrame() }),
+            feedback: engine, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+        let received = await engine.received
+        #expect(received.count == 14)
+        #expect(received.dropLast().allSatisfy { $0.vector == .onTarget && $0.outcome == nil })
+        #expect(await engine.outcomes == [.arrived])
+    }
+
+    @Test("Missing finger, retreat, loss and low confidence restart a pending hold", arguments: [0, 1, 2, 3])
+    func holdCancellation(reason: Int) async {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let epoch = ContinuousClock.now
+        var tick = 0
+        let interrupted: TrackingFrame
+        switch reason {
+        case 0: interrupted = targetFrame(fingertip: nil)
+        case 1: interrupted = targetFrame(fingertip: PanelPoint(x: 0, y: 0))
+        case 2: interrupted = .lost(at: Date())
+        default: interrupted = targetFrame(confidence: 0.1)
+        }
+        let script = (0..<11).map { _ in targetFrame() } + [interrupted]
+            + (0..<14).map { _ in targetFrame() }
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: script), feedback: engine, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+        let received = await engine.received
+        #expect(received.count == 26)
+        #expect(received.last?.outcome == .arrived)
+        #expect(received.dropLast().allSatisfy { $0.outcome != .arrived })
+    }
+
+    @Test("Stop, replacement and interruption cancel a pending hold", arguments: [0, 1, 2])
+    func holdCannotOutliveSession(action: Int) async throws {
+        let source = ControlledFrames()
+        let engine = LossFeedback()
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: source, feedback: engine, liveComponents: [])
+        let guiding = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
+        await source.waitForSubscription()
+        source.send(targetFrame())
+        await engine.waitForCount(1)
+        switch action {
+        case 0: await pipeline.stopGuidance()
+        case 1:
+            let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
+            let reference = try PanelReference(photo: photo, detection: PanelDetection(
+                referencePhotoID: photo.id, quad: .fullFrame, map: MockSurfaceMaps.microwave))
+            await pipeline.replaceReference(with: reference)
+        default: pipeline.interruptGuidance()
+        }
+        await guiding.value
+        source.send(targetFrame())
+        source.finish()
+        let received = await engine.received
+        #expect(received.first?.vector == .onTarget && received.first?.outcome == nil)
+        #expect(received.last?.vector == nil)
+        #expect(received.allSatisfy { $0.outcome != .arrived })
+    }
+
+    @Test("Stopping after guidance has already ended clears completed feedback")
+    func stopCompletedFeedback() async {
+        let engine = LiveFeedbackEngine()
+        engine.setChannels(audio: false, voice: false, haptics: false)
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: []), feedback: engine, liveComponents: [])
+        await engine.present(.outcome(.arrived, at: Date()))
+        #expect(engine.didReachTarget)
+        await pipeline.stopGuidance()
+        #expect(!engine.didReachTarget)
+    }
+
 }
 
 /// A tracking source that plays back fixed frames and finishes.
