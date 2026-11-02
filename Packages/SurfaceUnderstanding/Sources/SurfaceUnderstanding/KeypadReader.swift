@@ -370,17 +370,18 @@ struct KeypadReader: Sendable {
     /// them down to: Restart to start, Stars to Star, the Start of Delay Start to tart.
     static func startWord(in words: [LabelReader.Word], grid: Grid) -> LabelReader.Word? {
         let others = words.filter { word in
-            word.text.lowercased().split { !$0.isLetter }.contains { part in
-                ["smart", "stars", "stat"].contains(String(part))
-                    || ["delay", "time", "restart"].contains { editDistance(String(part), $0) <= 1 }
+            let text = word.text.lowercased()
+            return (text.split { !$0.isLetter }.map(String.init) + [text.filter(\.isLetter)]).contains { part in
+                ["smart", "stars", "stat"].contains(part)
+                    || ["delay", "time", "restart"].contains { editDistance(part, $0) <= 1 }
             }
         }
         let inReach = words.filter { word in
             grid.row(of: CGPoint(x: word.centre.x, y: word.centre.y)) >= -0.5
                 && !others.contains { other in
                     // Close beside it on the line, or on the line above or below it.
-                    abs(other.centre.y - word.centre.y) < 2 * word.height
-                        && max(other.left - word.right, word.left - other.right) < 2 * word.height
+                    abs(other.centre.y - word.centre.y) < 2 * max(word.height, other.height)
+                        && max(other.left - word.right, word.left - other.right) < 2 * max(word.height, other.height)
                 }
         }
         var found = inReach.filter { $0.text.lowercased().hasPrefix("start") }

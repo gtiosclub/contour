@@ -303,6 +303,28 @@ func startWithAnotherWord() {
     }
 }
 
+@Test("a short piece of Start, cut by a tile edge, still sees Delay or Time on the next line")
+func shortStartBesideATallerWord() {
+    // A 12 tall piece, with a 28 tall word 30 away: too far for the piece's own height.
+    let piece = LabelReader.Word(text: "otart", left: 295, right: 345, top: 714, bottom: 726)
+    for other in ["Delay", "Time"] {
+        for y in [690.0, 750.0] {
+            let taller = LabelReader.Word(text: other, left: 295, right: 345, top: y - 14, bottom: y + 14)
+            #expect(KeypadReader.startWord(in: [piece, taller], grid: startGrid) == nil, "\(other) at \(y)")
+        }
+    }
+    #expect(KeypadReader.startWord(in: [piece], grid: startGrid) == piece)
+}
+
+@Test("a Start cut out of Re-Start isn't Start")
+func startBesideRestartWithAHyphen() {
+    for text in ["Re-Start", "RE-START"] {
+        let label = word(text, x: 300, y: 720, width: 60)
+        let piece = word("Start", x: 340, y: 720, width: 30)
+        #expect(KeypadReader.startWord(in: [label, piece], grid: startGrid) == nil, "\(text)")
+    }
+}
+
 @Test("one word holding Start and Delay or Time isn't Start, but Start/Pause is")
 func startInOneWordWithAnother() {
     for text in ["Start/Time", "Time/Start", "Delay/Start", "Start/Delay"] {
