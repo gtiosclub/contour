@@ -77,7 +77,8 @@ struct KeypadReader: Sendable {
             if TargetMatcher().match("start", in: SurfaceMap(buttons: merged, confidence: 1)) == nil {
                 var start = Self.startWord(in: words, grid: grid)
                 if start == nil {
-                    let crops = try await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)
+                    // Start is extra: crops that can't be read don't cost the digits.
+                    let crops = (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
                     start = Self.startWord(in: crops, grid: grid)
                 }
                 if let start {
@@ -224,7 +225,7 @@ struct KeypadReader: Sendable {
         }
 
         /// Three boxes below the keypad where Start tends to be printed: one wide
-        /// and one to each side.
+        /// and one to each side. A keypad at the bottom of the frame has fewer, or none.
         func startCrops(in size: CGSize) -> [CGRect] {
             let cellWidth = hypot(columnStep.dx, columnStep.dy), cellHeight = hypot(rowStep.dx, rowStep.dy)
             return [(column: 1, cells: (4, 2.4)), (column: 2, cells: (2, 2)), (column: 0, cells: (2, 2))].map { (crop: (column: CGFloat, cells: (CGFloat, CGFloat))) in
@@ -232,7 +233,7 @@ struct KeypadReader: Sendable {
                 let width = crop.cells.0 * cellWidth, height = crop.cells.1 * cellHeight
                 return CGRect(x: centre.x - width / 2, y: centre.y - height / 2, width: width, height: height)
                     .intersection(CGRect(origin: .zero, size: size)).integral
-            }
+            }.filter { !$0.isEmpty }
         }
     }
 

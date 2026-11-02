@@ -317,6 +317,17 @@ func startCrops() {
     #expect(low.startCrops(in: frame).allSatisfy { $0.maxY <= frame.height })
 }
 
+@Test("a keypad at the very bottom of the frame has no Start crop off the image")
+func noStartCropOffTheImage() {
+    let bottom = KeypadReader.Grid(origin: CGPoint(x: 200, y: 1100), columnStep: CGVector(dx: 60, dy: 0),
+                                   rowStep: CGVector(dx: 0, dy: 50), read: Set("123456789"))
+    #expect(bottom.isKeypad(in: frame))
+    #expect(bottom.startCrops(in: frame).isEmpty)
+    let tilted = KeypadReader.Grid(origin: CGPoint(x: 200, y: 1090), columnStep: CGVector(dx: 60, dy: -12),
+                                   rowStep: CGVector(dx: 0, dy: 50), read: Set("123456789"))
+    #expect(tilted.startCrops(in: frame).allSatisfy { !$0.isEmpty })
+}
+
 // MARK: - Time, failure, cancellation
 
 /// Stands in for a Vision call that takes far too long and ignores cancellation:
@@ -494,6 +505,44 @@ func quadMissingTheKeypad() async throws {
     #expect(reading.fit)
     #expect(!reading.added)
     #expect(reading.buttons == buttons)
+}
+
+@Test("a keypad cut off just below the 0 keeps its ten keys when Start can't be in view",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func keypadAtTheBottomOfTheFrame() async throws {
+    // The 0 is at y = 630 and a row is 70 px, so these end 0.3 to 0.9 of a row below it.
+    for height in [651, 665, 679, 693] {
+        let (photo, keys) = try SyntheticPanel.keypadPhoto(below: nil, height: height)
+        guard try await accurateWorks(on: photo) else { return }
+        let reading = try await unhurried.read(in: photo, panel: .fullFrame, adding: [])
+        #expect(reading.added, "cut at \(height)")
+        for (digit, key) in keys {
+            let found = try #require(reading.buttons.first { $0.label == String(digit) })
+            #expect(found.bounds.contains(PanelPoint(x: key.x, y: key.y)), "\(digit) cut at \(height)")
+        }
+    }
+}
+
+@Test("Start crops that can't be read don't cost the digits",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func failedStartCropsKeepTheDigits() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    // Reads the nine panel tiles, then fails like a crop Vision can't take.
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        if calls.value > 9 { throw Boom() }
+        return try await LabelReader.recognize(image, level: level)
+    }, panelLimit: .seconds(60), readLimit: .seconds(60))
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(calls.value > 9)
+    #expect(reading.added)
+    #expect(reading.buttons.compactMap(\.label).sorted() == (0...9).map(String.init))
 }
 
 // MARK: - Recorded camera frames
