@@ -329,3 +329,116 @@ func rectanglePastPhotoEdgeIsClamped() {
     let edge = imageRect(-0.01, 0.2, 1.02, 0.5)
     #expect(detector.clampedToPhoto(edge) == edge)
 }
+
+private func wideStripEvidence() -> [PanelQuad] {
+    [imageRect(0.35, 0.35, 0.3, 0.08),
+     imageRect(0.16, 0.36, 0.07, 0.04), imageRect(0.76, 0.36, 0.07, 0.04),
+     imageRect(0.36, 0.45, 0.07, 0.035), imageRect(0.55, 0.45, 0.07, 0.035)]
+}
+
+@Test("A borderless wide control bank uses its display and flanking controls")
+func wideStripGeometry() throws {
+    let detector = PanelDetector()
+    let controls = wideStripEvidence()
+    let door = imageRect(0.1, 0.65, 0.8, 0.3)
+    let sticker = imageRect(0.1, 0.08, 0.15, 0.04)
+    let quad = try #require(detector.wideControlStrip(keys: controls + [door, sticker],
+                                                   frame: PixelSize(width: 720, height: 1280)))
+    for q in controls {
+        for p in [q.topLeft, q.topRight, q.bottomRight, q.bottomLeft] {
+            #expect(detector.rectify(p, within: quad).isOnPanel)
+        }
+    }
+    #expect(!detector.rectify(door.bottomRight, within: quad).isOnPanel)
+    #expect(!detector.rectify(sticker.topLeft, within: quad).isOnPanel)
+    #expect(quad != .fullFrame)
+    expectInsidePhoto(quad)
+}
+
+@Test("Wide fallback rejects one-sided, vertical, nested and invalid evidence")
+func wideStripRejectsWeakEvidence() {
+    let detector = PanelDetector(), frame = PixelSize(width: 720, height: 1280)
+    let keys = wideStripEvidence()
+    #expect(detector.wideControlStrip(keys: Array(keys.prefix(1)), frame: frame) == nil)
+    #expect(detector.wideControlStrip(keys: keys.enumerated().filter { $0.offset != 1 }.map(\.element), frame: frame) == nil)
+    let nested = [keys[0], keys[1], imageRect(0.17, 0.37, 0.02, 0.01), keys[2]]
+    #expect(detector.wideControlStrip(keys: nested, frame: frame) == nil)
+    let vertical = keys.map { q in
+        func p(_ v: ImagePoint) -> ImagePoint { ImagePoint(x: v.y, y: v.x) }
+        return PanelQuad(topLeft: p(q.topLeft), topRight: p(q.bottomLeft),
+                         bottomRight: p(q.bottomRight), bottomLeft: p(q.topRight))
+    }
+    #expect(detector.wideControlStrip(keys: vertical, frame: frame) == nil)
+    #expect(detector.wideControlStrip(keys: keys, frame: PixelSize(width: 0, height: 0)) == nil)
+    #expect(detector.wideControlStrip(keys: [imageRect(.nan, 0, 1, 1)], frame: frame) == nil)
+}
+
+@Test("Wide strip padding stays strictly inside the photo")
+func wideStripPaddingClamps() throws {
+    let keys = [imageRect(0.35, 0.35, 0.3, 0.08), imageRect(-0.01, 0.36, 0.08, 0.04),
+                imageRect(0.94, 0.36, 0.08, 0.04), imageRect(0.4, 0.45, 0.07, 0.035)]
+    let quad = try #require(PanelDetector().wideControlStrip(keys: keys, frame: PixelSize(width: 720, height: 1280)))
+    #expect(quad.topLeft.x == 0)
+    #expect(quad.topRight.x == 1)
+    for p in [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft] {
+        #expect((0...1).contains(p.x) && (0...1).contains(p.y))
+    }
+}
+
+@Test("Wide panel detection uses controls without an enclosing border", arguments: [false, true])
+func wideStripSyntheticPhoto(tilted: Bool) async throws {
+    let width = 720, height = 1280
+    let ctx = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+        bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+    ctx.setFillColor(CGColor(gray: 0.7, alpha: 1))
+    ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    if tilted {
+        ctx.translateBy(x: 360, y: 640); ctx.rotate(by: 0.07); ctx.translateBy(x: -360, y: -640)
+    }
+    // No outer panel border: only a display and separate outlined keys.
+    for (index, q) in wideStripEvidence().enumerated() {
+        let rect = CGRect(x: q.topLeft.x * 720, y: (1 - q.bottomLeft.y) * 1280,
+                          width: (q.topRight.x - q.topLeft.x) * 720,
+                          height: (q.bottomLeft.y - q.topLeft.y) * 1280)
+        if index == 0 { ctx.setFillColor(CGColor(gray: 0.02, alpha: 1)); ctx.fill(rect) }
+        else { ctx.setStrokeColor(CGColor(gray: 0.05, alpha: 1)); ctx.setLineWidth(3); ctx.stroke(rect) }
+    }
+    let bytes = NSMutableData()
+    let dest = try #require(CGImageDestinationCreateWithData(bytes, UTType.tiff.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(dest, try #require(ctx.makeImage()), nil)
+    #expect(CGImageDestinationFinalize(dest))
+    let photo = PanelPhoto(data: bytes as Data, pixelSize: PixelSize(width: width, height: height), timestamp: .now)
+    let result = try await PanelDetector().detectPanel(in: photo)
+    #expect(result.quad != .fullFrame)
+    expectInsidePhoto(result.quad)
+    // Require both sides of the control bank, not just the display.
+    #expect(result.quad.topLeft.x < 0.25)
+    #expect(result.quad.topRight.x > 0.73)
+    #expect(result.quad.bottomLeft.y < 0.6)
+}
+
+@Test("A compact display and bank below it provide a laundry panel reference")
+func compactControlBank() throws {
+    let detector = PanelDetector(), frame = PixelSize(width: 720, height: 1280)
+    let display = imageRect(0.3, 0.3, 0.2, 0.06)
+    let keys = [0.39, 0.46].flatMap { y in
+        [0.22, 0.34, 0.46].map { x in imageRect(x, y, 0.06, 0.025) }
+    }
+    let quad = try #require(detector.wideControlStrip(keys: [display] + keys, frame: frame))
+    for key in keys {
+        #expect(detector.rectify(key.topLeft, within: quad).isOnPanel)
+        #expect(detector.rectify(key.bottomRight, within: quad).isOnPanel)
+    }
+    #expect(quad.topLeft.y < display.topLeft.y)
+    #expect(quad.bottomRight.y < 0.55)
+    #expect(detector.wideControlStrip(keys: [display] + Array(keys.prefix(4)), frame: frame) == nil)
+    // A row of text fragments alone cannot establish a two-dimensional bank.
+    let row = (0..<6).map { imageRect(0.2 + Double($0) * 0.06, 0.4, 0.04, 0.02) }
+    #expect(detector.wideControlStrip(keys: [display] + row, frame: frame) == nil)
+    let clipped = ([display] + keys).map { q in
+        func p(_ p: ImagePoint) -> ImagePoint { ImagePoint(x: p.x - 0.22, y: p.y) }
+        return PanelQuad(topLeft: p(q.topLeft), topRight: p(q.topRight),
+                         bottomRight: p(q.bottomRight), bottomLeft: p(q.bottomLeft))
+    }
+    #expect(detector.wideControlStrip(keys: clipped, frame: frame) == nil)
+}
