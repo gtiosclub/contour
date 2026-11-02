@@ -79,7 +79,7 @@ struct KeypadReader: Sendable {
                 if start == nil {
                     // Start is extra: crops that can't be read don't cost the digits.
                     let crops = (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
-                    start = Self.startWord(in: crops, grid: grid)
+                    start = Self.startWord(in: words + crops, grid: grid)
                 }
                 if let start {
                     merged += Self.startButton(on: start, size: size, panel: panel)
@@ -363,9 +363,27 @@ struct KeypadReader: Sendable {
     /// The word Start, or failing that a word one edit away from it, at or below the
     /// keypad's first row. Above that it's the display, which can say Start under
     /// the clock. The tiles overlap, so the same word can come back several times.
+    ///
+    /// The button gets the bare label Start, so TargetMatcher can't see what was
+    /// printed with it, and its rule has to hold here: Start never means Delay Start
+    /// or Time Start. Other real words don't count either, nor what a tile edge cuts
+    /// them down to: Restart to start, Stars to Star, the Start of Delay Start to tart.
     static func startWord(in words: [LabelReader.Word], grid: Grid) -> LabelReader.Word? {
-        let inReach = words.filter { grid.row(of: CGPoint(x: $0.centre.x, y: $0.centre.y)) >= -0.5 }
-        var found = inReach.filter { $0.text.lowercased().contains("start") }
+        let others = words.filter { word in
+            word.text.lowercased().split { !$0.isLetter }.contains { part in
+                ["smart", "stars", "stat"].contains(String(part))
+                    || ["delay", "time", "restart"].contains { editDistance(String(part), $0) <= 1 }
+            }
+        }
+        let inReach = words.filter { word in
+            grid.row(of: CGPoint(x: word.centre.x, y: word.centre.y)) >= -0.5
+                && !others.contains { other in
+                    // Close beside it on the line, or on the line above or below it.
+                    abs(other.centre.y - word.centre.y) < 2 * word.height
+                        && max(other.left - word.right, word.left - other.right) < 2 * word.height
+                }
+        }
+        var found = inReach.filter { $0.text.lowercased().hasPrefix("start") }
         if found.isEmpty {
             found = inReach.filter { word in
                 word.text.count >= 4 && word.text.allSatisfy(\.isLetter)

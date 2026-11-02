@@ -16,9 +16,9 @@ import Testing
 
 private let frame = CGSize(width: 720, height: 1280)
 
-/// A word centred on (x, y), in pixels.
-private func word(_ text: String, x: Double, y: Double) -> LabelReader.Word {
-    LabelReader.Word(text: text, left: x - 8, right: x + 8, top: y - 8, bottom: y + 8)
+/// A word centred on (x, y), in pixels, 16 tall.
+private func word(_ text: String, x: Double, y: Double, width: Double = 16) -> LabelReader.Word {
+    LabelReader.Word(text: text, left: x - width / 2, right: x + width / 2, top: y - 8, bottom: y + 8)
 }
 
 /// One word per digit, each at its place on a keypad with these steps.
@@ -288,6 +288,60 @@ func nearMatches() {
     #expect(KeypadReader.startWord(in: [word("STAR", x: 320, y: 200)], grid: startGrid) == nil)
 }
 
+@Test("Start beside Delay or Time isn't Start, in either order or on two lines, even misread")
+func startWithAnotherWord() {
+    // Words 50 wide on a line at y = 720, a space apart, or lines 20 apart.
+    for other in ["Delay", "DELAY", "Dela", "Delav", "Time", "TIME", "Tim", "Tine"] {
+        for start in ["Start", "START", "otart", "SVART"] {
+            for (a, b) in [(word(other, x: 300, y: 720, width: 50), word(start, x: 356, y: 720, width: 50)),
+                           (word(other, x: 356, y: 720, width: 50), word(start, x: 300, y: 720, width: 50)),
+                           (word(other, x: 320, y: 700, width: 50), word(start, x: 320, y: 720, width: 50)),
+                           (word(other, x: 320, y: 740, width: 50), word(start, x: 320, y: 720, width: 50))] {
+                #expect(KeypadReader.startWord(in: [a, b], grid: startGrid) == nil, "\(a.text) \(b.text)")
+            }
+        }
+    }
+}
+
+@Test("one word holding Start and Delay or Time isn't Start, but Start/Pause is")
+func startInOneWordWithAnother() {
+    for text in ["Start/Time", "Time/Start", "Delay/Start", "Start/Delay"] {
+        #expect(KeypadReader.startWord(in: [word(text, x: 320, y: 720, width: 80)], grid: startGrid) == nil, "\(text)")
+    }
+    #expect(KeypadReader.startWord(in: [word("Start/Pause", x: 320, y: 720, width: 80)], grid: startGrid) != nil)
+}
+
+@Test("Delay or Time on another key doesn't take away a real Start")
+func startNearOtherKeys() {
+    let start = word("START", x: 320, y: 720, width: 50)
+    let others = [word("Timer", x: 230, y: 720, width: 40),    // the key beside it
+                  word("Time", x: 320, y: 670, width: 40),     // the key above it
+                  word("Delay", x: 320, y: 770, width: 40)]    // the key below it
+    #expect(KeypadReader.startWord(in: others + [start], grid: startGrid) == start)
+    // Delay Start on one key and Start on another: the real one is still there.
+    let delayed = [word("Delay", x: 200, y: 720, width: 50), word("Start", x: 256, y: 720, width: 50)]
+    #expect(KeypadReader.startWord(in: delayed + [start], grid: startGrid) == start)
+}
+
+@Test("real words near Start aren't Start, and real misreads of it still are")
+func wordsThatLookLikeStart() {
+    for other in ["Restart", "RESTART", "estart", "Smart", "SMART", "Stars", "Stat", "Smart/Cook", "ASTART!"] {
+        #expect(KeypadReader.startWord(in: [word(other, x: 320, y: 720, width: 50)], grid: startGrid) == nil, "\(other)")
+    }
+    // What a tile edge can leave of a word, with the whole word read in the next tile.
+    for (whole, cut) in [("Restart", "start"), ("Stars", "Star")] {
+        let words = [word(whole, x: 320, y: 720, width: 70), word(cut, x: 330, y: 720, width: 50)]
+        #expect(KeypadReader.startWord(in: words, grid: startGrid) == nil, "\(cut)")
+    }
+    // Delay read whole, its Start cut to tart further along the line.
+    let delayed = [word("Delay", x: 280, y: 720, width: 50), word("tart", x: 345, y: 720, width: 40)]
+    #expect(KeypadReader.startWord(in: delayed, grid: startGrid) == nil)
+    // All read off START on the recorded frames.
+    for misread in ["SVART", "SYART", "STAR", "TART", "SCART", "SART", "ASTART"] {
+        #expect(KeypadReader.startWord(in: [word(misread, x: 320, y: 720, width: 50)], grid: startGrid)?.text == misread)
+    }
+}
+
 @Test("the same word read in several tiles gives one of those readings")
 func startFromRepeatedReads() {
     let reads = [word("START", x: 320, y: 720), word("START", x: 321, y: 722), word("START", x: 322, y: 724)]
@@ -505,6 +559,51 @@ func quadMissingTheKeypad() async throws {
     #expect(reading.fit)
     #expect(!reading.added)
     #expect(reading.buttons == buttons)
+}
+
+@Test("keys that only look like Start don't become the Start target",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      .timeLimit(.minutes(5)))
+func decoysAreNotStart() async throws {
+    let (first, _) = try SyntheticPanel.keypadPhoto(below: "Delay Start", outlined: true)
+    guard try await accurateWorks(on: first) else { return }
+
+    // Outlined, each is one label on one key. Printed, Vision reads the first two
+    // as two words on one line, so that part is what the scan does without a keypad.
+    for (label, outlined) in [("Delay Start", true), ("Time Start", true), ("Start Time", true), ("Smart", true),
+                              ("Restart", true), ("Stars", true), ("Smart Cook", true),
+                              ("Smart", false), ("Restart", false), ("Stars", false), ("Smart Cook", false)] {
+        let (photo, _) = try SyntheticPanel.keypadPhoto(below: label, outlined: outlined)
+        let detection = try await scan(unhurried).detectPanel(from: photo)
+        #expect(TargetMatcher().match("5", in: detection.map) != nil, "\(label) outlined=\(outlined)")
+        #expect(TargetMatcher().match("start", in: detection.map) == nil, "\(label) outlined=\(outlined)")
+    }
+}
+
+@Test("a Start read in a crop still counts as Delay Start when the tiles read Delay beside it",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func cropCutsOffDelay() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: "Delay Start")
+    guard try await accurateWorks(on: photo) else { return }
+
+    // A crop's edge can cut Delay away. Stand in for that: the second crop, which
+    // holds the label, reads a bare Start in the same place. The others read nothing.
+    let start = try #require(try SyntheticPanel.keypadPhoto().photo.cgImage().cropping(to: CGRect(x: 360, y: 686, width: 180, height: 140)))
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        switch calls.value {
+        case 1...9: return try await LabelReader.recognize(image, level: level)
+        case 11: return try await LabelReader.recognize(start, level: level)
+        default: return []
+        }
+    }, panelLimit: .seconds(60), readLimit: .seconds(60))
+
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+    #expect(calls.value == 12)
+    #expect(reading.added)
+    #expect(TargetMatcher().match("start", in: SurfaceMap(buttons: reading.buttons, confidence: 1)) == nil)
 }
 
 @Test("a keypad cut off just below the 0 keeps its ten keys when Start can't be in view",
