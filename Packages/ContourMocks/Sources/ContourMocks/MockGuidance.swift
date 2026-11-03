@@ -69,6 +69,23 @@ public enum MockGuidance {
         )
     }
 
+    /// Half-sizes of the oval that counts as arrived on `button`, in panel units:
+    /// 45% of each side, so a key's zone stays inside the key and a neighbour's
+    /// center stays out of it. The floor keeps a thin word box holdable and the
+    /// cap stops an oversized box swallowing the panel. Guesses from one
+    /// microwave, simulated only; rough multi-step branch, not for merging.
+    public static func arrivalZone(for button: SurfaceMap.Button) -> (x: Double, y: Double) {
+        (x: min(max(0.45 * button.bounds.width, 0.015), 0.12),
+         y: min(max(0.45 * button.bounds.height, 0.015), 0.05))
+    }
+
+    /// Whether `fingertip` is inside `button`'s arrival oval.
+    public static func isInArrivalZone(_ fingertip: PanelPoint, of button: SurfaceMap.Button) -> Bool {
+        let zone = arrivalZone(for: button)
+        let offset = fingertip.vector(to: button.bounds.center)
+        return (offset.dx / zone.x) * (offset.dx / zone.x) + (offset.dy / zone.y) * (offset.dy / zone.y) <= 1
+    }
+
     /// Guidance for one tracking frame heading toward a button.
     ///
     /// Maps the two tracking failure modes onto outcomes: `.lost` quality
@@ -77,7 +94,6 @@ public enum MockGuidance {
     public static func state(
         for frame: TrackingFrame,
         target: SurfaceMap.Button,
-        arrivalRadius: Double = 0.05,
         confidenceFloor: Double = 0.3
     ) -> GuidanceState {
         if frame.trackingQuality == .lost {
@@ -88,11 +104,15 @@ public enum MockGuidance {
             return .outcome(.lowConfidence, at: frame.timestamp)
         }
 
+        if let fingertip = frame.fingertip, isInArrivalZone(fingertip, of: target) {
+            return GuidanceState(timestamp: frame.timestamp, vector: .onTarget, outcome: .arrived)
+        }
+
         return state(
             fingertip: frame.fingertip,
             target: target.bounds.center,
             timestamp: frame.timestamp,
-            arrivalRadius: arrivalRadius
+            arrivalRadius: 0
         )
     }
 }
