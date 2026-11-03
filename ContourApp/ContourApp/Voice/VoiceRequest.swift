@@ -2,9 +2,9 @@
 //  VoiceRequest.swift
 //  ContourApp — Officers (integration)
 //
-//  "Say a button": listen on the device and, as soon as what's been said names
-//  a button on the scanned panel, return it. Uses the same on-device speech
-//  setup as LiveCameraView.
+//  "Say a button": listen on the device to a whole sentence, then return the
+//  button it names on the scanned panel. Uses the same on-device speech setup as
+//  LiveCameraView.
 //
 
 import AVFoundation
@@ -34,10 +34,35 @@ struct VoiceRequest {
         var button: SurfaceMap.Button?
     }
 
-    /// Listens until something said names a button on `map`, or `timeout`
-    /// passes. Checks as the words come in, so "start" returns as soon as it's
-    /// heard rather than after a pause.
+    /// How long the recognizer can stay silent before the sentence counts as said.
+    /// It delivers words in bursts about a second apart, even mid-sentence: stopping
+    /// at exactly 1 s cut "cook for a minute and a half" down to "cook for a minute".
+    static let sentenceQuiet: Duration = .milliseconds(1500)
+
+    /// Listens to one whole request, until the recognizer finishes a sentence, goes
+    /// quiet, or `timeout` passes, then looks up the button it names. Waiting for
+    /// the whole sentence keeps "cook for a minute and a half" from stopping at "cook".
     func listen(for map: SurfaceMap, timeout: Duration = .seconds(8)) async throws -> Heard {
+        let text = try await transcribe(timeout: timeout, quiet: Self.sentenceQuiet, announces: true) { _, isFinal in
+            isFinal
+        }
+        return Heard(text: text, button: ButtonLookup.button(for: text, in: map))
+    }
+
+    /// Listens for "next" on a plan, and returns whether it came before `timeout`.
+    /// Whoever calls this has already finished saying "say next", so VoiceOver has
+    /// nothing to announce here.
+    func listenForNext(timeout: Duration = .seconds(60)) async throws -> Bool {
+        let text = try await transcribe(timeout: timeout, quiet: nil, announces: false) { text, _ in
+            NextWord.isIn(text)
+        }
+        return NextWord.isIn(text)
+    }
+
+    /// The last thing heard before `isDone` said to stop, `quiet` passed with no new
+    /// words, or `timeout` passed. Silence before the first word never counts as quiet.
+    private func transcribe(timeout: Duration, quiet: Duration?, announces: Bool,
+                            until isDone: (String, Bool) -> Bool) async throws -> String {
         try Task.checkCancellation()
         let allowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -54,7 +79,7 @@ struct VoiceRequest {
             try await install.downloadAndInstall()
         }
 
-        try await announceListening()
+        if announces { try await announceListening() }
         try Task.checkCancellation()
         guard let microphone = AVCaptureDevice.default(for: .audio) else { throw VoiceRequestError.noMicrophone }
         let input = try await CaptureInputSequenceProvider.providerWithSession(
@@ -65,29 +90,32 @@ struct VoiceRequest {
         input.captureSession.startRunning()
         defer { input.captureSession.stopRunning() }
 
-        // Stop listening at the time limit, or as soon as this task is
-        // cancelled; either ends the results below.
+        // Stop listening at the time limit, after the quiet, or as soon as this
+        // task is cancelled; any of these ends the results below.
         let timedOut = Mutex(false)
+        let lastWords = Mutex<ContinuousClock.Instant?>(nil)
         let deadline = Task {
+            let end = ContinuousClock.now.advanced(by: timeout)
             do {
-                try await Task.sleep(for: timeout)
+                while ContinuousClock.now < end {
+                    try await Task.sleep(for: .milliseconds(100))
+                    if let quiet, let last = lastWords.withLock({ $0 }), last.duration(to: .now) >= quiet { break }
+                }
                 timedOut.withLock { $0 = true }
             } catch { /* Cancelling the request also ends the analyzer. */ }
             await analyzer.cancelAndFinishNow()
         }
         defer { deadline.cancel() }
 
-        var heard = Heard(text: "", button: nil)
+        var heard = ""
         do {
             try await withTaskCancellationHandler {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !text.isEmpty else { continue }
-                    heard.text = text
-                    if let button = ButtonLookup.button(for: text, in: map) {
-                        heard.button = button
-                        break
-                    }
+                    heard = text
+                    lastWords.withLock { $0 = .now }
+                    if isDone(text, result.isFinal) { break }
                 }
             } onCancel: {
                 deadline.cancel()
