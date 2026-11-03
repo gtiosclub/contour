@@ -13,31 +13,76 @@ struct TracePlane: Codable {
     var extent: [Float]
 
     init(_ plane: WorldPlane) {
-        let m = plane.transform
-        transform = [m.columns.0.x, m.columns.0.y, m.columns.0.z, m.columns.0.w,
-                     m.columns.1.x, m.columns.1.y, m.columns.1.z, m.columns.1.w,
-                     m.columns.2.x, m.columns.2.y, m.columns.2.z, m.columns.2.w,
-                     m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w]
+        transform = flatten(plane.transform)
         extent = [plane.extent.x, plane.extent.y]
     }
 
     func plane() throws -> WorldPlane {
-        guard transform.count == 16 else {
-            throw TraceDecodingError.wrongCount(field: "transform", expected: 16, actual: transform.count)
-        }
-        guard extent.count == 2 else {
-            throw TraceDecodingError.wrongCount(field: "extent", expected: 2, actual: extent.count)
-        }
-        let c0 = SIMD4<Float>(transform[0], transform[1], transform[2], transform[3])
-        let c1 = SIMD4<Float>(transform[4], transform[5], transform[6], transform[7])
-        let c2 = SIMD4<Float>(transform[8], transform[9], transform[10], transform[11])
-        let c3 = SIMD4<Float>(transform[12], transform[13], transform[14], transform[15])
-        let matrix = simd_float4x4(c0, c1, c2, c3)
-        return WorldPlane(transform: matrix, extent: SIMD2(extent[0], extent[1]))
+        WorldPlane(transform: try matrix4(transform, field: "transform"),
+                   extent: try vector2(extent, field: "extent"))
+    }
+}
+
+struct TraceWorldSnapshot: Codable {
+    var sessionID: UUID
+    var cameraToWorld: [Float]
+    var intrinsics: [Float]
+    var imageSize: [Float]
+    var normalTracking: Bool
+    var planes: [TracePlane]
+
+    init(_ snapshot: WorldCameraSnapshot) {
+        sessionID = snapshot.sessionID
+        cameraToWorld = flatten(snapshot.cameraToWorld)
+        intrinsics = flatten(snapshot.intrinsics)
+        imageSize = [snapshot.imageSize.x, snapshot.imageSize.y]
+        normalTracking = snapshot.normalTracking
+        planes = snapshot.planes.map(TracePlane.init)
+    }
+
+    func snapshot() throws -> WorldCameraSnapshot {
+        WorldCameraSnapshot(sessionID: sessionID,
+                            cameraToWorld: try matrix4(cameraToWorld, field: "cameraToWorld"),
+                            intrinsics: try matrix3(intrinsics, field: "intrinsics"),
+                            imageSize: try vector2(imageSize, field: "imageSize"),
+                            normalTracking: normalTracking,
+                            planes: try planes.map { try $0.plane() })
     }
 }
 
 enum TraceDecodingError: Error {
     case wrongCount(field: String, expected: Int, actual: Int)
+}
+
+// Matrices are stored column-major: column 0 first, then column 1, ...
+
+private func flatten(_ m: simd_float4x4) -> [Float] {
+    [m.columns.0, m.columns.1, m.columns.2, m.columns.3].flatMap { [$0.x, $0.y, $0.z, $0.w] }
+}
+
+private func flatten(_ m: simd_float3x3) -> [Float] {
+    [m.columns.0, m.columns.1, m.columns.2].flatMap { [$0.x, $0.y, $0.z] }
+}
+
+private func checkCount(_ values: [Float], _ expected: Int, field: String) throws {
+    guard values.count == expected else {
+        throw TraceDecodingError.wrongCount(field: field, expected: expected, actual: values.count)
+    }
+}
+
+private func matrix4(_ v: [Float], field: String) throws -> simd_float4x4 {
+    try checkCount(v, 16, field: field)
+    return simd_float4x4(SIMD4(v[0], v[1], v[2], v[3]), SIMD4(v[4], v[5], v[6], v[7]),
+                         SIMD4(v[8], v[9], v[10], v[11]), SIMD4(v[12], v[13], v[14], v[15]))
+}
+
+private func matrix3(_ v: [Float], field: String) throws -> simd_float3x3 {
+    try checkCount(v, 9, field: field)
+    return simd_float3x3(SIMD3(v[0], v[1], v[2]), SIMD3(v[3], v[4], v[5]), SIMD3(v[6], v[7], v[8]))
+}
+
+private func vector2(_ v: [Float], field: String) throws -> SIMD2<Float> {
+    try checkCount(v, 2, field: field)
+    return SIMD2(v[0], v[1])
 }
 
