@@ -266,6 +266,42 @@ struct PanelTrackerTests {
         #expect(observation.quad == nil)
     }
 
+    @Test("After a gap, tracking restarts from where the panel last was, not from the photo")
+    func resumeAfterGapKeepsLastPosition() async throws {
+        let tracker = PanelTracker(learnAppearance: looksLike(moved)) { start in
+            ScriptedTracker { image in seconds(image) == 1 ? vision(moved) : vision(start) }
+        }
+        try await tracker.startTracking(try scriptedReference())
+        #expect(try await tracker.track(try blankFrame(at: 1)).status == .tracked)
+
+        await tracker.resumeAfterGap()
+        let observation = try await tracker.track(try blankFrame(at: 2))
+        #expect(observation.status == .tracked)
+        #expect(maxCornerError(try #require(observation.quad), moved) < 1e-9)
+    }
+
+    @Test("After a gap, what the tracker finds is checked against the panel again")
+    func resumeAfterGapRechecks() async throws {
+        func tracker() async throws -> PanelTracker {
+            let tracker = PanelTracker(learnAppearance: looksLike(square)) { start in
+                ScriptedTracker { image in seconds(image) >= 3 ? vision(cabinet) : vision(start) }
+            }
+            try await tracker.startTracking(try scriptedReference())
+            #expect(try await tracker.track(try blankFrame(at: 1)).status == .tracked)
+            #expect(try await tracker.track(try blankFrame(at: 2)).status == .tracked)
+            return tracker
+        }
+
+        // A running sequence follows what it's on, unchecked: fine frame to frame,
+        // not after the phone has moved with nobody watching.
+        let running = try await tracker()
+        #expect(try await running.track(try blankFrame(at: 3)).status == .tracked)
+
+        let resumed = try await tracker()
+        await resumed.resumeAfterGap()
+        #expect(try await resumed.track(try blankFrame(at: 3)).status == .lost(.unrecognized))
+    }
+
     @Test("A restart that lands on a lookalike is rejected, and the panel is looked for elsewhere")
     func restartLookalikeFallsBackToDetection() async throws {
         let tracker = PanelTracker(detector: ScriptedDetector([vision(moved)]),

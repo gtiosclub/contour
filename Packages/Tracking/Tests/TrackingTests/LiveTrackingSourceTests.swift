@@ -158,8 +158,34 @@ struct LiveTrackingSourceTests {
         #expect(await collect(source.frames()).allSatisfy { $0.trackingQuality == .good })
     }
 
-    @Test("Each stream starts fresh from the panel")
-    func eachStreamStartsFresh() async throws {
+    @Test("A later stream carries on from the panel instead of the scan photo")
+    func laterStreamCarriesOn() async throws {
+        let registrations = Counter()
+        let sequences = Counter()
+        let tracker = PanelTracker { _ in
+            _ = sequences.next()
+            return ScriptedRectangles { image in
+                if case .still = image { _ = registrations.next() }
+                return up(square)
+            }
+        }
+        let source = scriptedSource(camera: FakeCamera(count: 2), panelTracker: tracker,
+                                        fingertipTracker: scriptedFingertip())
+        await source.use(try reference())
+
+        _ = await collect(source.frames())
+        let later = await collect(source.frames())
+
+        // The scan photo is only seen by the first stream: once by registration
+        // and once priming its live sequence. The later stream primes a new
+        // sequence (so it gets the appearance check) from the last live frame.
+        #expect(registrations.next() == 2)
+        #expect(sequences.next() == 3)
+        #expect(later.allSatisfy { $0.trackingQuality == .good })
+    }
+
+    @Test("A new reference still starts over from its photo")
+    func newReferenceStartsOver() async throws {
         let registrations = Counter()
         let tracker = PanelTracker { _ in
             ScriptedRectangles { image in
@@ -170,13 +196,26 @@ struct LiveTrackingSourceTests {
         let source = scriptedSource(camera: FakeCamera(count: 2), panelTracker: tracker,
                                         fingertipTracker: scriptedFingertip())
         await source.use(try reference())
-
         _ = await collect(source.frames())
+        await source.use(try reference())
         _ = await collect(source.frames())
-
-        // Each stream registers the panel again (registration, then the live
-        // sequence's priming, both see the reference still): 2 per stream.
         #expect(registrations.next() == 4)
+    }
+
+    @Test("A later stream drops the old fingertip point instead of averaging it in")
+    func laterStreamStartsItsSmoothingOver() async throws {
+        let tips = Counter()
+        let source = scriptedSource(camera: FakeCamera(count: 1), panelTracker: scriptedPanel(),
+            fingertipTracker: FingertipTracker { _ in
+                tips.next() == 0 ? FingertipJoint(x: 0.3, y: 0.3, confidence: 0.9)
+                    : FingertipJoint(x: 0.6, y: 0.6, confidence: 0.9)
+            })
+        await source.use(try reference())
+        let first = try #require(await collect(source.frames()).first?.fingertip)
+        let second = try #require(await collect(source.frames()).first?.fingertip)
+        #expect(second.x != first.x)
+        // Unsmoothed: (0.6 - 0.25) / 0.5 across the scripted square.
+        #expect(abs(second.x - 0.7) < 0.0001)
     }
 
     @Test("Replacing the reference while fingertip detection runs discards the old point")

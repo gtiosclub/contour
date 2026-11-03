@@ -334,6 +334,14 @@ public actor PanelTracker {
         return best.quad
     }
 
+    /// Drop the running sequence but keep where the panel last was. The phone may
+    /// have moved while no frames came in, and a running sequence's answers aren't
+    /// checked against the panel's appearance. A restarted one's are, and it can
+    /// look for the panel anywhere in the frame.
+    public func resumeAfterGap() async {
+        session?.tracker = nil
+    }
+
     /// The panel's pose for the current frame.
     ///
     /// Always `.unknown` for now: metric 3D pose is outside issue #8's scope, and

@@ -156,10 +156,18 @@ private actor Engine {
 
     func hybridStatus() -> HybridTrackingDiagnostics? { hybridDiagnostics }
 
-    /// Each guidance session starts fresh from the panel, not from wherever
-    /// the last session left off.
-    func beginStream() {
-        if let reference { use(reference) }
+    /// The first guidance session starts from the scan photo. Later ones carry on
+    /// from where the panel was last seen: rough multi-step branch, because the
+    /// phone is usually closer to that than to where it was at the scan.
+    func beginStream() async {
+        guard case .tracking = panel else {
+            if let reference { use(reference) }
+            return
+        }
+        generation += 1
+        previous = nil
+        smoothed = nil
+        await panelTracker.resumeAfterGap()
     }
 
     func process(_ frame: CameraFrame) async -> TrackingFrame {

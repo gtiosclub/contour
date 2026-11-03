@@ -6,6 +6,12 @@ public protocol PanelTracking: Sendable {
     func startTracking(_ reference: PanelReference) async throws
     func track(_ frame: CameraFrame) async throws -> PanelObservation
     func stopTracking() async
+    /// Frames stopped for a while and are starting again, on the same panel.
+    func resumeAfterGap() async
+}
+
+public extension PanelTracking {
+    func resumeAfterGap() async {}
 }
 
 extension PanelTracker: PanelTracking {}
