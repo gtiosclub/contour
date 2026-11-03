@@ -211,12 +211,16 @@ struct MockFeedbackTests {
         #expect(!arrived(0.08, 0.026))
     }
 
-    @Test("a stop nearer the key above no longer counts as arrived")
+    @Test("a stop nearer the key below no longer counts as arrived")
     func oldCircleStopIsOut() {
-        // 0.05 under the 8 key on microwave-01 was arrived on the old circle, and
-        // is nearer the 0 key, 0.0825 down. The real case behind typing 1, 3, 8.
+        // The 8 and 0 keys on microwave-01 have centers 0.09 apart. This stop is
+        // nearer the 0, and the old 0.05 circle called it arrived on the 8: the
+        // real case behind typing 1, 3, 8 for 1, 3, 0.
         let eight = key(x: 0.405, y: 0.75, width: 0.2, height: 0.055)
-        let stop = eight.bounds.center.offset(by: PanelVector(dx: 0, dy: 0.05))
+        let stop = eight.bounds.center.offset(by: PanelVector(dx: 0, dy: 0.046))
+        let oldCircle = MockGuidance.state(fingertip: stop, target: eight.bounds.center,
+                                           timestamp: MockTrackingSource.fixedEpoch)
+        #expect(oldCircle.outcome == .arrived)
         #expect(MockGuidance.state(for: frame(at: stop), target: eight).outcome == nil)
     }
 
