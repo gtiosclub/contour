@@ -612,6 +612,17 @@ func timeCookIsMatched() throws {
     }
 }
 
+@Test("a merged label is never the Time Cook target, with or without a real one")
+func mergedLabelIsNotTimeCook() {
+    // Frame 39 reads this as one label on some runs. Five words already don't count.
+    let merged = box("Time Defrost Express Cook", x: 0.5, y: 0.3)
+    for request in ["time cook", "time", "cook time"] {
+        #expect(TargetMatcher().match(request, in: SurfaceMap(buttons: [merged], confidence: 1)) == nil, "\(request)")
+    }
+    let map = SurfaceMap(buttons: KeypadReader.addingTimeCook(on: timeCookOnPanel, to: [merged], size: frame, panel: .fullFrame), confidence: 1)
+    #expect(TargetMatcher().match("time cook", in: map)?.button.label == "Time Cook")
+}
+
 @Test("the Time Cook crop holds the key under the 9, and stays on the image")
 func timeCookCrop() throws {
     let crop = try #require(startGrid.timeCookCrop(in: frame).first)
