@@ -52,6 +52,8 @@ final class ContourPipeline {
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     let guidanceStatus = GuidanceStatusDisplay()
     private(set) var guidanceArrived = false
+    /// What's missing while guidance has no direction to give, for the status line.
+    private(set) var guidanceGap: String?
     @ObservationIgnored private var lifecycleObservers: Set<AnyCancellable> = []
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
@@ -315,6 +317,7 @@ final class ContourPipeline {
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
         guidanceArrived = false
+        guidanceGap = nil
         guard trackingReady else { return }
         generation &+= 1
         let session = generation
@@ -343,6 +346,13 @@ final class ContourPipeline {
         }
     }
 
+    /// A lost frame has no panel to measure against. A tracked frame with no point
+    /// means the panel is fine and it's the finger that wasn't seen.
+    nonisolated static func gap(in frame: TrackingFrame) -> String? {
+        if frame.trackingQuality == .lost { return "Panel lost." }
+        return frame.fingertip == nil ? "No fingertip seen." : nil
+    }
+
     private func runGuidance(to target: SurfaceMap.Button, session: UInt64,
                              source: any TrackingSource) async {
         var announced: OutcomeSignal?
@@ -368,6 +378,8 @@ final class ContourPipeline {
                 }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
+            let gap = Self.gap(in: frame)
+            if gap != guidanceGap { guidanceGap = gap }
             // MockGuidance's immediate arrival is only a geometric candidate.
             // This policy is the sole authority that can confirm the dwell.
             let now = guidanceNow()

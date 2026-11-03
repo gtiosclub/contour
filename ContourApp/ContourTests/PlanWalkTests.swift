@@ -394,6 +394,27 @@ struct PlanWalkTests {
         #expect(model.plan == nil)
         #expect(model.status.contains("Guidance ended"))
     }
+
+    @Test("What's missing is plain: panel lost, or no fingertip")
+    func gap() {
+        #expect(ContourPipeline.gap(in: .lost(at: Date())) == "Panel lost.")
+        let pose = PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0), column2: SIMD4(0,0,1,0),
+                             column3: SIMD4(0,0,0,1), confidence: 1)
+        #expect(ContourPipeline.gap(in: TrackingFrame(timestamp: Date(), fingertip: nil, panel: pose,
+                                                      trackingQuality: .degraded)) == "No fingertip seen.")
+        #expect(ContourPipeline.gap(in: TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.5, y: 0.5),
+                                                      panel: pose, trackingQuality: .good)) == nil)
+    }
+
+    @Test("The pipeline reports the gap while it's guiding")
+    func pipelineReportsGap() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: NoFingertipEver(), speaker: speaker)
+        model.sayAButton()
+        await until { model.pipeline.guidanceGap == "No fingertip seen." }
+        model.stop()
+        await model.waitForWork()
+    }
 }
 
 private struct LaunchEmptyFrames: TrackingSource {

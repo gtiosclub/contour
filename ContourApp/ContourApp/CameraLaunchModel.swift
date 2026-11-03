@@ -46,7 +46,9 @@ final class CameraLaunchModel {
     /// Share visual instructions with the same policy that drives speech/haptics.
     var displayStatus: String {
         var line = status
-        if guiding, let feedback = pipeline.feedback as? LiveFeedbackEngine { line = feedback.instructionText }
+        if guiding, let feedback = pipeline.feedback as? LiveFeedbackEngine {
+            line = [feedback.instructionText, pipeline.guidanceGap].compactMap { $0 }.joined(separator: " ")
+        }
         guard let planProgress, line != planProgress else { return line }
         return "\(planProgress). \(line)"
     }
