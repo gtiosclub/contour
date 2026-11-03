@@ -366,6 +366,45 @@ enum SyntheticPanel {
         return (try photo(try makeImage(ctx), size: size), labels)
     }
 
+    /// A phone-style keypad printed on a light panel, in a portrait camera frame,
+    /// with Start printed below it. Returns where each digit is in the image.
+    ///
+    /// `below` replaces the word Start, `outlined` draws a key box around each label,
+    /// and `height` cuts the frame off short.
+    static func keypadPhoto(below: String? = "Start", outlined: Bool = false,
+                            height: Int = 1280) throws -> (photo: PanelPhoto, keys: [Character: ImagePoint]) {
+        let canvas = PixelSize(width: 720, height: height)
+        let ctx = try context(canvas, background: CGColor(gray: 0.3, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(canvas.height))
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.setFillColor(CGColor(gray: 0.9, alpha: 1))
+        ctx.fill(CGRect(x: 160, y: 300, width: 400, height: 640))
+
+        var keys: [Character: ImagePoint] = [:]
+        let rows: [(y: CGFloat, labels: [(column: CGFloat, text: String)])] = [
+            (420, [(0, "1"), (1, "2"), (2, "3")]), (490, [(0, "4"), (1, "5"), (2, "6")]),
+            (560, [(0, "7"), (1, "8"), (2, "9")]), (630, [(0, "Clock"), (1, "0"), (2, "Timer")]),
+            (760, below.map { [(2, $0)] } ?? []),
+        ]
+        for row in rows {
+            for label in row.labels {
+                let x = 270 + label.column * 90
+                let cell = CGRect(x: x - 40, y: row.y - 30, width: 80, height: 60)
+                draw(label.text, centeredIn: cell, in: ctx)
+                if outlined {
+                    let width = CTLineGetBoundsWithOptions(line(label.text), []).width + 24
+                    ctx.setStrokeColor(CGColor(gray: 0.1, alpha: 1))
+                    ctx.setLineWidth(3)
+                    ctx.stroke(cell.insetBy(dx: (80 - max(80, width)) / 2, dy: 0))
+                }
+                if label.text.count == 1 {
+                    keys[Character(label.text)] = ImagePoint(x: Double(x) / 720, y: Double(row.y) / Double(height))
+                }
+            }
+        }
+        return (try photo(try makeImage(ctx), size: canvas), keys)
+    }
+
     // MARK: - Drawing
 
     private static func render() throws -> CGImage {

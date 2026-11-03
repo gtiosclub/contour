@@ -22,6 +22,12 @@
 //  we hand back. On the 18 test photos from #36 this took us from 11 to 17
 //  photos with buttons found.
 //
+//  WHEN VISION CAN'T READ THE DIGITS
+//  One read of a real camera frame misses most of the digit keys, so a cook time
+//  can't be typed. KeypadReader reads again in tiles, fits a keypad to the digits
+//  it finds and adds all ten keys. It runs once per scan, on top of the three
+//  stages, and leaves the map as it was if it fails or takes more than 4 s.
+//
 //  COORDINATES
 //  The quad is in normalized coordinates of the upright REFERENCE IMAGE, not in
 //  panel space — see PanelReference.swift. Button bounds are in normalized panel
@@ -47,6 +53,7 @@ import OSLog
 public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
     private let logger = Logger(subsystem: "edu.gatech.contour", category: "SurfaceScan")
+    var keypadReader = KeypadReader()
 
     public init() {}
 
@@ -94,7 +101,8 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         // Labels with no key outline around them are keys too on a flat
         // membrane panel. Less certain than an outlined key, so lower confidence.
         let printedOnly = Self.printedButtons(from: reading.textButtons)
-        let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
+        let buttons = try await addingKeypad(to: keys + printedOnly, in: photo, panel: quad)
+        let map = SurfaceMap(buttons: buttons, confidence: confidence)
         logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
@@ -147,6 +155,23 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             )
         }
         return reading
+    }
+
+    /// `buttons` with the keypad's digit keys in, if they can be placed. A failure
+    /// here isn't a failed scan: the buttons come back exactly as they were.
+    func addingKeypad(to buttons: [SurfaceMap.Button], in photo: PanelPhoto, panel: PanelQuad) async throws -> [SurfaceMap.Button] {
+        try checkCancellation()
+        let started = ContinuousClock.now
+        do {
+            let reading = try await keypadReader.read(in: photo, panel: panel, adding: buttons)
+            try checkCancellation()
+            logger.info("Keypad stage: fit=\(reading.fit) added=\(reading.added) read=\(reading.digitsRead) stage=\(reading.stage) buttons=\(reading.buttons.count) took=\(started.duration(to: .now), privacy: .public)")
+            return reading.buttons
+        } catch {
+            try checkCancellation()
+            logger.error("Keypad read failed: \(String(describing: error), privacy: .public) took=\(started.duration(to: .now), privacy: .public)")
+            return buttons
+        }
     }
 
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
