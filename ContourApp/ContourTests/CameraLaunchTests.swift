@@ -147,6 +147,32 @@ struct CameraLaunchTests {
         #expect(!pipeline.guidanceArrived)
     }
 
+    @Test("The ready message warns only when the map has no number keys")
+    func readyStatus() {
+        let ready = "Panel ready. Say a button name or choose one below."
+        func map(_ labels: String?...) -> SurfaceMap {
+            SurfaceMap(buttons: labels.map { SurfaceMap.Button(label: $0, bounds: PanelRect(x: 0, y: 0, width: 0.1, height: 0.1), confidence: 1) },
+                       confidence: 1)
+        }
+        #expect(CameraLaunchModel.readyStatus(for: map("Start", "5")) == ready)
+        #expect(CameraLaunchModel.readyStatus(for: map("Start", nil))
+                == ready + " Number keys not found. If this panel has them, move closer and scan again.")
+    }
+
+    @Test("A scan with no number keys warns, and still does after leaving and coming back")
+    func numberKeysWarning() async {
+        // The mock panel has no digit keys.
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline())
+        await model.setActive(true).value
+        #expect(!model.status.contains("Number keys"), "Nothing has been scanned yet")
+        model.scan()
+        await model.waitForWork()
+        #expect(model.status.hasPrefix("Panel ready") && model.status.contains("Number keys not found"))
+        await model.setActive(false).value
+        await model.setActive(true).value
+        #expect(model.status.hasPrefix("Panel ready") && model.status.contains("Number keys not found"))
+    }
+
     @Test("A button belonging to an older panel cannot start guidance")
     func staleSelection() async throws {
         let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline())
