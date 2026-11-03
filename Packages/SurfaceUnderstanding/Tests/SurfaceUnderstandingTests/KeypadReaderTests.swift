@@ -482,6 +482,23 @@ func cookTimeIsNotTimeCook() {
     #expect(timeCook(column + [word("Power", x: 320, y: 750, width: 40)]) == nil)
 }
 
+@Test("which word comes first is judged along the keypad, so a tilted Cook over Time stays Cook Time")
+func cookTimeOnATiltedKeypad() {
+    // Tilted about 25°, so a line down also runs left, and word boxes come back tall.
+    // By the image alone these two sit on one line with Time first: glare-oven.heif
+    // comes back from the scan as Time Cook this way, with Cook Time printed on it.
+    let tilted = KeypadReader.Grid(origin: CGPoint(x: 200, y: 500), columnStep: CGVector(dx: 54, dy: 25),
+                                   rowStep: CGVector(dx: -21, dy: 46), read: Set("123456789"))
+    func tall(_ text: String, x: Double, y: Double) -> LabelReader.Word {
+        LabelReader.Word(text: text, left: x - 20, right: x + 20, top: y - 20, bottom: y + 20)
+    }
+    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 320, y: 700), tall("Time", x: 312, y: 718)], grid: tilted) == nil)
+    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 320, y: 700), tall("Cook", x: 312, y: 718)], grid: tilted) != nil)
+    // Along a tilted line, Time first and Cook first.
+    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 300, y: 700), tall("Cook", x: 336, y: 717)], grid: tilted) != nil)
+    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 300, y: 700), tall("Time", x: 336, y: 717)], grid: tilted) == nil)
+}
+
 @Test("Time Cook with anything printed on it is some other key")
 func timeCookWithMore() {
     #expect(timeCook(line("Time", "Cook", "1", x: 280)) == nil)

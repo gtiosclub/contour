@@ -233,6 +233,14 @@ struct KeypadReader: Sendable {
             return (rowStep.dy * (point.x - origin.x) - rowStep.dx * (point.y - origin.y)) / determinant
         }
 
+        /// Whether `a` is printed before `b`: on the line above it, or to its left on
+        /// the same line. Judged along the keypad, since a tilt can swap them in the image.
+        func reads(_ a: CGPoint, before b: CGPoint) -> Bool {
+            let down = (row(of: b) - row(of: a)) * hypot(rowStep.dx, rowStep.dy)
+            let along = (column(of: b) - column(of: a)) * hypot(columnStep.dx, columnStep.dy)
+            return abs(down) >= abs(along) ? down > 0 : along > 0
+        }
+
         /// Does this look like a keypad? Digits read in all three rows, columns
         /// running right, rows running down, roughly square corners, no more than
         /// 30° of tilt, and every key on the frame.
@@ -486,7 +494,7 @@ struct KeypadReader: Sendable {
         }
         guard inOnePlace,
               places.allSatisfy({ grid.row(of: $0) >= -0.5 }),
-              pairs.allSatisfy({ LabelReader.readingOrder([$0.time, $0.cook]).first == $0.time }),
+              pairs.allSatisfy({ grid.reads(CGPoint(x: $0.time.centre.x, y: $0.time.centre.y), before: CGPoint(x: $0.cook.centre.x, y: $0.cook.centre.y)) }),
               !words.contains(where: { word in pairs.contains { isAnotherWord(word, on: $0.time, $0.cook) } })
         else { return nil }
         return labels.sorted { $0.centre.y < $1.centre.y }[labels.count / 2]
