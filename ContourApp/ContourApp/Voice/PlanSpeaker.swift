@@ -40,7 +40,7 @@ final class PlanSpeaker: NSObject, PlanSpeaking, AVSpeechSynthesizerDelegate {
                 synthesizer.speak(next)
                 // Speech can fail without calling back. Don't leave the plan waiting.
                 limit = Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(20))
+                    try? await Task.sleep(for: .seconds(15))
                     if !Task.isCancelled { self?.stop() }
                 }
             }
