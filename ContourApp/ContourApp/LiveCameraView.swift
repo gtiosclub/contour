@@ -445,6 +445,14 @@ struct LiveCameraView: View {
                 .padding(.top, 8)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
 
+                if let progress = experience.planProgress {
+                    let top = buttonCenterY + buttonSize / 2
+                    let height = max(0, targetBottom - collapsedHeight - top)
+                    planControls(progress: progress)
+                        .frame(width: geo.size.width, height: height)
+                        .position(x: primaryX, y: top + height / 2)
+                }
+
                 if selectionVisible {
                     VStack(spacing: 0) {
                         panelGrabber(restingHeight: restingHeight, collapsedHeight: collapsedHeight,
@@ -618,7 +626,7 @@ struct LiveCameraView: View {
         .onChange(of: experience.status) { _, message in
             // State transitions only; tracking's per-frame output stays in the feedback engine.
             // VoiceRequest announces listening before it opens the microphone.
-            if !experience.listening && !(pipeline.guidanceArrived
+            if !experience.listening && !experience.speaksOwnStatus && !(pipeline.guidanceArrived
                 && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
                 UIAccessibility.post(notification: .announcement, argument: message)
             }
@@ -629,6 +637,31 @@ struct LiveCameraView: View {
         .onChange(of: pipeline.panelReference?.photo.id) {
             experience.referenceChanged()
         }
+    }
+
+    /// Where the plan is, and the way past a key when arrival doesn't trigger.
+    private func planControls(progress: String) -> some View {
+        VStack(spacing: 8) {
+            Text(progress)
+                .font(.headline)
+                .glassForeground()
+            if let warning = experience.plan?.warning {
+                Text(warning)
+                    .font(.footnote)
+                    .glassForeground()
+                    .multilineTextAlignment(.center)
+            }
+            Button { experience.next() } label: {
+                Text("Next")
+                    .font(.title3.bold())
+                    .glassForeground()
+                    .frame(minWidth: 120, minHeight: 44)
+            }
+            .buttonStyle(.glass(headerGlass))
+            // VoiceOver reads this label out loud, and the microphone may be open.
+            .accessibilityLabel("Continue to the following key")
+        }
+        .padding(.horizontal, 24)
     }
 
     /// Keep material geometry and foreground crossfades in one transaction.

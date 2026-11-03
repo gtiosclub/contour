@@ -15,7 +15,15 @@ final class CameraLaunchModel {
     private(set) var listening = false
     private(set) var guiding = false
     private(set) var scanning = false
+    /// The keys being walked through, one `guide` at a time. Button ids change on
+    /// every scan, so anything that stops the current work ends the plan with it.
+    private(set) var plan: CookTimePlan?
+    private(set) var planIndex = 0
+    private var planReferenceID: UUID?
+    private var speaking = false
     private let listen: @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard
+    private let listenForNext: @MainActor () async throws -> Bool
+    private let speaker: any PlanSpeaking
     private var knownReferenceID: UUID?
     private var active = false
     private var work: Task<Void, Never>?
@@ -24,18 +32,30 @@ final class CameraLaunchModel {
     private var lifecycleID = UUID()
 
     init(camera: CameraService, pipeline: ContourPipeline,
-         listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) }) {
+         listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) },
+         listenForNext: @escaping @MainActor () async throws -> Bool = { try await VoiceRequest().listenForNext() },
+         speaker: any PlanSpeaking = PlanSpeaker()) {
         self.camera = camera
         self.pipeline = pipeline
         self.listen = listen
+        self.listenForNext = listenForNext
+        self.speaker = speaker
         knownReferenceID = pipeline.panelReference?.photo.id
     }
 
     /// Share visual instructions with the same policy that drives speech/haptics.
     var displayStatus: String {
-        if guiding, let feedback = pipeline.feedback as? LiveFeedbackEngine { return feedback.instructionText }
-        return status
+        var line = status
+        if guiding, let feedback = pipeline.feedback as? LiveFeedbackEngine { line = feedback.instructionText }
+        guard let planProgress, line != planProgress else { return line }
+        return "\(planProgress). \(line)"
     }
+
+    var planProgress: String? { plan?.progress(at: planIndex) }
+
+    /// This model is saying its status out loud, so VoiceOver shouldn't read it
+    /// on top, and can't be reading it when the microphone opens.
+    var speaksOwnStatus: Bool { speaking || plan != nil }
 
     var map: SurfaceMap? { pipeline.panelReference?.detection.map }
     var usesCamera: Bool {
@@ -96,10 +116,13 @@ final class CameraLaunchModel {
         previous?.cancel()
         // Silence immediately, even while a camera/recognizer operation unwinds.
         (pipeline.feedback as? LiveFeedbackEngine)?.stop()
+        speaker.stop()
         busy = false
         listening = false
         guiding = false
         scanning = false
+        plan = nil
+        speaking = false
         let cleanup = Task {
             await previous?.value
             await pipeline.stopGuidance()
@@ -155,6 +178,21 @@ final class CameraLaunchModel {
                 self.status = "Didn't hear anything. Try speaking again or choose a button below."
                 return
             }
+            switch CookTimePlan.make(for: heard.text, in: map) {
+            case .missing(let sentence):
+                await self.announce(sentence)
+                return
+            case .plan(let plan):
+                self.plan = plan
+                self.planIndex = 0
+                self.planReferenceID = referenceID
+                await self.announce(plan.say)
+                if let warning = plan.warning { await self.announce(warning) }
+                await self.walk(plan, from: 0, referenceID: referenceID)
+                return
+            case nil:
+                break
+            }
             guard let button = heard.button else {
                 self.status = "No button matching “\(heard.text)”. Try again or choose a button below."
                 return
@@ -179,6 +217,95 @@ final class CameraLaunchModel {
         status = pipeline.guidanceArrived ? "Reached \(button.label ?? "the selected button")."
             : "Guidance ended. Choose the button to retry, or scan again."
         error = pipeline.trackingError
+    }
+
+    /// Moves on from the current key, whatever it's doing: speech, guidance or
+    /// listening. Nothing detects a press, and arrival may never trigger, so this
+    /// always works.
+    func next() {
+        guard let plan else { return }
+        let referenceID = planReferenceID
+        let following = planIndex + 1
+        guard following < plan.steps.count else {
+            replaceWork { await self.announce("That was the last key.") }
+            return
+        }
+        replaceWork { await self.walk(plan, from: following, referenceID: referenceID) }
+        // Replacing the work ended the plan. This is the same plan, one key on.
+        self.plan = plan
+        planIndex = following
+    }
+
+    /// One key at a time. Stop, a rescan and `next` all cancel this work, so a
+    /// cancelled step just returns.
+    private func walk(_ plan: CookTimePlan, from first: Int, referenceID: UUID?) async {
+        for index in first..<plan.steps.count {
+            guard pipeline.panelReference?.photo.id == referenceID else {
+                self.plan = nil
+                return
+            }
+            planIndex = index
+            let step = plan.steps[index]
+            await announce(plan.progress(at: index))
+            await guide(step.button, referenceID: referenceID)
+            guard !Task.isCancelled else { return }
+            guard pipeline.panelReference?.photo.id == referenceID else {
+                self.plan = nil
+                return
+            }
+            let reached = pipeline.guidanceArrived
+            let lead = reached ? "Press \(step.name)" : "Guidance ended before \(step.name)"
+            await quietFeedback()
+            guard index < plan.steps.count - 1 else {
+                await announce("\(lead). That's the last key.")
+                if !Task.isCancelled { self.plan = nil }
+                return
+            }
+            // The screen leaves out the word: VoiceOver can read this text aloud
+            // while the microphone is open.
+            await announce(reached ? "\(lead), then say next." : "\(lead). Say next to move on.",
+                           showing: "\(lead). Listening to move on.")
+            guard await waitForNext() else { return }
+        }
+    }
+
+    /// Lets "Target reached" finish, then goes silent so the microphone only
+    /// hears the user. At most 3 s, in case the clip never reports finishing.
+    private func quietFeedback() async {
+        guard let live = pipeline.feedback as? LiveFeedbackEngine else { return }
+        for _ in 0..<60 where live.voice.isSpeaking && !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        live.stop()
+    }
+
+    /// Listens until "next" is heard. False if this work was cancelled instead.
+    /// Failing to listen doesn't end the plan, because the Next button still works.
+    private func waitForNext() async -> Bool {
+        listening = true
+        defer { listening = false }
+        while !Task.isCancelled {
+            do {
+                if try await listenForNext() { return !Task.isCancelled }
+            } catch is CancellationError {
+                return false
+            } catch {
+                status = "Can't listen: \(error.localizedDescription) Use the button to move on."
+            }
+            // The microphone has to reopen, so don't spin if it ends straight away.
+            try? await Task.sleep(for: .seconds(1))
+        }
+        return false
+    }
+
+    /// Shows `text` and says it out loud, whether or not VoiceOver is on, and
+    /// returns once it's finished.
+    private func announce(_ text: String, showing shown: String? = nil) async {
+        guard !Task.isCancelled else { return }
+        speaking = true
+        status = shown ?? text
+        await speaker.speak(text)
+        if !Task.isCancelled { speaking = false }
     }
 
     private func replaceWork(_ operation: @escaping @MainActor () async throws -> Void) {

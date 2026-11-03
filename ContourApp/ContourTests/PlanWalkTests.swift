@@ -1,0 +1,401 @@
+//
+//  PlanWalkTests.swift
+//  ContourTests
+//
+//  Throwaway multi-step demo: walking a plan through CameraLaunchModel with a fake
+//  microphone, a fake voice and scripted fingers. Nothing here proves the real
+//  microphone, speech or tracking.
+//
+
+import ContourCore
+import ContourFeedback
+import ContourMocks
+import Foundation
+import Testing
+@testable import ContourApp
+
+/// A panel with every key a plan needs. Fresh ids on every call, like a real scan.
+private func panel(timeCook: Bool = true, digits: String = "1234567890") -> SurfaceMap {
+    var labels = digits.map(String.init) + ["Start/Pause", "Add 30 Sec"]
+    if timeCook { labels.append("Time Cook") }
+    return SurfaceMap(buttons: labels.enumerated().map { i, label in
+        SurfaceMap.Button(label: label, bounds: PanelRect(x: Double(i % 4) * 0.25, y: Double(i / 4) * 0.25,
+                                                          width: 0.2, height: 0.2), confidence: 1)
+    }, confidence: 1)
+}
+
+/// Each `frames()` puts the finger on the key `target` names, long enough to hold.
+private final class FingerOnTheKey: TrackingSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var streams = 0
+    private let target: @MainActor () -> PanelPoint?
+    init(target: @escaping @MainActor () -> PanelPoint?) { self.target = target }
+
+    var streamCount: Int { lock.withLock { streams } }
+
+    func frames() -> AsyncStream<TrackingFrame> {
+        lock.withLock { streams += 1 }
+        let target = target
+        return AsyncStream { continuation in
+            Task { @MainActor in
+                for _ in 0..<14 {
+                    continuation.yield(TrackingFrame(timestamp: Date(), fingertip: target(),
+                        panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                            column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .good))
+                }
+                continuation.finish()
+            }
+        }
+    }
+}
+
+/// Never arrives and never ends, like a phone that can't see the finger.
+private struct NoFingertipEver: TrackingSource {
+    func frames() -> AsyncStream<TrackingFrame> {
+        AsyncStream { continuation in
+            continuation.yield(TrackingFrame(timestamp: Date(), fingertip: nil,
+                panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                    column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .degraded))
+        }
+    }
+}
+
+/// Records what's said, and when it finished relative to the microphone.
+private final class FakeSpeaker: PlanSpeaking {
+    var log: [String] = []
+    var stops = 0
+    var spoken: [String] { log.filter { !$0.hasPrefix("[") } }
+
+    func speak(_ text: String) async {
+        log.append(text)
+        // A real sentence takes a while. The model must wait for all of it.
+        try? await Task.sleep(for: .milliseconds(5))
+        log.append("[finished]")
+    }
+
+    func stop() { stops += 1 }
+}
+
+@MainActor
+@Suite("Walking a plan")
+struct PlanWalkTests {
+    private func pipeline(map: SurfaceMap, tracking: any TrackingSource) -> ContourPipeline {
+        let epoch = ContinuousClock.now
+        var tick = 0
+        return ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(map: map), tracking: tracking,
+            feedback: PrintingFeedbackEngine(isPrinting: false), liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+    }
+
+    /// A model with a scanned panel. `say` is what the user asks for, and
+    /// `next` answers each time the model listens for "next".
+    private func scanned(say: String = "cook for a minute and a half", map: SurfaceMap = panel(),
+                         tracking: (any TrackingSource)? = nil, speaker: FakeSpeaker,
+                         next: @escaping @MainActor () async throws -> Bool = { true })
+        async -> (model: CameraLaunchModel, finger: FingerOnTheKey) {
+        // The finger follows the plan: whichever key the model is on right now.
+        var read: (() -> PanelPoint?)?
+        let finger = FingerOnTheKey { read?() }
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline(map: map, tracking: tracking ?? finger),
+            listen: { map in VoiceRequest.Heard(text: say, button: ButtonLookup.button(for: say, in: map)) },
+            listenForNext: next, speaker: speaker)
+        read = { [weak model] in
+            guard let model, let plan = model.plan else { return nil }
+            return plan.steps[model.planIndex].button.bounds.center
+        }
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+        return (model, finger)
+    }
+
+    private func until(_ condition: () -> Bool) async {
+        for _ in 0..<500 where !condition() { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(condition())
+    }
+
+    private static let hangs: @MainActor () async throws -> Bool = {
+        try await Task.sleep(for: .seconds(60))
+        return false
+    }
+
+    @Test("Time Cook, 1, 3, 0, Start, one key at a time, saying each one")
+    func walksEveryKey() async {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(speaker: speaker)
+        model.sayAButton()
+        await model.waitForWork()
+        #expect(speaker.spoken == [
+            "Cook for a minute and a half: Time Cook, 1, 3, 0, Start.",
+            "Step 1 of 5: Time Cook", "Press Time Cook, then say next.",
+            "Step 2 of 5: 1", "Press 1, then say next.",
+            "Step 3 of 5: 3", "Press 3, then say next.",
+            "Step 4 of 5: 0", "Press 0, then say next.",
+            "Step 5 of 5: Start", "Press Start. That's the last key.",
+        ])
+        #expect(finger.streamCount == 5)
+        #expect(model.plan == nil)
+        #expect(!model.busy && !model.listening && !model.guiding)
+        #expect(model.status == "Press Start. That's the last key.")
+    }
+
+    @Test("The same button twice in a row is guided twice")
+    func repeatedDigit() async {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(say: "2 minutes", speaker: speaker)
+        model.sayAButton()
+        await model.waitForWork()
+        #expect(finger.streamCount == 5)
+        #expect(speaker.spoken.filter { $0 == "Press 0, then say next." }.count == 2)
+        #expect(speaker.spoken.contains("Step 3 of 5: 0") && speaker.spoken.contains("Step 4 of 5: 0"))
+        #expect(model.status == "Press Start. That's the last key.")
+    }
+
+    @Test("The microphone opens only after the app has finished talking")
+    func speechFinishesBeforeTheMicrophone() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: { speaker.log.append("[mic]"); return true })
+        model.sayAButton()
+        await model.waitForWork()
+        let mic = speaker.log.indices.filter { speaker.log[$0] == "[mic]" }
+        #expect(mic.count == 4)
+        for index in mic {
+            #expect(speaker.log[index - 1] == "[finished]")
+            #expect(speaker.log[index - 2].hasSuffix("then say next."))
+        }
+    }
+
+    @Test("Not hearing next means waiting, not moving on")
+    func waitsForNext() async {
+        let speaker = FakeSpeaker()
+        var answers = [false, false, true]
+        let (model, _) = await scanned(say: "30 seconds", speaker: speaker, next: {
+            answers.isEmpty ? try await Self.hangs() : answers.removeFirst()
+        })
+        model.sayAButton()
+        await until { model.planIndex == 1 && model.listening }
+        #expect(answers.isEmpty)
+        #expect(model.planProgress == "Step 2 of 4: 3")
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("The Next button works during guidance, when arrival never triggers")
+    func nextDuringGuidance() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: NoFingertipEver(), speaker: speaker)
+        model.sayAButton()
+        await until { model.guiding && model.planIndex == 0 }
+        model.next()
+        #expect(model.planProgress == "Step 2 of 5: 1")
+        await until { model.guiding && model.planIndex == 1 }
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        #expect(model.displayStatus.hasPrefix("Step 2 of 5: 1. "))
+        #expect(model.busy)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("The Next button works while listening for next")
+    func nextWhileListening() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening && model.planIndex == 0 }
+        model.next()
+        await until { model.listening && model.planIndex == 1 }
+        #expect(speaker.spoken.contains("Press 1, then say next."))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("The Next button on the last key ends the plan")
+    func nextOnTheLastKey() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(say: "30 seconds", tracking: NoFingertipEver(), speaker: speaker)
+        model.sayAButton()
+        await until { model.guiding }
+        model.next(); model.next(); model.next()
+        #expect(model.planProgress == "Step 4 of 4: Start")
+        model.next()
+        #expect(model.plan == nil)
+        await model.waitForWork()
+        #expect(model.status == "That was the last key.")
+        #expect(!model.busy && !model.guiding)
+    }
+
+    @Test("Stop ends the whole plan", arguments: [true, false])
+    func stopEndsThePlan(whileListening: Bool) async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: whileListening ? nil : NoFingertipEver(), speaker: speaker,
+                                       next: Self.hangs)
+        model.sayAButton()
+        await until { whileListening ? model.listening : model.guiding }
+        let said = speaker.spoken.count
+        let stops = speaker.stops
+        model.stop()
+        #expect(model.plan == nil && model.planProgress == nil)
+        #expect(speaker.stops > stops)
+        await model.waitForWork()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(speaker.spoken.count == said)
+        #expect(!model.busy && !model.listening && !model.guiding)
+        #expect(model.status.hasPrefix("Stopped"))
+        model.next()
+        #expect(!model.busy)
+    }
+
+    @Test("A rescan ends the plan, and the old ids are never guided to")
+    func rescanEndsThePlan() async throws {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        let streams = finger.streamCount
+        model.scan()
+        #expect(model.plan == nil)
+        await model.waitForWork()
+        #expect(!model.busy && model.plan == nil)
+        #expect(finger.streamCount == streams)
+        #expect(model.status.contains("Panel ready"))
+    }
+
+    @Test("A panel replaced behind the plan's back ends it")
+    func replacedPanelEndsThePlan() async throws {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        _ = try await model.pipeline.detectPanel(in: PanelPhoto(data: Data(),
+            pixelSize: PixelSize(width: 100, height: 100), timestamp: Date()))
+        let streams = finger.streamCount
+        // The screen hasn't told the model yet. Moving on must not use the old map.
+        model.next()
+        await until { model.plan == nil }
+        await model.waitForWork()
+        #expect(finger.streamCount == streams)
+        #expect(!model.busy)
+
+        model.referenceChanged()
+        #expect(model.plan == nil)
+    }
+
+    @Test("Going to the background ends the plan")
+    func backgroundEndsThePlan() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        await model.setActive(false).value
+        #expect(model.plan == nil && !model.busy && !model.listening)
+    }
+
+    @Test("Choosing a button on screen ends the plan")
+    func chooseEndsThePlan() async throws {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        model.choose(try #require(model.map?.button(labelled: "Add 30 Sec")))
+        #expect(model.plan == nil)
+        await model.waitForWork()
+        #expect(model.status == "Reached Add 30 Sec." || model.status.contains("Guidance ended"))
+        #expect(!model.busy)
+    }
+
+    @Test("A missing digit guides nowhere and says which key")
+    func missingDigit() async {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(map: panel(digits: "124567890"), speaker: speaker)
+        model.sayAButton()
+        await model.waitForWork()
+        #expect(finger.streamCount == 0)
+        #expect(model.plan == nil && !model.busy)
+        #expect(model.status.contains("for 3 on this panel"))
+        #expect(speaker.spoken == [model.status])
+    }
+
+    @Test("No Time Cook: says so out loud and on screen before the first digit")
+    func noTimeCook() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(map: panel(timeCook: false), speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        let warning = try? #require(model.plan?.warning)
+        #expect(warning?.contains("Time Cook") == true)
+        #expect(speaker.spoken[1] == warning)
+        #expect(speaker.spoken[2] == "Step 1 of 4: 1")
+        #expect(model.planProgress == "Step 1 of 4: 1")
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("The microphone failing doesn't end the plan, and Next still works")
+    func listeningFails() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: {
+            throw NSError(domain: "VoiceTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone."])
+        })
+        model.sayAButton()
+        await until { model.status.contains("No microphone.") }
+        #expect(model.plan != nil && model.busy)
+        model.next()
+        await until { model.planIndex == 1 && model.status.contains("No microphone.") }
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Guidance ending early doesn't claim the finger got there")
+    func guidanceEnded() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: LaunchEmptyFrames(), speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        #expect(speaker.spoken.contains("Guidance ended before Time Cook. Say next to move on."))
+        #expect(!speaker.spoken.contains { $0.hasPrefix("Press") })
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("The status never shows the word next while the microphone may be open")
+    func statusAvoidsTheWord() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        #expect(model.status == "Press Time Cook. Listening to move on.")
+        #expect(!NextWord.isIn(model.displayStatus))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("VoiceOver stays out of it while the model does its own talking")
+    func speaksOwnStatus() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        #expect(!model.speaksOwnStatus)
+        model.sayAButton()
+        await until { model.listening }
+        #expect(model.speaksOwnStatus)
+        model.stop()
+        #expect(!model.speaksOwnStatus)
+        await model.waitForWork()
+    }
+
+    @Test("A request with no cook time still guides to one button", arguments: ["add 30 seconds", "start", "go"])
+    func oneButton(request: String) async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(say: request, tracking: LaunchEmptyFrames(), speaker: speaker)
+        model.sayAButton()
+        await model.waitForWork()
+        #expect(speaker.spoken.isEmpty)
+        #expect(model.plan == nil)
+        #expect(model.status.contains("Guidance ended"))
+    }
+}
+
+private struct LaunchEmptyFrames: TrackingSource {
+    func frames() -> AsyncStream<TrackingFrame> { AsyncStream { $0.finish() } }
+}
