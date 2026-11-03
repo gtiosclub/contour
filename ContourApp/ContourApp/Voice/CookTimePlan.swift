@@ -39,7 +39,7 @@ nonisolated struct CookTime: Equatable {
         (CookTime(digits: "130", spoken: "a minute and a half"), [
             "a minutes and a half", "1 minutes and a half", "minutes and a half",
             "1 and a half minutes", "1 and 1 half minutes", "1 and 1/2 minutes", "1 1/2 minutes",
-            "1.5 minutes", "1 point 5 minutes",
+            "1.5 minutes", "1 point 5 minutes", "one.5 minutes",
             "a minutes 30 seconds", "a minutes and 30 seconds", "a minutes 30", "a minutes and 30",
             "1 minutes 30 seconds", "1 minutes and 30 seconds", "1 minutes 30", "1 minutes and 30",
             "90 seconds", "1:30", "130", "1 30",

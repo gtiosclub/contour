@@ -51,7 +51,8 @@ struct CookTimeTests {
     // these sentences in a synthetic voice on a Mac. Not recorded on a phone.
     @Test("a minute and a half types 1, 3, 0", arguments: [
         "Cook for a minute and a half.", "A minute and a half.", "90 seconds.", "Cook for 90 seconds.",
-        "One and a half minutes.", "One minute, 30 seconds.", "130.", "1.5 minutes.",
+        "One and a half minutes.", "One minute, 30 seconds.", "One minute 30 seconds.", "130.", "1.5 minutes.",
+        "One.5 minutes.",
         "Can you cook this for 90 seconds, please?",
         "cook for a minute and a half", "one minute and a half", "minute and a half", "ninety seconds", "90 sec",
         "90 secs", "90 second", "cook for ninety seconds", "1 and a half minutes", "one and one half minutes",
@@ -222,6 +223,25 @@ struct CookTimePlanTests {
         ("add 30 seconds", "Add 30 Sec"), ("plus thirty seconds", "Add 30 Sec"), ("five", "5"),
     ])
     func fallsThrough(request: String, label: String) {
+        #expect(CookTimePlan.make(for: request, in: microwave01) == nil)
+        #expect(ButtonLookup.button(for: request, in: microwave01)?.label == label)
+    }
+}
+
+@Suite("Whole sentences in the one-button lookup")
+struct WholeSentenceLookupTests {
+    // Known cost of hearing the whole sentence. Today's early stop matched these on
+    // the word "start". Now they get "No button matching", and the user says it again.
+    @Test("extra words the lookup doesn't know are no longer ignored",
+          arguments: ["start now", "start the microwave"])
+    func extraWords(request: String) {
+        #expect(CookTimePlan.make(for: request, in: microwave01) == nil)
+        #expect(ButtonLookup.button(for: request, in: microwave01) == nil)
+    }
+
+    @Test("what the transcriber writes for a single word still finds the key",
+          arguments: [("Start.", "Start/Pause"), ("Press start, please.", "Start/Pause"), ("Add 30 seconds.", "Add 30 Sec")])
+    func transcribed(request: String, label: String) {
         #expect(CookTimePlan.make(for: request, in: microwave01) == nil)
         #expect(ButtonLookup.button(for: request, in: microwave01)?.label == label)
     }
