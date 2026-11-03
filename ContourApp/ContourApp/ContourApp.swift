@@ -10,6 +10,7 @@
 //  in first.
 //
 
+import SurfaceUnderstanding
 import SwiftUI
 
 @main
@@ -28,6 +29,8 @@ struct ContourApp: App {
         _pipeline = State(initialValue: .mock())
         #else
         _pipeline = State(initialValue: .live(camera: camera))
+        // Loads the text model now, so a scan doesn't have to. Nothing waits on it.
+        LabelReader.warmUp()
         #endif
     }
 
