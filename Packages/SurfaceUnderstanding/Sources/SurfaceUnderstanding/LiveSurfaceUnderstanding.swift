@@ -136,8 +136,11 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
         let reading: LabelReader.Reading
         do {
-            let input = Self.labelInput(for: photo, panel: panel)
-            reading = try await LabelReader().read(in: input.photo, panel: input.panel, regions: regions)
+            if let input = Self.labelInput(for: photo, panel: panel) {
+                reading = try await LabelReader().read(in: input.image, panel: input.panel, regions: regions)
+            } else {
+                reading = try await LabelReader().read(in: photo, panel: panel, regions: regions)
+            }
         } catch {
             try checkCancellation()
             return LabelReader.Reading(labels: Array(repeating: nil, count: regions.count), textButtons: [])
@@ -155,11 +158,11 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
     /// A 2x crop of the panel for LabelReader when the photo's short side is
     /// under 1000 px, with the quad moved into the crop so labels keep their
-    /// panel coordinates. TIFF, since a JPEG copy lost START on microwave-07.
-    /// Returns the inputs unchanged if the photo is big enough or anything fails.
-    static func labelInput(for photo: PanelPhoto, panel: PanelQuad) -> (photo: PanelPhoto, panel: PanelQuad) {
-        guard let image = try? photo.cgImage(),   // already upright
-              min(image.width, image.height) < 1000 else { return (photo, panel) }
+    /// panel coordinates. Nil means read the photo as it is.
+    static func labelInput(for photo: PanelPhoto, panel: PanelQuad) -> (image: CGImage, panel: PanelQuad)? {
+        // Size check first, so big photos aren't decoded here too.
+        guard min(photo.pixelSize.width, photo.pixelSize.height) < 1000,
+              let image = try? photo.cgImage() else { return nil }   // upright
 
         // The panel's bounding box plus a 5% margin, in pixels, kept inside the photo.
         let iw = Double(image.width), ih = Double(image.height)
@@ -168,30 +171,23 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         let box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
         let crop = box.insetBy(dx: -0.05 * box.width, dy: -0.05 * box.height).integral
             .intersection(CGRect(x: 0, y: 0, width: iw, height: ih))
-        guard !crop.isEmpty, let cropped = image.cropping(to: crop) else { return (photo, panel) }
+        guard !crop.isEmpty, let cropped = image.cropping(to: crop) else { return nil }
 
-        // Double the crop.
+        // Double the crop. Kept as an image: a TIFF copy used too much memory.
         let w = cropped.width * 2, h = cropped.height * 2
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(),
-                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return (photo, panel) }
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         ctx.interpolationQuality = .high
         ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: w, height: h))
-
-        let data = NSMutableData()
-        guard let doubled = ctx.makeImage(),
-              let dest = CGImageDestinationCreateWithData(data, UTType.tiff.identifier as CFString, 1, nil)
-        else { return (photo, panel) }
-        CGImageDestinationAddImage(dest, doubled, nil)
-        guard CGImageDestinationFinalize(dest) else { return (photo, panel) }
+        guard let doubled = ctx.makeImage() else { return nil }
 
         // Same quad, normalized to the crop.
         func moved(_ p: ImagePoint) -> ImagePoint {
             ImagePoint(x: (p.x * iw - crop.minX) / crop.width, y: (p.y * ih - crop.minY) / crop.height)
         }
-        return (PanelPhoto(data: data as Data, pixelSize: PixelSize(width: w, height: h), timestamp: photo.timestamp),
-                PanelQuad(topLeft: moved(panel.topLeft), topRight: moved(panel.topRight),
-                          bottomRight: moved(panel.bottomRight), bottomLeft: moved(panel.bottomLeft)))
+        return (doubled, PanelQuad(topLeft: moved(panel.topLeft), topRight: moved(panel.topRight),
+                                bottomRight: moved(panel.bottomRight), bottomLeft: moved(panel.bottomLeft)))
     }
     
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of

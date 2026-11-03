@@ -182,62 +182,74 @@ func printedLabelsBecomeButtons() async throws {
     }
 }
 
-// MARK: - 2x copy for LabelReader
+// MARK: - 2x crop for LabelReader
 
-@Test("a 720x1280 photo gets a 1440x2560 upright copy")
+@Test("a 720x1280 photo with no panel quad is doubled whole")
 func smallPhotoIsDoubled() throws {
     let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
-    let copy = LiveSurfaceUnderstanding.labelInput(for: small, panel: .fullFrame).photo
-    let image = try copy.cgImage()
-    #expect(image.width == 1440 && image.height == 2560)
-    #expect(copy.orientation == .up)
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: small, panel: .fullFrame))
+    #expect(input.image.width == 1440 && input.image.height == 2560)
+    #expect(input.panel == .fullFrame)
 }
 
-@Test("a 1080x1920 photo is used as is")
+@Test("a 1080x1920 photo is read as it is")
 func largePhotoIsUnchanged() throws {
     let large = photo(try pngData(width: 1080, height: 1920) { _ in }, width: 1080, height: 1920)
-    #expect(LiveSurfaceUnderstanding.labelInput(for: large, panel: .fullFrame).photo == large)
+    #expect(LiveSurfaceUnderstanding.labelInput(for: large, panel: .fullFrame) == nil)
 }
 
 @Test("a small photo's panel is cropped out and doubled")
-  func panelIsCroppedAndDoubled() throws {
-      let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
-      let middle = PanelQuad(topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
-                             bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
-      let input = LiveSurfaceUnderstanding.labelInput(for: small, panel: middle)
-      let image = try input.photo.cgImage()
-      // Middle half plus a 5% margin, doubled: about 792x1408.
-      #expect(abs(image.width - 792) <= 4 && abs(image.height - 1408) <= 4)
-      // The panel now sits just inside the crop.
-      #expect(input.panel.topLeft.x > 0 && input.panel.topLeft.x < 0.1)
-  }
+func panelIsCroppedAndDoubled() throws {
+    let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+    let middle = PanelQuad(topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
+                           bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: small, panel: middle))
+    // Middle half plus a 5% margin, doubled: about 792x1408.
+    #expect(abs(input.image.width - 792) <= 4 && abs(input.image.height - 1408) <= 4)
+    #expect(input.panel.topLeft.x > 0 && input.panel.topLeft.x < 0.1)
+}
 
-@Test("Printed buttons stay on the panel, with slack for real edge labels")
-func printedButtonsStayOnPanel() {
-    let cases: [(String, Double, Double, Double, Double)] = [
-        ("Delay Start", 2.28, 0.85, 0.28, 0.47),
-        ("Start Pause", 1.31, 0.19, 0.43, 0.46),
-        ("START", 0.12, 3.75, 0.20, 0.08),
-        ("CANCEL STOP", 2.78, 0.87, 0.24, 0.04),
-        ("Unlock", 0.56, 1.02, 0.21, 0.06),
-        ("START CANCEL", 0.87, 0.17, 0.22, 0.11)
-    ]
-    let input = cases.map { label, x, y, width, height in
-        (label: label, bounds: PanelRect(x: x - width / 2, y: y - height / 2, width: width, height: height))
+@Test("a mark on a .right photo lands on the same panel point after the 2x crop")
+func rotatedMarkStaysInPlace() throws {
+    // Stored sideways (1280x720, top on the right): white with one black square.
+    let data = try pngData(width: 1280, height: 720) { ctx in
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
+        ctx.setFillColor(gray: 0, alpha: 1)
+        ctx.fill(CGRect(x: 400, y: 200, width: 30, height: 30))
     }
-    let buttons = LiveSurfaceUnderstanding.printedButtons(from: input)
-    #expect(buttons.map(\.label) == ["Unlock", "START CANCEL"])
-    #expect(buttons.map(\.bounds) == Array(input.suffix(2)).map(\.bounds))
-    #expect(buttons.allSatisfy { $0.confidence == 0.5 })
-    // Boundaries are inclusive; the centre, not the whole box, is checked.
-    let edges = [-0.05, 1.05].flatMap { value in
-        [(label: "x edge", bounds: PanelRect(x: value, y: 0.5, width: 0, height: 0)),
-         (label: "y edge", bounds: PanelRect(x: 0.5, y: value, width: 0, height: 0))]
+    let sideways = PanelPhoto(data: data, pixelSize: PixelSize(width: 1280, height: 720),
+                              orientation: .right, timestamp: Date(timeIntervalSince1970: 0))
+    // A skewed outline, so x and y both get tested.
+    let panel = PanelQuad(topLeft: ImagePoint(x: 0.1, y: 0.2), topRight: ImagePoint(x: 0.9, y: 0.15),
+                          bottomRight: ImagePoint(x: 0.85, y: 0.8), bottomLeft: ImagePoint(x: 0.15, y: 0.85))
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: sideways, panel: panel))
+
+    let detector = PanelDetector()
+    let before = detector.rectify(try darkCenter(sideways.cgImage()), within: panel)
+    let after = detector.rectify(try darkCenter(input.image), within: input.panel)
+    #expect(abs(before.x - after.x) < 0.01)
+    #expect(abs(before.y - after.y) < 0.01)
+}
+
+/// Centre of the dark pixels in `image`, normalized, y down.
+private func darkCenter(_ image: CGImage) throws -> ImagePoint {
+    let w = image.width, h = image.height
+    var pixels = [UInt8](repeating: 255, count: w * h * 4)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+        guard let ctx = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return true
     }
-    #expect(LiveSurfaceUnderstanding.printedButtons(from: edges).count == 4)
-    let outside = [-0.051, 1.051].flatMap { value in
-        [(label: "x off", bounds: PanelRect(x: value, y: 0.5, width: 0, height: 0)),
-         (label: "y off", bounds: PanelRect(x: 0.5, y: value, width: 0, height: 0))]
+    try #require(drawn)
+    var sx = 0.0, sy = 0.0, n = 0.0
+    for y in 0..<h {
+        for x in 0..<w where pixels[(y * w + x) * 4] < 128 {
+            sx += Double(x); sy += Double(y); n += 1
+        }
     }
-    #expect(LiveSurfaceUnderstanding.printedButtons(from: outside).isEmpty)
+    try #require(n > 0)
+    return ImagePoint(x: (sx / n + 0.5) / Double(w), y: (sy / n + 0.5) / Double(h))
 }
