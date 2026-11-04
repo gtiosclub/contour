@@ -33,7 +33,8 @@ struct TrackingContractTests {
         await source.use(reference)
         var frames: [TrackingFrame] = []
         for await output in source.frames() { frames.append(output) }
-        #expect(await tracker.referenceID == photo.id)
+        #expect(await tracker.lastReferenceID == photo.id)
+        #expect(await tracker.referenceID == nil)
         #expect(frames.count == 1)
         let sample = try #require(samples.first)
         #expect(sample.frame.trackingQuality == .lost)
@@ -42,7 +43,9 @@ struct TrackingContractTests {
         #expect(sample.panelStatus == .lost(.notFound))
         #expect(sample.featureDiagnostics?.matchCount == 3)
         #expect(sample.hybridDiagnostics?.source == .unavailable)
-        #expect(await source.hybridStatus()?.source == .unavailable)
+        // A terminated camera session retires its live status; the captured
+        // sample above still carries that frame's unavailable-source evidence.
+        #expect(await source.hybridStatus() == nil)
     }
 
     private func cameraFrame() throws -> CameraFrame {
@@ -61,7 +64,8 @@ private struct ContractCamera: CameraFrameSource {
 
 private actor ContractPanel: PanelTracking {
     private(set) var referenceID: UUID?
-    func startTracking(_ reference: PanelReference) { referenceID = reference.photo.id }
+    private(set) var lastReferenceID: UUID?
+    func startTracking(_ reference: PanelReference) { referenceID = reference.photo.id; lastReferenceID = reference.photo.id }
     func stopTracking() { referenceID = nil }
     func track(_ frame: CameraFrame) -> PanelObservation {
         var result = PanelObservation.lost(.notFound, at: frame.timestamp)

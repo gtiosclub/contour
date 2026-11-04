@@ -44,6 +44,21 @@ The former **Enter LiveCameraView** link is now **Camera and speech prototype**.
 That is the separate Experience prototype, not a prerequisite for the integrated
 scan/guide flow.
 
+## Production methods and lifetime (#95–96)
+
+Vision, Features, and Hybrid now select real independent tracker sessions.
+Hybrid is the phone default and receives synchronized world evidence from the
+shared AR camera where supported. Without usable world evidence it relies on
+visual evidence; hardware support alone never implies calibrated prediction.
+Highlight exclusion and contrast options apply to the selected feature backend.
+AR-owned capture does not support the AV exposure controls.
+
+Changing targets/consumers on the same reference retains valid calibration but
+requires fresh input and resets smoothing/hold state. Explicit Stop, reference or
+settings replacement, camera-stream termination, and leaving Diagnostics retire
+the affected backend. Stop retains the reference for a subsequent registration.
+Phone acceptance of calibration, prediction, recovery, and Vision remains #97.
+
 ## Evidence and comparison controls (#94)
 
 The **Tracking evidence** panel reads the diagnostics belonging to the displayed
