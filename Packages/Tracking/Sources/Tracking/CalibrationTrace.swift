@@ -5,8 +5,52 @@
 //  Created by Miguel Tjia on 11/2/26.
 //
 
+import ContourCore
 import Foundation
 import simd
+
+/// Recording form of a PanelObservation. Diagnostics are not recorded: they
+/// are tracker output, not alignment input.
+struct TraceObservation: Codable {
+    var timestamp: Date
+    var quad: PanelQuad?
+    var confidence: Double
+    /// "tracked" or "lost".
+    var status: String
+    /// A PanelObservation.LossReason raw value; present exactly when lost.
+    var lossReason: String?
+
+    init(_ observation: PanelObservation) {
+        timestamp = observation.timestamp
+        quad = observation.quad
+        confidence = observation.confidence
+        switch observation.status {
+        case .tracked:
+            status = "tracked"
+            lossReason = nil
+        case .lost(let reason):
+            status = "lost"
+            lossReason = reason.rawValue
+        }
+    }
+
+    func observation() throws -> PanelObservation {
+        switch (status, quad, lossReason) {
+        case ("tracked", let quad?, nil):
+            return .tracked(quad, confidence: confidence, at: timestamp)
+        case ("lost", nil, let raw?):
+            guard let reason = PanelObservation.LossReason(rawValue: raw) else {
+                throw TraceDecodingError.unknownValue(field: "lossReason", value: raw)
+            }
+            return .lost(reason, at: timestamp)
+        case ("tracked", _, _), ("lost", _, _):
+            // A quad must be present exactly when tracked.
+            throw TraceDecodingError.inconsistentObservation(status: status)
+        default:
+            throw TraceDecodingError.unknownValue(field: "status", value: status)
+        }
+    }
+}
 
 struct TracePlane: Codable {
     var transform: [Float]
@@ -52,6 +96,8 @@ struct TraceWorldSnapshot: Codable {
 
 enum TraceDecodingError: Error {
     case wrongCount(field: String, expected: Int, actual: Int)
+    case unknownValue(field: String, value: String)
+    case inconsistentObservation(status: String)
 }
 
 // Matrices are stored column-major: column 0 first, then column 1, ...

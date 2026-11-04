@@ -5,6 +5,7 @@
 //  Created by Miguel Tjia on 11/2/26.
 //
 
+import ContourCore
 import Foundation
 import Testing
 import simd
@@ -84,5 +85,59 @@ struct CalibrationTraceTests {
         #expect(throws: DecodingError.self) {
             try JSONDecoder().decode(TraceWorldSnapshot.self, from: json)
         }
+    }
+}
+
+// MARK: - Observations
+
+private let seen = Date(timeIntervalSince1970: 1_767_225_600.125)
+private let quad = PanelQuad(topLeft: ImagePoint(x: 0.1, y: 0.2), topRight: ImagePoint(x: 0.8, y: 0.15),
+                             bottomRight: ImagePoint(x: 0.85, y: 0.7), bottomLeft: ImagePoint(x: 0.12, y: 0.75))
+
+private func throughJSON(_ trace: TraceObservation) throws -> TraceObservation {
+    try JSONDecoder().decode(TraceObservation.self, from: JSONEncoder().encode(trace))
+}
+
+@Suite("Calibration trace observations")
+struct CalibrationTraceObservationTests {
+    @Test func trackedObservationSurvivesJSONRoundTrip() throws {
+        let observation = PanelObservation.tracked(quad, confidence: 0.83, at: seen)
+
+        #expect(try throughJSON(TraceObservation(observation)).observation() == observation)
+    }
+
+    @Test(arguments: [PanelObservation.LossReason.notFound, .trackerFailed, .unrecognized])
+    func lostObservationKeepsItsReason(_ reason: PanelObservation.LossReason) throws {
+        let observation = PanelObservation.lost(reason, at: seen)
+
+        #expect(try throughJSON(TraceObservation(observation)).observation() == observation)
+    }
+
+    @Test func trackedWithoutQuadThrows() {
+        var trace = TraceObservation(.tracked(quad, confidence: 0.83, at: seen))
+        trace.quad = nil
+
+        #expect(throws: TraceDecodingError.self) { try trace.observation() }
+    }
+
+    @Test func lostWithQuadThrows() {
+        var trace = TraceObservation(.lost(.notFound, at: seen))
+        trace.quad = quad
+
+        #expect(throws: TraceDecodingError.self) { try trace.observation() }
+    }
+
+    @Test func unknownLossReasonThrows() {
+        var trace = TraceObservation(.lost(.notFound, at: seen))
+        trace.lossReason = "cosmicRay"
+
+        #expect(throws: TraceDecodingError.self) { try trace.observation() }
+    }
+
+    @Test func unknownStatusThrows() {
+        var trace = TraceObservation(.tracked(quad, confidence: 0.83, at: seen))
+        trace.status = "maybe"
+
+        #expect(throws: TraceDecodingError.self) { try trace.observation() }
     }
 }
