@@ -43,7 +43,9 @@ final class ContourPipeline {
     private(set) var trackingSettings: GuidanceTrackingSettings
     var trackingMethod: PanelTrackingMethod { trackingSettings.method }
     var featureOptions: FeatureTrackingOptions { trackingSettings.options }
-    private(set) var trackingReady = true
+    private var sessionReady = true
+    private var retiringGuidance = false
+    var trackingReady: Bool { sessionReady && !retiringGuidance }
     let feedback: any FeedbackEngine
 
     /// The reference whose map and live tracking belong to the current session.
@@ -165,7 +167,8 @@ final class ContourPipeline {
         trackingError = nil
         hybridStatus = nil
         guidanceStatus.reset()
-        trackingReady = false
+        sessionReady = false
+        retiringGuidance = false
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
@@ -217,7 +220,8 @@ final class ContourPipeline {
         trackingError = nil
         hybridStatus = nil
         guidanceStatus.reset()
-        trackingReady = false
+        sessionReady = false
+        retiringGuidance = false
         // An old stream may still be unwinding; it holds its own source. New
         // guidance must never subscribe to it while replacement is pending.
         if sessionCamera != nil { tracking = InactiveTrackingSource() }
@@ -248,7 +252,7 @@ final class ContourPipeline {
                 await live.use(reference)
                 guard generation == request, !Task.isCancelled else { return }
             }
-            trackingReady = true
+            sessionReady = true
         } catch {
             guard generation == request, !Task.isCancelled else { return }
             // Keep the requested mode visible. An unsupported mode or failed
@@ -263,15 +267,14 @@ final class ContourPipeline {
         guidanceArrived = false
         generation &+= 1
         let request = generation
-        let wasReady = trackingReady
         let retiring = tracking as? any GuidanceTrackingSession
-        trackingReady = false
+        retiringGuidance = true
         hybridStatus = nil
         trackingError = nil
         guidanceStatus.reset(to: .stopped)
         await cancelGuidance()
         if generation == request || sessionCamera != nil { await retiring?.stop() }
-        if generation == request { trackingReady = wasReady }
+        if generation == request { retiringGuidance = false }
     }
 
     private func cancelGuidance() async {
@@ -312,8 +315,7 @@ final class ContourPipeline {
         generation &+= 1
         let request = generation
         let retiring = tracking as? any GuidanceTrackingSession
-        let wasReady = trackingReady
-        trackingReady = false
+        retiringGuidance = true
         guidanceTask?.cancel()
         (feedback as? LiveFeedbackEngine)?.stop()
         guidanceStatus.reset(to: .stopped)
@@ -321,7 +323,7 @@ final class ContourPipeline {
             guard generation == request else { return }
             await cancelGuidance()
             if generation == request || sessionCamera != nil { await retiring?.stop() }
-            if generation == request { trackingReady = wasReady }
+            if generation == request { retiringGuidance = false }
         }
     }
 

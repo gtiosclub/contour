@@ -100,8 +100,14 @@ struct LiveTrackingLifecycleTests {
     }
 
     private func source(_ camera: LifecycleCamera, _ panel: LifecyclePanel) -> LiveTrackingSource {
-        LiveTrackingSource(camera: camera, panelTracker: panel,
-            fingertipTracker: FingertipTracker { _ in FingertipJoint(x: 0.5, y: 0.5, confidence: 0.9) })
+        // These scripted lifecycle tests assert registration/serialization, not
+        // runner speed. Production freshness has separate threshold regressions.
+        var thresholds = TrackingQualityThresholds()
+        thresholds.staleDegraded = .infinity
+        thresholds.staleLost = .infinity
+        return LiveTrackingSource(camera: camera, panelTracker: panel,
+            fingertipTracker: FingertipTracker { _ in FingertipJoint(x: 0.5, y: 0.5, confidence: 0.9) },
+            evaluator: TrackingQualityEvaluator(thresholds: thresholds))
     }
     private func frame() -> CameraFrame {
         var pixels: CVPixelBuffer?

@@ -7,6 +7,20 @@ import Tracking
 
 @MainActor @Suite("Tracking session retirement")
 struct TrackingRetirementTests {
+    @Test("Repeated interruptions followed by Stop preserve a ready session")
+    func repeatedInterruptions() async throws {
+        let session = RetirementSession()
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(), tracking: session,
+            feedback: PrintingFeedbackEngine(isPrinting: false), liveComponents: [])
+        await pipeline.replaceReference(with: try reference())
+        #expect(pipeline.canGuide)
+        pipeline.interruptGuidance()
+        pipeline.interruptGuidance()
+        await pipeline.stopGuidance()
+        #expect(pipeline.trackingReady)
+        #expect(pipeline.canGuide)
+    }
+
     @Test("Reference/settings replacement and explicit Stop retire their actual old sessions")
     func retiresOldSessions() async throws {
         let first = RetirementSession(), next = RetirementSession()
