@@ -7,10 +7,119 @@
 
 import ContourCore
 import Foundation
+import ImageIO
 import simd
 
-/// Recording form of a PanelObservation. Diagnostics are not recorded: they
-/// are tracker output, not alignment input.
+/// A recorded session: every frame the recorder kept, plus what the operator
+/// knew about it. The file a teammate replays without a phone.
+struct CalibrationTrace: Codable {
+    static let currentFormatVersion = 1
+
+    struct Notes: Codable {
+        /// True for traces generated in code. Never label these phone recordings.
+        var synthetic: Bool
+        var device: String
+        var system: String
+        var conditions: String
+        var operatorNotes: String
+        /// What the operator saw happen, written down at recording time, in order.
+        var expectedEvents: [String]
+    }
+
+    struct Sampling: Codable {
+        /// Frames the camera delivered while recording.
+        var framesOffered: Int
+        /// Frames the bounded buffer had no room for.
+        var framesDropped: Int
+    }
+
+    var formatVersion: Int
+    var notes: Notes
+    var sampling: Sampling
+    var frames: [TraceFrame]
+
+    init(notes: Notes, sampling: Sampling, frames: [TraceFrame]) {
+        formatVersion = Self.currentFormatVersion
+        self.notes = notes
+        self.sampling = sampling
+        self.frames = frames
+    }
+
+    func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(self)
+    }
+
+    /// Decodes and validates. A trace that decodes but breaks an invariant throws.
+    static func decode(_ data: Data) throws -> CalibrationTrace {
+        let trace = try JSONDecoder().decode(CalibrationTrace.self, from: data)
+        try trace.validate()
+        return trace
+    }
+
+    func validate() throws {
+        guard formatVersion == Self.currentFormatVersion else {
+            throw TraceDecodingError.unsupportedVersion(formatVersion)
+        }
+        guard sampling.framesOffered >= frames.count + sampling.framesDropped else {
+            throw TraceDecodingError.inconsistentSampling
+        }
+        for (previous, next) in zip(frames, frames.dropFirst()) {
+            guard next.index > previous.index else {
+                throw TraceDecodingError.outOfOrder(index: next.index)
+            }
+            guard next.timestamp >= previous.timestamp else {
+                throw TraceDecodingError.outOfOrder(index: next.index)
+            }
+        }
+    }
+}
+
+/// One camera frame. The visual observation and world snapshot came from the
+/// same pixels; keeping them in one record is what preserves that pairing.
+struct TraceFrame: Codable {
+    /// Capture sequence number. A gap is a frame the recorder dropped.
+    var index: Int
+    var timestamp: Date
+    /// A CGImagePropertyOrientation raw value.
+    var orientation: UInt32
+    /// The reference photo the visual tracker was matching against.
+    var referenceID: UUID?
+    var visual: TraceObservation
+    var world: TraceWorldSnapshot?
+
+    init(index: Int, timestamp: Date, orientation: CGImagePropertyOrientation, referenceID: UUID?,
+         visual: PanelObservation, world: WorldCameraSnapshot?) {
+        self.index = index
+        self.timestamp = timestamp
+        self.orientation = orientation.rawValue
+        self.referenceID = referenceID
+        self.visual = TraceObservation(visual)
+        self.world = world.map(TraceWorldSnapshot.init)
+    }
+
+    func imageOrientation() throws -> CGImagePropertyOrientation {
+        guard let orientation = CGImagePropertyOrientation(rawValue: orientation) else {
+            throw TraceDecodingError.unknownValue(field: "orientation", value: String(orientation))
+        }
+        return orientation
+    }
+
+    /// The alignment policy's inputs for this frame.
+    func inputs() throws -> (visual: PanelObservation, world: WorldCameraSnapshot?) {
+        let visual = try visual.observation()
+        // An observation stamped with another frame's time is not this frame's.
+        guard visual.timestamp == timestamp else {
+            throw TraceDecodingError.mismatchedFrame(index: index)
+        }
+        return (visual, try world?.snapshot())
+    }
+}
+
+/// Recording form of a PanelObservation. Of the feature diagnostics only the
+/// saturated fraction is kept: the alignment policy reads it for glare, and
+/// the rest is tracker output it never looks at.
 struct TraceObservation: Codable {
     var timestamp: Date
     var quad: PanelQuad?
@@ -19,11 +128,14 @@ struct TraceObservation: Codable {
     var status: String
     /// A PanelObservation.LossReason raw value; present exactly when lost.
     var lossReason: String?
+    /// FeatureTrackingDiagnostics.saturatedFraction, when the tracker reported one.
+    var saturatedFraction: Double?
 
     init(_ observation: PanelObservation) {
         timestamp = observation.timestamp
         quad = observation.quad
         confidence = observation.confidence
+        saturatedFraction = observation.featureDiagnostics?.saturatedFraction
         switch observation.status {
         case .tracked:
             status = "tracked"
@@ -35,20 +147,35 @@ struct TraceObservation: Codable {
     }
 
     func observation() throws -> PanelObservation {
+        var observation: PanelObservation
         switch (status, quad, lossReason) {
         case ("tracked", let quad?, nil):
-            return .tracked(quad, confidence: confidence, at: timestamp)
+            observation = .tracked(quad, confidence: confidence, at: timestamp)
         case ("lost", nil, let raw?):
             guard let reason = PanelObservation.LossReason(rawValue: raw) else {
                 throw TraceDecodingError.unknownValue(field: "lossReason", value: raw)
             }
-            return .lost(reason, at: timestamp)
+            observation = .lost(reason, at: timestamp)
         case ("tracked", _, _), ("lost", _, _):
             // A quad must be present exactly when tracked.
             throw TraceDecodingError.inconsistentObservation(status: status)
         default:
             throw TraceDecodingError.unknownValue(field: "status", value: status)
         }
+        if let saturatedFraction {
+            observation.featureDiagnostics = Self.replayedEvidence(saturatedFraction: saturatedFraction)
+        }
+        return observation
+    }
+
+    /// Diagnostics carrying only what was recorded. The other counts are zero,
+    /// not reconstructed; the message says so.
+    private static func replayedEvidence(saturatedFraction: Double) -> FeatureTrackingDiagnostics {
+        FeatureTrackingDiagnostics(
+            referenceFeatures: 0, frameFeatures: 0, matchCount: 0, inlierCount: 0,
+            coverage: 0, reprojectionError: 0, processingMilliseconds: 0,
+            message: "Replayed: only the saturated fraction was recorded", inlierPoints: [],
+            saturatedFraction: saturatedFraction, excludedHighlightFraction: 0)
     }
 }
 
@@ -98,6 +225,10 @@ enum TraceDecodingError: Error {
     case wrongCount(field: String, expected: Int, actual: Int)
     case unknownValue(field: String, value: String)
     case inconsistentObservation(status: String)
+    case unsupportedVersion(Int)
+    case inconsistentSampling
+    case outOfOrder(index: Int)
+    case mismatchedFrame(index: Int)
 }
 
 // Matrices are stored column-major: column 0 first, then column 1, ...

@@ -140,4 +140,89 @@ struct CalibrationTraceObservationTests {
 
         #expect(throws: TraceDecodingError.self) { try trace.observation() }
     }
+
+    @Test func saturatedFractionSurvivesForTheGlareCheck() throws {
+        var observation = PanelObservation.tracked(quad, confidence: 0.83, at: seen)
+        observation.featureDiagnostics = HybridScene.glareEvidence(saturated: 0.4)
+
+        let restored = try throughJSON(TraceObservation(observation)).observation()
+
+        #expect(restored.featureDiagnostics?.saturatedFraction == 0.4)
+    }
+}
+
+// MARK: - Frames and the file
+
+private let referenceID = UUID(uuidString: "0B7E1A52-3C1D-4F7E-9A55-2D6C8E0F1A23")!
+
+private func frame(_ index: Int, at offset: TimeInterval, world: WorldCameraSnapshot? = snapshot) -> TraceFrame {
+    let time = seen.addingTimeInterval(offset)
+    return TraceFrame(index: index, timestamp: time, orientation: .right, referenceID: referenceID,
+                      visual: .tracked(quad, confidence: 0.83, at: time), world: world)
+}
+
+private func file(_ frames: [TraceFrame], offered: Int? = nil, dropped: Int = 0) -> CalibrationTrace {
+    CalibrationTrace(
+        notes: .init(synthetic: true, device: "none", system: "none", conditions: "unit test",
+                     operatorNotes: "", expectedEvents: []),
+        sampling: .init(framesOffered: offered ?? frames.count + dropped, framesDropped: dropped),
+        frames: frames)
+}
+
+@Suite("Calibration trace files")
+struct CalibrationTraceFileTests {
+    @Test func traceSurvivesEncodeAndDecode() throws {
+        let original = file([frame(0, at: 0), frame(2, at: 0.066, world: nil)], offered: 3, dropped: 1)
+
+        let restored = try CalibrationTrace.decode(original.encoded())
+
+        #expect(restored.notes.synthetic)
+        #expect(restored.sampling.framesDropped == 1)
+        #expect(restored.frames.map(\.index) == [0, 2], "the gap is the dropped frame")
+        let first = try restored.frames[0].inputs()
+        #expect(first.visual == .tracked(quad, confidence: 0.83, at: seen))
+        #expect(first.world?.cameraToWorld == cameraToWorld)
+        #expect(try restored.frames[1].inputs().world == nil, "a frame without world data stays without it")
+        #expect(try restored.frames[0].imageOrientation() == .right)
+        #expect(restored.frames[0].referenceID == referenceID)
+    }
+
+    @Test func unsupportedVersionThrows() throws {
+        var trace = file([frame(0, at: 0)])
+        trace.formatVersion = 99
+
+        #expect(throws: TraceDecodingError.self) { try CalibrationTrace.decode(trace.encoded()) }
+    }
+
+    @Test func repeatedIndexThrows() throws {
+        let trace = file([frame(3, at: 0), frame(3, at: 0.033)])
+
+        #expect(throws: TraceDecodingError.self) { try CalibrationTrace.decode(trace.encoded()) }
+    }
+
+    @Test func timeRunningBackwardsThrows() throws {
+        let trace = file([frame(0, at: 0.033), frame(1, at: 0)])
+
+        #expect(throws: TraceDecodingError.self) { try CalibrationTrace.decode(trace.encoded()) }
+    }
+
+    @Test func moreFramesThanOfferedThrows() throws {
+        let trace = file([frame(0, at: 0), frame(1, at: 0.033)], offered: 1)
+
+        #expect(throws: TraceDecodingError.self) { try CalibrationTrace.decode(trace.encoded()) }
+    }
+
+    @Test func observationFromAnotherFrameThrows() {
+        var record = frame(0, at: 0)
+        record.timestamp = seen.addingTimeInterval(0.033)
+
+        #expect(throws: TraceDecodingError.self) { try record.inputs() }
+    }
+
+    @Test func unknownOrientationThrows() {
+        var record = frame(0, at: 0)
+        record.orientation = 42
+
+        #expect(throws: TraceDecodingError.self) { try record.imageOrientation() }
+    }
 }
