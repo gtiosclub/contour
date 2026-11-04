@@ -406,3 +406,8 @@ private actor LossFeedback: FeedbackEngine {
         await withCheckedContinuation { waiters.append((target, $0)) }
     }
 }
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension ScriptedPrediction {
+    func stop() async {}
+}

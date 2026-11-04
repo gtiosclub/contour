@@ -135,9 +135,11 @@ final class ContourPipeline {
     static func live(camera: CameraService) -> ContourPipeline {
         ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: LiveTrackingSource(camera: camera),
+            tracking: GuidanceSessionFactories.productionSource(camera: camera, method: .hybrid,
+                options: FeatureTrackingOptions()),
             feedback: LiveFeedbackEngine(),
-            liveComponents: Set(Component.allCases), sessionCamera: camera
+            liveComponents: Set(Component.allCases), sessionFactory: GuidanceSessionFactories.production,
+            sessionCamera: camera, trackingMethod: .hybrid
         )
     }
 
@@ -204,6 +206,9 @@ final class ContourPipeline {
     }
 
     private func beginSessionReplacement(with reference: PanelReference?) -> Task<Void, Never> {
+        // Only factory replacement owns a distinct old source. Injected sources
+        // without a factory camera are handed the new reference in place.
+        let retiring = sessionCamera == nil ? nil : tracking as? any GuidanceTrackingSession
         guidanceArrived = false
         (feedback as? LiveFeedbackEngine)?.stop()
         generation &+= 1
@@ -216,12 +221,17 @@ final class ContourPipeline {
         // An old stream may still be unwinding; it holds its own source. New
         // guidance must never subscribe to it while replacement is pending.
         if sessionCamera != nil { tracking = InactiveTrackingSource() }
-        return Task { await activateSession(request: replacement, reference: reference) }
+        return Task { await activateSession(request: replacement, reference: reference, retiring: retiring) }
     }
 
-    private func activateSession(request: UInt64, reference: PanelReference?) async {
-        guard generation == request, !Task.isCancelled else { return }
+    private func activateSession(request: UInt64, reference: PanelReference?,
+                                 retiring: (any GuidanceTrackingSession)?) async {
+        guard generation == request, !Task.isCancelled else {
+            await retiring?.stop()
+            return
+        }
         await cancelGuidance()
+        await retiring?.stop()
         guard generation == request, !Task.isCancelled else { return }
         do {
             if let sessionCamera {
@@ -229,7 +239,10 @@ final class ContourPipeline {
                 // own call with these settings and never shares this session.
                 let candidate = try sessionFactory(sessionCamera, trackingMethod, featureOptions, nil)
                 if let reference { await candidate.use(reference) }
-                guard generation == request, !Task.isCancelled else { return }
+                guard generation == request, !Task.isCancelled else {
+                    await candidate.stop()
+                    return
+                }
                 tracking = candidate
             } else if let reference, let live = tracking as? any GuidanceTrackingSession {
                 await live.use(reference)
@@ -249,10 +262,16 @@ final class ContourPipeline {
     func stopGuidance() async {
         guidanceArrived = false
         generation &+= 1
+        let request = generation
+        let wasReady = trackingReady
+        let retiring = tracking as? any GuidanceTrackingSession
+        trackingReady = false
         hybridStatus = nil
         trackingError = nil
         guidanceStatus.reset(to: .stopped)
         await cancelGuidance()
+        if generation == request || sessionCamera != nil { await retiring?.stop() }
+        if generation == request { trackingReady = wasReady }
     }
 
     private func cancelGuidance() async {
@@ -292,12 +311,17 @@ final class ContourPipeline {
         guidanceArrived = false
         generation &+= 1
         let request = generation
+        let retiring = tracking as? any GuidanceTrackingSession
+        let wasReady = trackingReady
+        trackingReady = false
         guidanceTask?.cancel()
         (feedback as? LiveFeedbackEngine)?.stop()
         guidanceStatus.reset(to: .stopped)
         Task {
             guard generation == request else { return }
             await cancelGuidance()
+            if generation == request || sessionCamera != nil { await retiring?.stop() }
+            if generation == request { trackingReady = wasReady }
         }
     }
 
