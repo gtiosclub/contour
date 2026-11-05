@@ -438,12 +438,37 @@ struct OpenAIVoiceFlowTests {
         #expect(r.speaker.spoken.isEmpty)
     }
 
-    @Test("A guess isn't confident: stop with only a Cancel key goes to the server")
-    func nextSafestKeyAsks() async {
-        let r = await rig(say: "stop", map: panel(labels: ["Cancel", "Start"]))
+    @Test("The phone's guess at the next safest key wins, so pause never goes to Cancel", arguments: [
+        ("stop", ["Cancel", "Start"], "Cancel"),
+        ("pause", ["Stop", "Cancel", "Start"], "Stop"),
+        ("cancel", ["Stop", "Start"], "Stop"),
+    ])
+    func nextSafestKeyStaysOnThePhone(say: String, labels: [String], key: String) async {
+        let server = FakeServer()
+        server.labels = ["Cancel"]
+        let r = await rig(say: say, map: panel(labels: labels), server: server)
         r.model.sayAButton()
         await r.model.waitForWork()
-        #expect(r.server.requests.count == 1)
+        #expect(r.server.requests.isEmpty)
+        #expect(r.model.planNote == "Plan from phone")
+        #expect(r.model.status == "Reached \(key).")
+        #expect(r.finger.streamCount == 1)
+    }
+
+    @Test("Stop, pause and cancel aren't sent to the server even when the phone has no key for them", arguments: [
+        ("pause", ["Cancel", "Start"]),
+        ("pause the microwave", ["Stop", "Cancel", "Start"]),
+        ("stop", ["Start", "Beverage"]),
+    ])
+    func stoppingStaysOnThePhone(say: String, labels: [String]) async {
+        let server = FakeServer()
+        server.labels = ["Cancel"]
+        let r = await rig(say: say, map: panel(labels: labels), server: server)
+        r.model.sayAButton()
+        await r.model.waitForWork()
+        #expect(r.server.requests.isEmpty)
+        #expect(r.finger.streamCount == 0)
+        #expect(r.model.status == "No button matching “\(say)”. Try again or choose a button below.")
     }
 
     // MARK: No plist
@@ -587,18 +612,6 @@ struct OpenAIVoiceFlowTests {
         #expect(r.speaker.spoken == ["Asking OpenAI.", server.say])
     }
 
-    @Test("No steps but the phone knows a key: says so, and it's the phone's plan")
-    func noStepsUsesTheMatcher() async {
-        let server = FakeServer()
-        server.labels = []
-        let r = await rig(say: "stop", map: panel(labels: ["Cancel", "Start"]), server: server)
-        r.model.sayAButton()
-        await r.model.waitForWork()
-        #expect(r.model.planNote == "Plan from phone, OpenAI had no steps")
-        #expect(r.speaker.spoken == ["Asking OpenAI.", "OpenAI had no steps, so using the phone.", "Press Cancel."])
-        #expect(r.finger.streamCount == 1)
-    }
-
     // MARK: Failing where everyone can see
 
     @Test("A failure shows why, says why, and goes to the phone's answer", arguments: [
@@ -631,17 +644,6 @@ struct OpenAIVoiceFlowTests {
         await r.model.waitForWork()
         #expect(r.model.planNote == "Plan from phone, OpenAI timed out")
         #expect(r.speaker.spoken.contains("OpenAI timed out, so using the phone."))
-    }
-
-    @Test("A failure on a key the phone half knows guides there, having said so")
-    func failureGuidesToTheFallback() async {
-        let server = FakeServer()
-        server.failure = .status(401)
-        let r = await rig(say: "stop", map: panel(labels: ["Cancel", "Start"]), server: server)
-        r.model.sayAButton()
-        await r.model.waitForWork()
-        #expect(r.speaker.spoken == ["Asking OpenAI.", "OpenAI said 401, so using the phone.", "Press Cancel."])
-        #expect(r.finger.streamCount == 1)
     }
 
     @Test("Stop while asking ends it: nothing more said, nothing guided")

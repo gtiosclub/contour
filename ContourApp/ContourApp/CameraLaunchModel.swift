@@ -222,7 +222,9 @@ final class CameraLaunchModel {
             case nil:
                 break
             }
-            if let openAI = self.openAI, !ButtonLookup.isConfident(heard.text, in: map) {
+            // Any key the phone finds wins, even its guess at the next safest one: the
+            // matcher's rules, like pause never becoming Cancel, don't hold on the server.
+            if let openAI = self.openAI, heard.button == nil, !ButtonLookup.mentionsStopping(heard.text) {
                 await self.ask(openAI, heard.text, map: map, referenceID: referenceID)
                 return
             }
