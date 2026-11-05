@@ -390,7 +390,11 @@ enum SyntheticPanel {
             for label in row.labels {
                 let x = 270 + label.column * 90
                 let cell = CGRect(x: x - 40, y: row.y - 30, width: 80, height: 60)
-                draw(label.text, centeredIn: cell, in: ctx)
+                // A "\n" prints the label on two lines, as real panels do.
+                let lines = label.text.components(separatedBy: "\n")
+                for (index, text) in lines.enumerated() {
+                    draw(text, centeredIn: cell.offsetBy(dx: 0, dy: (CGFloat(index) - CGFloat(lines.count - 1) / 2) * 30), in: ctx)
+                }
                 if outlined {
                     let width = CTLineGetBoundsWithOptions(line(label.text), []).width + 24
                     ctx.setStrokeColor(CGColor(gray: 0.1, alpha: 1))

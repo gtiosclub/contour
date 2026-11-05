@@ -13,6 +13,9 @@
 //  digits sit on it closely, in all three rows, and it has the shape of a keypad.
 //  Anything else leaves the map exactly as it was.
 //
+//  Start and Time Cook get the same treatment once there's a keypad to measure
+//  from, since a cook time isn't typed without them.
+//
 //  Words and grids here are in pixels of the upright image, until the buttons
 //  are built. See Packages/ContourCore/COORDINATES.md.
 //
@@ -29,6 +32,8 @@ struct KeypadReader: Sendable {
     /// How long the panel tiles and the whole read may take before the answer is dropped.
     var panelLimit: Duration = .seconds(2)
     var readLimit: Duration = .seconds(4)
+    /// How long the one Time Cook crop may take. It's extra, so it can't cost the rest.
+    var timeCookLimit: Duration = .milliseconds(300)
 
     /// A cap ran out, so the answer is no longer wanted.
     struct TimedOut: Error {}
@@ -48,11 +53,13 @@ struct KeypadReader: Sendable {
     ///
     /// Reads the panel first. If that found digits but no keypad, the keypad may
     /// be small or outside the panel, so it pools a read of the whole frame. No
-    /// digits at all means there's no keypad to help, so it stops.
+    /// digits at all means there's no keypad to help, so it stops. With a keypad,
+    /// it also looks for Start and Time Cook, the keys a typed cook time needs.
     ///
     /// - Throws: `TimedOut`, `CancellationError`, or whatever recognition throws.
     func read(in photo: PanelPhoto, panel: PanelQuad, adding buttons: [SurfaceMap.Button]) async throws -> Reading {
         try await Self.within(readLimit) {
+            let started = ContinuousClock.now
             let image = try photo.cgImage()
             let size = CGSize(width: image.width, height: image.height)
 
@@ -78,11 +85,24 @@ struct KeypadReader: Sendable {
                 var start = Self.startWord(in: words, grid: grid)
                 if start == nil {
                     // Start is extra: crops that can't be read don't cost the digits.
-                    let crops = (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
-                    start = Self.startWord(in: words + crops, grid: grid)
+                    words += (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
+                    start = Self.startWord(in: words, grid: grid)
                 }
                 if let start {
                     merged += Self.startButton(on: start, size: size, panel: panel)
+                }
+            }
+            if !Self.hasTimeCook(merged) {
+                var label = Self.timeCookLabel(in: words, grid: grid)
+                // Time Cook is extra too: no crop unless the read's own cap can spare it.
+                if label == nil, self.readLimit - started.duration(to: .now) > self.timeCookLimit * 2 {
+                    let crop = (try? await Self.within(self.timeCookLimit) {
+                        try await self.words(in: image, tiles: grid.timeCookCrop(in: size), scale: 2)
+                    }) ?? []
+                    label = Self.timeCookLabel(in: words + crop, grid: grid)
+                }
+                if let label {
+                    merged = Self.addingTimeCook(on: label, to: merged, size: size, panel: panel)
                 }
             }
             return Reading(buttons: merged, digitsRead: digitsRead, stage: stage, fit: true, added: true)
@@ -207,6 +227,27 @@ struct KeypadReader: Sendable {
             return (columnStep.dx * (point.y - origin.y) - columnStep.dy * (point.x - origin.x)) / determinant
         }
 
+        /// Which column `point` is in, as a fraction: 0 is the 1-4-7 column.
+        func column(of point: CGPoint) -> CGFloat {
+            let determinant = columnStep.dx * rowStep.dy - rowStep.dx * columnStep.dy
+            return (rowStep.dy * (point.x - origin.x) - rowStep.dx * (point.y - origin.y)) / determinant
+        }
+
+        /// Whether `a` is printed before `b`: on the line above it, or to its left on
+        /// the same line. Judged along the keypad, since a tilt can swap them in the image.
+        func reads(_ a: CGPoint, before b: CGPoint) -> Bool {
+            let down = (row(of: b) - row(of: a)) * hypot(rowStep.dx, rowStep.dy)
+            let along = (column(of: b) - column(of: a)) * hypot(columnStep.dx, columnStep.dy)
+            return abs(down) >= abs(along) ? down > 0 : along > 0
+        }
+
+        /// Whether `a` and `b` are in one key's cell, as the middles of one label's
+        /// words are: the same column, and less than half a row apart. Rows are judged
+        /// by the gap, since the keys below the digits needn't sit on whole rows.
+        func inOneCell(_ a: CGPoint, _ b: CGPoint) -> Bool {
+            column(of: a).rounded() == column(of: b).rounded() && abs(row(of: a) - row(of: b)) < 0.5
+        }
+
         /// Does this look like a keypad? Digits read in all three rows, columns
         /// running right, rows running down, roughly square corners, no more than
         /// 30° of tilt, and every key on the frame.
@@ -234,6 +275,16 @@ struct KeypadReader: Sendable {
                 return CGRect(x: centre.x - width / 2, y: centre.y - height / 2, width: width, height: height)
                     .intersection(CGRect(origin: .zero, size: size)).integral
             }.filter { !$0.isEmpty }
+        }
+
+        /// The box under the 9 where the one microwave we have frames of prints Time
+        /// Cook. Elsewhere it reads nothing useful, and that only costs the one read.
+        func timeCookCrop(in size: CGSize) -> [CGRect] {
+            let centre = point(column: 2, row: 3.9)
+            let width = 2.2 * hypot(columnStep.dx, columnStep.dy), height = 1.8 * hypot(rowStep.dx, rowStep.dy)
+            let crop = CGRect(x: centre.x - width / 2, y: centre.y - height / 2, width: width, height: height)
+                .intersection(CGRect(origin: .zero, size: size)).integral
+            return crop.isEmpty ? [] : [crop]
         }
     }
 
@@ -397,13 +448,105 @@ struct KeypadReader: Sendable {
 
     /// A Start button on `word`, under the same rules as any printed label.
     static func startButton(on word: LabelReader.Word, size: CGSize, panel: PanelQuad) -> [SurfaceMap.Button] {
+        LiveSurfaceUnderstanding.printedButtons(from: [(label: "Start", bounds: bounds(of: word, size: size, panel: panel))])
+    }
+
+    /// `word`'s box on the quad.
+    private static func bounds(of word: LabelReader.Word, size: CGSize, panel: PanelQuad) -> PanelRect {
         let corners = [(word.left, word.top), (word.right, word.top), (word.left, word.bottom), (word.right, word.bottom)]
             .map { PanelDetector().rectify(ImagePoint(x: $0.0 / size.width, y: $0.1 / size.height), within: panel) }
         let left = corners.map(\.x).min() ?? .nan, right = corners.map(\.x).max() ?? .nan
         let top = corners.map(\.y).min() ?? .nan, bottom = corners.map(\.y).max() ?? .nan
-        return LiveSurfaceUnderstanding.printedButtons(from: [
-            (label: "Start", bounds: PanelRect(x: left, y: top, width: right - left, height: bottom - top))
-        ])
+        return PanelRect(x: left, y: top, width: right - left, height: bottom - top)
+    }
+
+    // MARK: - Time Cook
+
+    /// The two words on a label, in any order, are already on the map as one button.
+    /// A printed Cook Time counts: it's that key, and it keeps the name it has.
+    static func hasTimeCook(_ buttons: [SurfaceMap.Button]) -> Bool {
+        buttons.contains { button in
+            let words = (button.label ?? "").lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
+            return words.count == 2 && Set(words) == ["time", "cook"]
+        }
+    }
+
+    /// The box around Time and Cook, printed together as one key and nothing else,
+    /// at or below the keypad's first row. Nil if there's any doubt, because the
+    /// button gets the bare label Time Cook and nobody can see what was printed:
+    ///
+    /// - Two words that just happen to be close have to pass the rule LabelReader
+    ///   uses for the lines of one label, and sit in one key's cell. Time on one key
+    ///   and Cook on the next, beside it or below it, isn't a label, even when one
+    ///   reading of Time runs its box right up to the Cook.
+    /// - Another word on it makes it another key: Time Defrost, Express Cook, Cook
+    ///   Power, Time Cook 2. So does a longer word that a tile edge cut down: Timer.
+    /// - Cook before Time is printed Cook Time. On an oven that's another kind of key:
+    ///   it sets how long a bake runs and starts nothing. It keeps its printed name.
+    /// - The pair in two places is a tie, so it's neither.
+    static func timeCookLabel(in words: [LabelReader.Word], grid: Grid) -> LabelReader.Word? {
+        let cooks = words.filter { printedText($0) == "cook" }
+        let pairs = words.filter { printedText($0) == "time" }.flatMap { time in
+            cooks.filter { LabelReader.belongTogether(time, $0) }.map { (time: time, cook: $0) }
+        }
+        guard !pairs.isEmpty else { return nil }
+
+        let labels = pairs.map { pair in
+            LabelReader.Word(text: "Time Cook",
+                             left: min(pair.time.left, pair.cook.left), right: max(pair.time.right, pair.cook.right),
+                             top: min(pair.time.top, pair.cook.top), bottom: max(pair.time.bottom, pair.cook.bottom))
+        }
+        let places = labels.map { CGPoint(x: $0.centre.x, y: $0.centre.y) }
+        let inOnePlace = places.allSatisfy { place in
+            abs(grid.row(of: place) - grid.row(of: places[0])) <= 0.5
+                && abs(grid.column(of: place) - grid.column(of: places[0])) <= 0.5
+        }
+        guard inOnePlace,
+              places.allSatisfy({ grid.row(of: $0) >= -0.5 }),
+              pairs.allSatisfy({ grid.inOneCell(CGPoint(x: $0.time.centre.x, y: $0.time.centre.y), CGPoint(x: $0.cook.centre.x, y: $0.cook.centre.y)) }),
+              pairs.allSatisfy({ grid.reads(CGPoint(x: $0.time.centre.x, y: $0.time.centre.y), before: CGPoint(x: $0.cook.centre.x, y: $0.cook.centre.y)) }),
+              !words.contains(where: { word in pairs.contains { isAnotherWord(word, on: $0.time, $0.cook) } })
+        else { return nil }
+        return labels.sorted { $0.centre.y < $1.centre.y }[labels.count / 2]
+    }
+
+    /// Whether `word` is printed with `time` and `cook`, as more than a second reading of them.
+    private static func isAnotherWord(_ word: LabelReader.Word, on time: LabelReader.Word, _ cook: LabelReader.Word) -> Bool {
+        let text = printedText(word)
+        guard text != "time", text != "cook",
+              word.text.contains(where: \.isNumber) || word.text.filter(\.isLetter).count >= 2 else { return false }
+        let onTop = [time, cook].contains { printed in
+            printed.left <= word.centre.x && word.centre.x <= printed.right
+                && printed.top <= word.centre.y && word.centre.y <= printed.bottom
+        }
+        if onTop { return text.contains("time") || text.contains("cook") }
+        return LabelReader.belongTogether(word, time) || LabelReader.belongTogether(word, cook)
+    }
+
+    /// What a word says, without case or the punctuation around it.
+    private static func printedText(_ word: LabelReader.Word) -> String {
+        word.text.trimmingCharacters(in: .punctuationCharacters).lowercased()
+    }
+
+    /// `buttons` with a Time Cook button on `label`, under the same rules as any
+    /// printed label. A box already centred on those words is that key seen again,
+    /// so it becomes this button instead of a second one beside it. That's a box
+    /// with no label, or with only Time or Cook. Anything else on it stays.
+    static func addingTimeCook(on label: LabelReader.Word, to buttons: [SurfaceMap.Button], size: CGSize, panel: PanelQuad) -> [SurfaceMap.Button] {
+        let printed = bounds(of: label, size: size, panel: panel)
+        let same = buttons.filter { button in
+            guard printed.contains(button.bounds.center) else { return false }
+            guard let text = button.label?.lowercased() else { return true }
+            return ["time", "cook"].contains(text)
+        }
+        var area = printed
+        for button in same {
+            let left = min(area.minX, button.bounds.minX), right = max(area.maxX, button.bounds.maxX)
+            let top = min(area.minY, button.bounds.minY), bottom = max(area.maxY, button.bounds.maxY)
+            area = PanelRect(x: left, y: top, width: right - left, height: bottom - top)
+        }
+        let added = LiveSurfaceUnderstanding.printedButtons(from: [(label: "Time Cook", bounds: area)])
+        return added.isEmpty ? buttons : buttons.filter { !same.contains($0) } + added
     }
 
     private static func editDistance(_ a: String, _ b: String) -> Int {

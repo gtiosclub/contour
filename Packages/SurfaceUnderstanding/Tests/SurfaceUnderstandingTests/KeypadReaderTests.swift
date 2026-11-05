@@ -404,6 +404,285 @@ func noStartCropOffTheImage() {
     #expect(tilted.startCrops(in: frame).allSatisfy { !$0.isEmpty })
 }
 
+// MARK: - Time Cook
+
+/// On `startGrid` the 9 is at (320, 600), so this is the key below it. Lines 20 apart.
+private func stacked(_ first: String = "Time", _ second: String = "Cook", x: Double = 320, y: Double = 690) -> [LabelReader.Word] {
+    [word(first, x: x, y: y, width: 40), word(second, x: x, y: y + 20, width: 40)]
+}
+
+/// Words on one line at y, each 40 wide, a small gap apart, starting at x.
+private func line(_ words: String..., x: Double = 300, y: Double = 690) -> [LabelReader.Word] {
+    words.enumerated().map { word($1, x: x + 46 * Double($0), y: y, width: 40) }
+}
+
+private func timeCook(_ words: [LabelReader.Word]) -> LabelReader.Word? {
+    KeypadReader.timeCookLabel(in: words, grid: startGrid)
+}
+
+@Test("Time over Cook, or Time then Cook on one line, is one label")
+func timeCookTogether() {
+    #expect(timeCook(stacked()) == LabelReader.Word(text: "Time Cook", left: 300, right: 340, top: 682, bottom: 718))
+    #expect(timeCook(line("Time", "Cook")) == LabelReader.Word(text: "Time Cook", left: 280, right: 366, top: 682, bottom: 698))
+    #expect(timeCook(stacked("TIME", "COOK")) != nil)
+    #expect(timeCook(stacked("Time:", "Cook.")) != nil)
+}
+
+@Test("the printed Magic Chef words, tilted as a real frame is, give the one real key")
+func timeCookOnTheMagicChef() throws {
+    // Frame 2's readings, with its own grid. The rest of the panel is close by.
+    let grid = KeypadReader.Grid(origin: CGPoint(x: 280, y: 628), columnStep: CGVector(dx: 72, dy: -1),
+                                 rowStep: CGVector(dx: 0, dy: 56), read: Set("124567890"))
+    let words = [word("Time", x: 415, y: 546, width: 32), word("Defrost", x: 415, y: 560, width: 50),
+                 word("Express", x: 336, y: 600, width: 40), word("Cook", x: 374, y: 600, width: 26),
+                 word("Timer", x: 422, y: 789, width: 34), word("Memory", x: 362, y: 803, width: 42),
+                 word("Time", x: 421, y: 829, width: 28), word("Cook", x: 421, y: 841, width: 28),
+                 word("START", x: 428, y: 880, width: 44)]
+    let label = try #require(KeypadReader.timeCookLabel(in: words, grid: grid))
+    #expect(abs(label.centre.x - 421) < 1 && abs(label.centre.y - 835) < 1)
+}
+
+@Test("Time and Cook from different keys don't make a label, however close")
+func timeCookFromDifferentKeys() {
+    #expect(timeCook([word("Time", x: 320, y: 690, width: 40), word("Cook", x: 320, y: 725, width: 40)]) == nil)   // a line too far
+    #expect(timeCook([word("Time", x: 260, y: 690, width: 40), word("Cook", x: 320, y: 710, width: 40)]) == nil)   // the next column
+    #expect(timeCook([word("Time", x: 260, y: 690, width: 40), word("Cook", x: 320, y: 690, width: 40)]) == nil)   // beside it, a key away
+}
+
+private func reading(_ text: String, _ left: Double, _ right: Double, _ top: Double, _ bottom: Double) -> LabelReader.Word {
+    LabelReader.Word(text: text, left: left, right: right, top: top, bottom: bottom)
+}
+
+@Test("Time on one key and Cook on the next aren't Time Cook, even when one reading of Time runs up to Cook")
+func timeCookAcrossTwoKeys() {
+    // Frame 06 with Time printed under the 0 and Cook under the Timer, on one line.
+    // One reading gave Time a box 51 wide instead of 33, right up to Cook, so the
+    // gap between the keys was gone. The rest of the row is close by.
+    let grid = KeypadReader.Grid(origin: CGPoint(x: 263, y: 650), columnStep: CGVector(dx: 52, dy: 6),
+                                 rowStep: CGVector(dx: 1, dy: 43), read: Set("123456789"))
+    let words = [reading("Timer", 352, 382, 782, 797), reading("Power", 254, 283, 798, 813),
+                 reading("Time", 301, 334, 812, 829), reading("Time", 301, 352, 812, 832),
+                 reading("Cook", 352, 390, 818, 836), reading("Cook", 358, 389, 819, 837),
+                 reading("START", 349, 385, 848, 866)]
+    #expect(KeypadReader.timeCookLabel(in: words, grid: grid) == nil)
+}
+
+@Test("Time on one key over Cook on the key below isn't Time Cook, on a tilted keypad")
+func timeCookOnTwoStackedKeys() {
+    // A generated panel tilted 20°: Time and Cook are each a key, almost a row apart,
+    // but the tilt makes the word boxes tall enough to pass for two lines of one label.
+    let grid = KeypadReader.Grid(origin: CGPoint(x: 282, y: 619), columnStep: CGVector(dx: 41.5, dy: -15.2),
+                                 rowStep: CGVector(dx: 11.2, dy: 31.2), read: Set("125689"))
+    let words = [reading("Memory", 346, 378, 702, 719.5), reading("Power", 308.5, 345, 730, 751),
+                 reading("Time", 388.6, 419.1, 686.1, 703.8), reading("Cook", 396, 429.2, 712, 734.5)]
+    #expect(KeypadReader.timeCookLabel(in: words, grid: grid) == nil)
+}
+
+@Test("Time Defrost and Express Cook aren't Time Cook, on any layout")
+func timeCookDecoys() {
+    #expect(timeCook(stacked("Time", "Defrost")) == nil)
+    #expect(timeCook(line("Time", "Defrost")) == nil)
+    #expect(timeCook(line("Express", "Cook")) == nil)
+    #expect(timeCook(stacked("Express", "Cook")) == nil)
+    // Time right over Express Cook: the Cook is close enough, the Express gives it away.
+    #expect(timeCook([word("Time", x: 320, y: 670, width: 40)] + line("Express", "Cook", x: 274, y: 690)) == nil)
+    // Time right over Cook, with Defrost beside the Time.
+    #expect(timeCook(stacked() + [word("Defrost", x: 366, y: 690, width: 40)]) == nil)
+    // A tile edge took Express off one reading, and the next tile read it.
+    #expect(timeCook(stacked() + [word("Expres", x: 274, y: 710, width: 40)]) == nil)
+}
+
+@Test("a merged label never gives Time Cook")
+func timeCookMerged() {
+    #expect(timeCook(line("Time", "Defrost", "Express", "Cook", "2", x: 230)) == nil)
+    #expect(timeCook(line("Time", "Defrost", x: 300, y: 690) + line("Express", "Cook", "2", x: 300, y: 710)) == nil)
+    #expect(timeCook(line("Time", "Cook", "Defrost", x: 280)) == nil)
+    #expect(timeCook(stacked() + [word("Defrost", x: 320, y: 730, width: 40)]) == nil)
+}
+
+@Test("Cook Time stays what it is, on one line, stacked, or over the next key's Cook")
+func cookTimeIsNotTimeCook() {
+    #expect(timeCook(stacked("Cook", "Time")) == nil)
+    #expect(timeCook(line("Cook", "Time")) == nil)
+    // microwave1 prints Cook over Time, then Cook over Power. If the Power isn't read,
+    // that Time and the next Cook can still look like a label.
+    let column = [word("Cook", x: 320, y: 690, width: 40), word("Time", x: 320, y: 710, width: 40), word("Cook", x: 320, y: 730, width: 40)]
+    #expect(timeCook(column) == nil)
+    #expect(timeCook(column + [word("Power", x: 320, y: 750, width: 40)]) == nil)
+}
+
+@Test("which word comes first is judged along the keypad, so a tilted Cook over Time stays Cook Time")
+func cookTimeOnATiltedKeypad() {
+    // Tilted about 25°, so a line down also runs left, and word boxes come back tall.
+    // By the image alone these two sit on one line with Time first: glare-oven.heif
+    // comes back from the scan as Time Cook this way, with Cook Time printed on it.
+    let tilted = KeypadReader.Grid(origin: CGPoint(x: 200, y: 500), columnStep: CGVector(dx: 54, dy: 25),
+                                   rowStep: CGVector(dx: -21, dy: 46), read: Set("123456789"))
+    func tall(_ text: String, x: Double, y: Double) -> LabelReader.Word {
+        LabelReader.Word(text: text, left: x - 20, right: x + 20, top: y - 20, bottom: y + 20)
+    }
+    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 320, y: 700), tall("Time", x: 312, y: 718)], grid: tilted) == nil)
+    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 320, y: 700), tall("Cook", x: 312, y: 718)], grid: tilted) != nil)
+    // Along a tilted line on the key below the 9, Time first and Cook first.
+    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 210, y: 716), tall("Cook", x: 246, y: 733)], grid: tilted) != nil)
+    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 210, y: 716), tall("Time", x: 246, y: 733)], grid: tilted) == nil)
+}
+
+@Test("Time Cook with anything printed on it is some other key")
+func timeCookWithMore() {
+    #expect(timeCook(line("Time", "Cook", "1", x: 280)) == nil)
+    #expect(timeCook(stacked() + [word("2", x: 320, y: 730, width: 16)]) == nil)
+    #expect(timeCook(stacked() + [word("Power", x: 320, y: 670, width: 40)]) == nil)
+    #expect(timeCook(line("Press", "Time", "Cook", "then", x: 240)) == nil)
+}
+
+@Test("a tie, Time Cook in two places, is neither")
+func timeCookInTwoPlaces() {
+    #expect(timeCook(stacked(x: 200) + stacked(x: 320)) == nil)
+    #expect(timeCook(stacked(y: 690) + stacked(y: 790)) == nil)
+}
+
+@Test("longer words a tile edge can cut down don't count, and neither does a word with more in it")
+func timeCookCutWords() {
+    #expect(timeCook(stacked("Timer", "Cook")) == nil)
+    #expect(timeCook(stacked("Timed", "Cook")) == nil)
+    #expect(timeCook(stacked("Time", "Cooking")) == nil)
+    #expect(timeCook(stacked("Time/Weight", "Cook")) == nil)
+    #expect(timeCook(stacked("Time2", "Cook")) == nil)
+    #expect(timeCook(stacked("Tine", "Cook")) == nil)
+    #expect(timeCook(stacked("Time", "Book")) == nil)
+    // The Time of a Timer that the next tile read whole.
+    #expect(timeCook(stacked() + [word("Timer", x: 322, y: 690, width: 48)]) == nil)
+    #expect(timeCook(stacked() + [word("Cooking", x: 322, y: 710, width: 60)]) == nil)
+}
+
+@Test("a misread of a word on the same spot doesn't take the label away, nor does a stray letter")
+func timeCookWithMisreads() {
+    // All read off this key on the recorded frames.
+    for misread in ["Tirne", "FHre", "Tiame", "EFETA"] {
+        #expect(timeCook(stacked() + [word(misread, x: 321, y: 691, width: 40)]) != nil, "\(misread)")
+    }
+    for misread in ["Coos", "Cooa", "Eock"] {
+        #expect(timeCook(stacked() + [word(misread, x: 321, y: 711, width: 40)]) != nil, "\(misread)")
+    }
+    #expect(timeCook(stacked() + [word("y", x: 280, y: 690, width: 8)]) != nil)
+}
+
+@Test("Time Cook above the keypad's first row is the display, as Start is")
+func timeCookAboveTheGrid() {
+    #expect(timeCook(stacked(y: 200)) == nil)
+    #expect(timeCook(stacked(y: 500 - 40)) == nil)
+    #expect(timeCook(stacked(y: 500 - 20)) != nil)
+    // The whole panel counts, or a word by the display would hide a real one.
+    #expect(timeCook(stacked(y: 200) + stacked()) == nil)
+}
+
+@Test("the same label read in several tiles gives the middle reading")
+func timeCookFromRepeatedReads() throws {
+    let reads = stacked(y: 690) + stacked(x: 321, y: 691) + stacked(x: 322, y: 692)
+    let label = try #require(timeCook(reads))
+    #expect(abs(label.centre.y - 701) < 3)
+}
+
+private let timeCookOnPanel = LabelReader.Word(text: "Time Cook", left: 300, right: 340, top: 682, bottom: 718)
+
+@Test("the Time Cook button sits on the words, on the quad, and off the quad there is none")
+func timeCookButton() throws {
+    let map = KeypadReader.addingTimeCook(on: timeCookOnPanel, to: [], size: frame, panel: .fullFrame)
+    let button = try #require(map.first)
+    #expect(map.count == 1)
+    #expect(button.label == "Time Cook")
+    #expect(button.confidence == 0.5)
+    #expect(abs(button.bounds.center.x - 320.0 / 720) < 1e-6 && abs(button.bounds.center.y - 700.0 / 1280) < 1e-6)
+
+    let small = PanelQuad(topLeft: ImagePoint(x: 0, y: 0), topRight: ImagePoint(x: 0.2, y: 0),
+                          bottomRight: ImagePoint(x: 0.2, y: 0.2), bottomLeft: ImagePoint(x: 0, y: 0.2))
+    let kept = [box("Popcorn", x: 0.1, y: 0.1)]
+    #expect(KeypadReader.addingTimeCook(on: timeCookOnPanel, to: kept, size: frame, panel: small) == kept)
+}
+
+@Test("a box already on the key becomes the button, not a second one beside it")
+func timeCookReusesABox() throws {
+    let (x, y) = (320.0 / 720, 700.0 / 1280)
+    for label in [nil, "Time", "Cook", "TIME"] as [String?] {
+        let existing = SurfaceMap.Button(label: label, bounds: PanelRect(x: x - 0.04, y: y - 0.02, width: 0.08, height: 0.04), confidence: 1)
+        let map = KeypadReader.addingTimeCook(on: timeCookOnPanel, to: [existing], size: frame, panel: .fullFrame)
+        #expect(map.count == 1, "\(label ?? "nil")")
+        let button = try #require(map.first)
+        #expect(button.label == "Time Cook")
+        // It covers the box and the words, and its centre stays on the key.
+        #expect(button.bounds.minX <= existing.bounds.minX && button.bounds.maxX >= existing.bounds.maxX)
+        #expect(button.bounds.contains(PanelPoint(x: 300.0 / 720, y: 682.0 / 1280)))
+        #expect(abs(button.bounds.center.x - x) < 0.01 && abs(button.bounds.center.y - y) < 0.01)
+    }
+    // Both pieces of the label, each with its own box: one button.
+    let pieces = [box("Time", x: x, y: 690.0 / 1280), box("Cook", x: x, y: 710.0 / 1280)]
+    #expect(KeypadReader.addingTimeCook(on: timeCookOnPanel, to: pieces, size: frame, panel: .fullFrame).compactMap(\.label) == ["Time Cook"])
+}
+
+@Test("nothing else is taken over: other labels on the key, and boxes off it")
+func timeCookLeavesOtherBoxes() {
+    let (x, y) = (320.0 / 720, 700.0 / 1280)
+    let kept = ["9", "Start", "Timer", "Express Cook", "Time Defrost Express Cook 2", "Tirne"].map { box($0, x: x, y: y) }
+        + [box(nil, x: 0.1, y: 0.1), box("Time", x: 0.8, y: 0.2)]
+    let map = KeypadReader.addingTimeCook(on: timeCookOnPanel, to: kept, size: frame, panel: .fullFrame)
+    #expect(map.count == kept.count + 1)
+    #expect(kept.allSatisfy(map.contains))
+}
+
+@Test("Time Cook already on the map stops the search, and only the real two words do")
+func timeCookAlreadyThere() {
+    for label in ["Time Cook", "COOK TIME", "Cook Time", "Time COOK", "Time/Cook"] {
+        #expect(KeypadReader.hasTimeCook([box(label, x: 0.5, y: 0.5)]), "\(label)")
+    }
+    for label in [nil, "Time", "Cook", "Express Cook", "Time Defrost", "Time Defrost Express Cook 2", "Time Defrost Express Cook", "Time Cook 2", "Timer rime Cook PART"] as [String?] {
+        #expect(!KeypadReader.hasTimeCook([box(label, x: 0.5, y: 0.5)]), "\(label ?? "nil")")
+    }
+}
+
+@Test("the new button is what a Time Cook request finds, and changes nothing else that's asked for")
+func timeCookIsMatched() throws {
+    let keys = try panelKeys()
+    let others = keys + [box("Start", x: 0.9, y: 0.9), box("Express Cook", x: 0.5, y: 0.02), box("Time Defrost Express Cook", x: 0.9, y: 0.02), box("Timer", x: 0.9, y: 0.5)]
+    let quad = PanelQuad.fullFrame
+    let map = SurfaceMap(buttons: KeypadReader.addingTimeCook(on: timeCookOnPanel, to: others, size: frame, panel: quad), confidence: 1)
+
+    let found = try #require(TargetMatcher().match("time cook", in: map))
+    #expect(found.button.label == "Time Cook" && found.confidence == 1)
+    #expect(TargetMatcher().match("time", in: map)?.button.label == "Time Cook")
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start")
+    #expect(TargetMatcher().match("timer", in: map)?.button.label == "Timer")
+    #expect(TargetMatcher().match("express cook", in: map)?.button.label == "Express Cook")
+    for digit in 0...9 {
+        #expect(TargetMatcher().match(String(digit), in: map)?.button.label == String(digit))
+    }
+}
+
+@Test("a merged label is never the Time Cook target, with or without a real one")
+func mergedLabelIsNotTimeCook() {
+    // Frame 39 reads this as one label on some runs. Five words already don't count.
+    let merged = box("Time Defrost Express Cook", x: 0.5, y: 0.3)
+    for request in ["time cook", "time", "cook time"] {
+        #expect(TargetMatcher().match(request, in: SurfaceMap(buttons: [merged], confidence: 1)) == nil, "\(request)")
+    }
+    let map = SurfaceMap(buttons: KeypadReader.addingTimeCook(on: timeCookOnPanel, to: [merged], size: frame, panel: .fullFrame), confidence: 1)
+    #expect(TargetMatcher().match("time cook", in: map)?.button.label == "Time Cook")
+}
+
+@Test("the Time Cook crop holds the key under the 9, and stays on the image")
+func timeCookCrop() throws {
+    let crop = try #require(startGrid.timeCookCrop(in: frame).first)
+    #expect(crop.contains(CGPoint(x: 300, y: 682)) && crop.contains(CGPoint(x: 340, y: 718)))
+    #expect(CGRect(origin: .zero, size: frame).contains(crop))
+    // Cut by the bottom of the frame, and then all the way off it.
+    let low = KeypadReader.Grid(origin: CGPoint(x: 200, y: 1100), columnStep: CGVector(dx: 60, dy: 0),
+                                rowStep: CGVector(dx: 0, dy: 50), read: Set("123456789"))
+    #expect(low.timeCookCrop(in: frame).allSatisfy { $0.maxY <= frame.height && !$0.isEmpty })
+    let lower = KeypadReader.Grid(origin: CGPoint(x: 200, y: 1150), columnStep: CGVector(dx: 60, dy: 0),
+                                  rowStep: CGVector(dx: 0, dy: 50), read: Set("123456789"))
+    #expect(lower.timeCookCrop(in: frame).isEmpty)
+}
+
 // MARK: - Time, failure, cancellation
 
 /// Stands in for a Vision call that takes far too long and ignores cancellation:
@@ -542,7 +821,7 @@ private func accurateWorks(on photo: PanelPhoto) async throws -> Bool {
 }
 
 /// A busy machine shouldn't fail these on time. The caps have their own tests.
-private let unhurried = KeypadReader(panelLimit: .seconds(60), readLimit: .seconds(60))
+private let unhurried = KeypadReader(panelLimit: .seconds(60), readLimit: .seconds(60), timeCookLimit: .seconds(20))
 
 @Test("a generated keypad gets ten keys on the right digits",
       .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
@@ -623,7 +902,7 @@ func cropCutsOffDelay() async throws {
     }, panelLimit: .seconds(60), readLimit: .seconds(60))
 
     let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
-    #expect(calls.value == 12)
+    #expect(calls.value == 13)
     #expect(reading.added)
     #expect(TargetMatcher().match("start", in: SurfaceMap(buttons: reading.buttons, confidence: 1)) == nil)
 }
@@ -664,6 +943,87 @@ func failedStartCropsKeepTheDigits() async throws {
     #expect(calls.value > 9)
     #expect(reading.added)
     #expect(reading.buttons.compactMap(\.label).sorted() == (0...9).map(String.init))
+}
+
+@Test("a generated Time Cook gets one button, printed on one line or two, with the digits and Start as they were",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      .timeLimit(.minutes(5)))
+func generatedTimeCook() async throws {
+    let (first, _) = try SyntheticPanel.keypadPhoto(below: "Time\nCook")
+    guard try await accurateWorks(on: first) else { return }
+
+    // Adding to no buttons, so only the keypad reader can have put it there.
+    for label in ["Time\nCook", "Time Cook", "TIME\nCOOK"] {
+        let (photo, keys) = try SyntheticPanel.keypadPhoto(below: label)
+        let reading = try await unhurried.read(in: photo, panel: .fullFrame, adding: [])
+        let buttons = reading.buttons.filter { $0.label == "Time Cook" }
+        #expect(buttons.count == 1, "\(label)")
+        let button = try #require(buttons.first)
+        // The label is drawn centred on (450, 760), below the 9.
+        #expect(abs(button.bounds.center.x - 450.0 / 720) < 0.02 && abs(button.bounds.center.y - 760.0 / 1280) < 0.02, "\(label)")
+        for (digit, key) in keys {
+            #expect(reading.buttons.first { $0.label == String(digit) }?.bounds.contains(PanelPoint(x: key.x, y: key.y)) == true, "\(digit)")
+        }
+    }
+}
+
+@Test("keys that only look like Time Cook don't become it",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      .timeLimit(.minutes(5)))
+func decoysAreNotTimeCook() async throws {
+    let (first, _) = try SyntheticPanel.keypadPhoto(below: "Time\nDefrost")
+    guard try await accurateWorks(on: first) else { return }
+
+    for label in ["Time\nDefrost", "Express\nCook", "Express Cook", "Time Defrost", "Cook\nTime", "Cook Time", "Timer\nCook", "Time Cook 2"] {
+        let (photo, _) = try SyntheticPanel.keypadPhoto(below: label)
+        let reading = try await unhurried.read(in: photo, panel: .fullFrame, adding: [])
+        #expect(reading.added, "\(label)")
+        #expect(!reading.buttons.contains { $0.label == "Time Cook" }, "\(label)")
+    }
+}
+
+@Test("a Time Cook crop that's stuck doesn't cost the digits",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func stuckTimeCookCropKeepsTheDigits() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    // Nine panel tiles, three Start crops that read nothing, then the Time Cook crop.
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        switch calls.value {
+        case 1...9: return try await LabelReader.recognize(image, level: level)
+        case 13: return try await stuck(image, level)
+        default: return []
+        }
+    }, panelLimit: .seconds(60), readLimit: .seconds(60), timeCookLimit: .milliseconds(100))
+    let started = ContinuousClock.now
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(calls.value == 13)
+    #expect(reading.added)
+    #expect(reading.buttons.compactMap(\.label).sorted() == (0...9).map(String.init))
+    #expect(started.duration(to: .now) < .seconds(15))
+}
+
+@Test("no Time Cook crop when the read's cap can't spare it",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func noTimeCookCropWithoutTheTime() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        return calls.value <= 9 ? try await LabelReader.recognize(image, level: level) : []
+    }, panelLimit: .seconds(60), readLimit: .seconds(60), timeCookLimit: .seconds(31))
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(calls.value == 12)
+    #expect(reading.added)
 }
 
 // MARK: - Recorded camera frames

@@ -171,6 +171,8 @@ public struct TargetMatcher: Sendable {
         if wantsNumber && have != wanted { return nil }
         // "start" never means Delay Start or Time Start.
         if wanted.contains("start"), have.contains("delay") || have.contains("time") { return nil }
+        // "time cook" never means a merged label like Time Defrost Express Cook.
+        if wanted.contains("time"), wanted.contains("cook"), have.contains("defrost") || have.contains("express") { return nil }
         return have
     }
 
