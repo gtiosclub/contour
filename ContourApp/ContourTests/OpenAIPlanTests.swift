@@ -612,6 +612,21 @@ struct OpenAIVoiceFlowTests {
         #expect(r.speaker.spoken == ["Asking OpenAI.", server.say])
     }
 
+    @Test("No steps, but the sentence names keys: it isn't said, so it can't sound like a plan", arguments: [
+        "Press 1, 0, 0, then Start.", "One, zero, zero, then go.", "Try the popcorn key.", "You could tap Beverage.",
+    ])
+    func noStepsNamesKeys(say: String) async {
+        let server = FakeServer()
+        server.labels = []
+        server.say = say
+        let r = await rig(say: "heat up my coffee", server: server)
+        r.model.sayAButton()
+        await r.model.waitForWork()
+        #expect(r.finger.streamCount == 0)
+        #expect(r.speaker.spoken == ["Asking OpenAI.", "OpenAI didn't find a plan for that."])
+        #expect(r.model.status == "OpenAI didn't find a plan for that.")
+    }
+
     // MARK: Failing where everyone can see
 
     @Test("A failure shows why, says why, and goes to the phone's answer", arguments: [

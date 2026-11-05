@@ -272,7 +272,9 @@ final class CameraLaunchModel {
         }
         planNote = "Plan from OpenAI"
         guard !plan.steps.isEmpty else {
-            await announce(plan.say)
+            // Nothing to guide, so a sentence like "Press 1, 0, 0" would leave a finger
+            // looking on its own. Only a reason that names no key is said.
+            await announce(OpenAIPlans.soundsLikeKeys(plan.say, in: map) ? "OpenAI didn't find a plan for that." : plan.say)
             return
         }
         guard plan.steps.count <= OpenAIPlans.maxSteps else {

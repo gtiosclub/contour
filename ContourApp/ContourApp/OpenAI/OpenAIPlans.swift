@@ -35,6 +35,19 @@ nonisolated struct OpenAIPlans: Sendable {
         let service = LivePlanService(baseURL: baseURL, appCheckToken: token)
         return OpenAIPlans(planner: TaskPlanner(service: service, timeout: timeout), token: token)
     }
+
+    /// Whether the server's sentence, sent with no steps, sounds like keys to press:
+    /// a number or time, a word for pressing, or any word of a key on this panel.
+    static func soundsLikeKeys(_ sentence: String, in map: SurfaceMap) -> Bool {
+        func words(_ text: String) -> Set<String> {
+            Set(text.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
+        }
+        let said = words(sentence)
+        let keys = map.buttons.reduce(into: Set<String>()) { $0.formUnion(words($1.label ?? "")) }
+        return CookTime.mentionsATime(sentence) || !said.isDisjoint(with: keys) || !said.isDisjoint(with: pressing)
+    }
+
+    private static let pressing: Set<String> = ["press", "pressing", "push", "pushing", "tap", "tapping", "hit"]
 }
 
 nonisolated extension CookTimePlan {
