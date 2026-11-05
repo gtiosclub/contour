@@ -136,10 +136,7 @@ nonisolated struct CookTimePlan: Equatable {
             missing.append(digit)
         }
         if start == nil { missing.append("Start") }
-        guard missing.isEmpty, let start else {
-            return .missing("I can't find one clear key for \(missing.formatted(.list(type: .and))) on this panel, "
-                + "so I won't guess. Try scanning again.")
-        }
+        guard missing.isEmpty, let start else { return .missing(noClearKey(for: missing)) }
 
         var steps = zip(digits, keys).compactMap { digit, key in key.map { Step(name: digit, button: $0) } }
         steps.append(Step(name: "Start", button: start))
@@ -150,21 +147,28 @@ nonisolated struct CookTimePlan: Equatable {
         return .plan(CookTimePlan(
             steps: steps,
             say: "Cook for \(time.spoken): \(names).",
-            warning: timeCook != nil ? nil
-                : "No Time Cook key found, so going straight to the numbers. "
-                + "On some microwaves, pressing a number starts cooking right away."
+            warning: timeCook != nil ? nil : noTimeCook
         ))
     }
 
+    /// Said before the numbers when there's no Time Cook key to press first.
+    static let noTimeCook = "No Time Cook key found, so going straight to the numbers. "
+        + "On some microwaves, pressing a number starts cooking right away."
+
+    static func noClearKey(for names: [String]) -> String {
+        "I can't find one clear key for \(names.formatted(.list(type: .and))) on this panel, "
+            + "so I won't guess. Try scanning again."
+    }
+
     /// The one button whose label passes `test`. Two of them would be a guess.
-    private static func only(in map: SurfaceMap, where test: (String) -> Bool) -> SurfaceMap.Button? {
+    static func only(in map: SurfaceMap, where test: (String) -> Bool) -> SurfaceMap.Button? {
         let found = map.buttons.filter { $0.label.map(test) ?? false }
         return found.count == 1 ? found[0] : nil
     }
 
     /// Its words are exactly time and cook. "Time Defrost Express Cook 2" is
     /// several keys read as one.
-    private static func isTimeCook(_ label: String) -> Bool {
+    static func isTimeCook(_ label: String) -> Bool {
         let words = label.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init)
         return words.count == 2 && Set(words) == ["time", "cook"]
     }

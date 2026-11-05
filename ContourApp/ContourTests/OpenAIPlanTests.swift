@@ -545,6 +545,33 @@ struct OpenAIVoiceFlowTests {
         }
     }
 
+    @Test("A key that's on the map twice is refused out loud, and nothing is guided")
+    func twoKeysReadTheSame() async {
+        let server = FakeServer()
+        server.labels = ["1", "0", "0", "Start/Pause"]
+        let r = await rig(say: "heat up my coffee", map: panel(labels: ["1", "1", "0", "Start/Pause", "Beverage"]), server: server)
+        r.model.sayAButton()
+        await r.model.waitForWork()
+        #expect(r.speaker.spoken == [
+            "Asking OpenAI.", "I can't find one clear key for 1 on this panel, so I won't guess. Try scanning again.",
+        ])
+        #expect(r.finger.streamCount == 0)
+        #expect(r.model.plan == nil)
+    }
+
+    @Test("Numbers with no Time Cook key: the phone plan's warning comes before the first key")
+    func noTimeCookWarning() async {
+        let server = FakeServer()
+        server.labels = ["1", "0", "0", "Start/Pause"]
+        let r = await rig(say: "heat up my coffee", map: panel(labels: Array("1234567890").map(String.init) + ["Start/Pause", "Beverage"]),
+                          server: server)
+        r.model.sayAButton()
+        await r.model.waitForWork()
+        #expect(Array(r.speaker.spoken.prefix(4)) == [
+            "Asking OpenAI.", "Press 1, 0, 0, then Start.", CookTimePlan.noTimeCook, "Step 1 of 4: 1",
+        ])
+    }
+
     @Test("No steps, no match: keeps the server's sentence and guides nowhere")
     func noSteps() async {
         let server = FakeServer()
@@ -688,11 +715,17 @@ struct OpenAIVoiceFlowTests {
 @Suite("A server plan as steps")
 struct ServerStepsTests {
     private let map = panel()
-    private func button(_ label: String) -> SurfaceMap.Button { map.buttons.first { $0.label == label }! }
+    private func button(_ label: String, in map: SurfaceMap) -> SurfaceMap.Button { map.buttons.first { $0.label == label }! }
+    private func plan(_ labels: [String], in map: SurfaceMap = panel()) -> CookTimePlan? {
+        guard case .plan(let plan) = CookTimePlan.make(serverSteps: labels.map { button($0, in: map) }, in: map) else {
+            return nil
+        }
+        return plan
+    }
 
     @Test("Start is called Start, whatever the scan read it as")
-    func names() {
-        let plan = CookTimePlan(serverSteps: [button("Beverage"), button("Start/Pause")], in: map)
+    func names() throws {
+        let plan = try #require(plan(["Beverage", "Start/Pause"], in: map))
         #expect(plan.steps.map(\.name) == ["Beverage", "Start"])
         #expect(plan.say == "Press Beverage, then Start.")
         #expect(plan.warning == nil)
@@ -700,9 +733,27 @@ struct ServerStepsTests {
 
     @Test("One key, and several")
     func sentences() {
-        #expect(CookTimePlan(serverSteps: [button("Beverage")], in: map).say == "Press Beverage.")
-        #expect(CookTimePlan(serverSteps: [button("1"), button("3"), button("0"), button("Start/Pause")], in: map).say
-                == "Press 1, 3, 0, then Start.")
+        #expect(plan(["Beverage"], in: map)?.say == "Press Beverage.")
+        #expect(plan(["1", "3", "0", "Start/Pause"], in: map)?.say == "Press 1, 3, 0, then Start.")
+    }
+
+    @Test("A key whose label is on the map twice is a guess, so the plan is refused", arguments: [
+        (["1", "1", "0", "Start/Pause"], [1, 2, 2, 3], "1"),
+        (["1", "0", "START", "Start"], [0, 1, 3], "Start"),
+        (["Beverage", "beverage ", "Start/Pause"], [0, 2], "Beverage"),
+    ])
+    func twoKeysReadTheSame(labels: [String], picked: [Int], name: String) {
+        let map = panel(labels: labels)
+        #expect(CookTimePlan.make(serverSteps: picked.map { map.buttons[$0] }, in: map) == .missing(
+            "I can't find one clear key for \(name) on this panel, so I won't guess. Try scanning again."))
+    }
+
+    @Test("Numbers with no Time Cook key get the phone plan's warning, and only then")
+    func noTimeCook() {
+        let noTimeCook = panel(labels: Array("1234567890").map(String.init) + ["Start/Pause", "Beverage"])
+        #expect(plan(["1", "0", "0", "Start/Pause"], in: noTimeCook)?.warning == CookTimePlan.noTimeCook)
+        #expect(plan(["Beverage", "Start/Pause"], in: noTimeCook)?.warning == nil)
+        #expect(plan(["Time Cook", "1", "0", "0", "Start/Pause"], in: map)?.warning == nil)
     }
 }
 

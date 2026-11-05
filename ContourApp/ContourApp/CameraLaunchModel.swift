@@ -277,7 +277,12 @@ final class CameraLaunchModel {
             await announce("OpenAI's plan has \(plan.steps.count) steps. That's too many to trust, so I won't run it.")
             return
         }
-        await start(CookTimePlan(serverSteps: plan.steps, in: map), referenceID: referenceID)
+        switch CookTimePlan.make(serverSteps: plan.steps, in: map) {
+        case .missing(let sentence):
+            await announce(sentence)
+        case .plan(let plan):
+            await start(plan, referenceID: referenceID)
+        }
     }
 
     func choose(_ button: SurfaceMap.Button) {

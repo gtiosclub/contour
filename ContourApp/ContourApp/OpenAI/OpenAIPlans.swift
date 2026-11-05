@@ -38,19 +38,38 @@ nonisolated struct OpenAIPlans: Sendable {
 }
 
 nonisolated extension CookTimePlan {
-    /// A server plan in the form the step loop walks. The sentence is built here from
-    /// the same names as the steps, not taken from the model, so what the user hears
-    /// is what they'll be guided through.
-    init(serverSteps: [SurfaceMap.Button], in map: SurfaceMap) {
+    /// A server plan in the form the step loop walks, held to the phone plan's rules:
+    /// one clear key for every step, and its warning when there are numbers to press
+    /// and no Time Cook key. The sentence is built here from the same names as the
+    /// steps, not taken from the model, so what the user hears is what they'll be
+    /// guided through.
+    static func make(serverSteps: [SurfaceMap.Button], in map: SurfaceMap) -> Outcome {
         let start = TargetMatcher().match("start", in: map)?.button
         let steps = serverSteps.map { button in
-            let label = button.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let label = trimmed(button.label)
             return Step(name: button.id == start?.id ? "Start" : label.isEmpty ? "that key" : label, button: button)
         }
+        // Two keys read the same: the model picked one of them, and that's a guess.
+        var unclear: [String] = []
+        for step in steps where !unclear.contains(step.name) {
+            let label = trimmed(step.button.label).lowercased()
+            if only(in: map, where: { trimmed($0).lowercased() == label }) == nil { unclear.append(step.name) }
+        }
+        guard unclear.isEmpty else { return .missing(noClearKey(for: unclear)) }
+
         let names = steps.map(\.name)
         let say = names.count > 1
             ? "Press \(names.dropLast().joined(separator: ", ")), then \(names[names.count - 1])."
             : "Press \(names.joined())."
-        self.init(steps: steps, say: say, warning: nil)
+        let typesDigits = steps.contains { step in
+            let label = trimmed(step.button.label)
+            return !label.isEmpty && label.allSatisfy(\.isNumber)
+        }
+        let timeCook = only(in: map, where: isTimeCook)
+        return .plan(CookTimePlan(steps: steps, say: say, warning: typesDigits && timeCook == nil ? noTimeCook : nil))
+    }
+
+    private static func trimmed(_ label: String?) -> String {
+        label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 }
