@@ -17,7 +17,7 @@ struct LiveTrackingFactoryTests {
         let frame = try texturedFrame()
         let camera = FactoryCamera(frame: frame)
         let captured = OSAllocatedUnfairLock(initialState: [LiveTrackingSample]())
-        let source = try GuidanceSessionFactories.live(camera, method,
+        let source = try GuidanceSessionFactories.production(camera, method,
             FeatureTrackingOptions(excludeHighlights: excludeHighlights, normalizeContrast: true)) { sample in
                 captured.withLock { $0.append(sample) }
             }
@@ -49,8 +49,11 @@ struct LiveTrackingFactoryTests {
     func independentSessions() async throws {
         let frame = try texturedFrame()
         let camera = FactoryCamera(frame: frame)
-        let first = try GuidanceSessionFactories.live(camera, .hybrid, FeatureTrackingOptions(), nil)
-        let second = try GuidanceSessionFactories.live(camera, .hybrid, FeatureTrackingOptions(), nil)
+        let first = try GuidanceSessionFactories.production(camera, .hybrid, FeatureTrackingOptions(), nil)
+        let secondSamples = OSAllocatedUnfairLock(initialState: [LiveTrackingSample]())
+        let second = try GuidanceSessionFactories.production(camera, .hybrid, FeatureTrackingOptions()) { sample in
+            secondSamples.withLock { $0.append(sample) }
+        }
         let valid = try reference(frame: frame)
         await first.use(valid)
         await second.use(valid)
@@ -62,8 +65,10 @@ struct LiveTrackingFactoryTests {
         for await _ in second.frames() { }
         #expect(await first.registrationError() == .unreadableReferencePhoto)
         #expect(await second.registrationError() == nil)
-        #expect(await second.hybridStatus()?.source == .unavailable)
-        #expect(await second.hybridStatus()?.calibrationReady == false)
+        let secondSample = try #require(secondSamples.withLock { $0.last })
+        #expect(secondSample.hybridDiagnostics?.source == .unavailable)
+        #expect(secondSample.hybridDiagnostics?.calibrationReady == false)
+        #expect(await second.hybridStatus() == nil, "Natural stream termination retires the session")
     }
 
     @Test("The hybrid factory passes same-frame AR planes into calibration")
@@ -75,11 +80,13 @@ struct LiveTrackingFactoryTests {
                 SIMD4(1, 0, 0, 0), SIMD4(0, 0, 1, 0), SIMD4(0, -1, 0, 0), SIMD4(0, 0, -0.5, 1)),
                 extent: SIMD2(2, 2))])
         let frame = try texturedFrame(world: world)
-        let source = try GuidanceSessionFactories.live(FactoryCamera(frame: frame), .hybrid,
-            FeatureTrackingOptions(), nil)
+        let samples = OSAllocatedUnfairLock(initialState: [LiveTrackingSample]())
+        let source = try GuidanceSessionFactories.production(FactoryCamera(frame: frame), .hybrid,
+            FeatureTrackingOptions()) { sample in samples.withLock { $0.append(sample) } }
         await source.use(try reference(frame: frame))
         for await _ in source.frames() { }
-        let hybrid = try #require(await source.hybridStatus())
+        let hybrid = try #require(samples.withLock { $0.last?.hybridDiagnostics })
+        #expect(await source.hybridStatus() == nil)
         #expect(hybrid.calibrationFrames == 1)
         #expect(hybrid.surfaceSelection?.detectedPlaneCount == 1)
         #expect(hybrid.surfaceSelection?.fittingPlaneCount == 1)

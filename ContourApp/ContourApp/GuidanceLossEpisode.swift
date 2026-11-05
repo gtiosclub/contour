@@ -7,6 +7,9 @@ struct GuidanceLossEpisode {
         case resume
         case quiet
         case announceLoss
+        /// Spatial output is already stopped. Leave the one-shot loss effect
+        /// alone until recovery or explicit session cleanup interrupts it.
+        case holdingLoss
     }
 
     private var began: ContinuousClock.Instant?
@@ -22,7 +25,8 @@ struct GuidanceLossEpisode {
             self.began = now
             return .quiet
         }
-        if !announced && began.duration(to: now) >= announcementDelay {
+        if announced { return .holdingLoss }
+        if began.duration(to: now) >= announcementDelay {
             announced = true
             return .announceLoss
         }

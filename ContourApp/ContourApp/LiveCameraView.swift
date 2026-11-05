@@ -33,7 +33,6 @@ struct LiveCameraView: View {
     @State private var displayedReferenceID: UUID?
     @State private var scanWasInFlight = false
     @State private var scanRequestID = UUID()
-    @State private var scanRequiresRetry = false
     @State private var panelDetent: PanelDetent = .collapsed
     @State private var namedRowHeight: CGFloat = 52
     @State private var allControlsHeight: CGFloat = 140
@@ -121,8 +120,6 @@ struct LiveCameraView: View {
     }
 
     private var selectionAnimationKey: SelectionAnimationKey {
-        // Observe raw scan results here; scanRequiresRetry is an output of this task,
-        // so including it in the key would replay the failure's closing animation.
         SelectionAnimationKey(
             referenceID: primaryDetached
                 ? (experience.scanning ? displayedReferenceID
@@ -145,7 +142,7 @@ struct LiveCameraView: View {
     // A simulator caption alone is not content: keep the lower glass absent
     // until scanning (or a prepared reference) produces something actionable.
     private var hasSelectionContent: Bool {
-        !scanRequiresRetry && pipeline.canGuide && !(experience.map?.buttons.isEmpty ?? true)
+        experience.hasSelectionContent
     }
 
     private var orderedButtons: [SurfaceMap.Button] {
@@ -574,8 +571,6 @@ struct LiveCameraView: View {
             if scanWasInFlight && key.working { return }
             if scanWasInFlight {
                 scanWasInFlight = false
-                scanRequiresRetry = experience.error != nil || !pipeline.canGuide
-                    || (experience.map?.buttons.isEmpty ?? true)
             }
             selectionMotionID = UUID() // Invalidate callbacks from a superseded reference.
             if primaryDetached, hasSelectionContent, let referenceID = pipeline.panelReference?.photo.id {

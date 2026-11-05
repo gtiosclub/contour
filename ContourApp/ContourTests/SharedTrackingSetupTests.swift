@@ -142,3 +142,13 @@ private struct SetupFinger: TrackingFrameProcessor {
         TrackingDiagnostics(timestamp: frame.timestamp, status: .notDetected)
     }
 }
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSession {
+    func stop() async {}
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSampleSession {
+    func stop() async {}
+}

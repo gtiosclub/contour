@@ -18,6 +18,29 @@ struct CameraLaunchTests {
                         })
     }
 
+    @Test("A failed automatic scan followed by a valid manual reference exposes its target immediately")
+    func manualReferenceRecoversFailedScan() async throws {
+        let pipeline = ContourPipeline(surfaceUnderstanding: FailingMenuSurface(),
+            tracking: EmptyLaunchFrames(), feedback: PrintingFeedbackEngine(isPrinting: false), liveComponents: [])
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+        #expect(model.error != nil)
+        #expect(!model.hasSelectionContent)
+        let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
+        let reference = try PanelReference(photo: photo, detection: PanelDetection(
+            referencePhotoID: photo.id, quad: .fullFrame, map: MockSurfaceMaps.microwave))
+        await pipeline.replaceReference(with: reference)
+        model.referenceChanged()
+        #expect(model.hasSelectionContent)
+        #expect(model.map?.buttons.count == 6)
+        model.scan()
+        await model.waitForWork()
+        #expect(!model.hasSelectionContent)
+        #expect(model.map == nil)
+    }
+
     @Test("Mock launch scans and a spoken target starts guidance")
     func spokenTarget() async throws {
         let pipeline = pipeline()
@@ -188,5 +211,11 @@ private struct LaunchArrivalFrames: TrackingSource {
             }
             continuation.finish()
         }
+    }
+}
+
+private struct FailingMenuSurface: ContourCore.SurfaceUnderstanding {
+    func detectPanel(from photo: PanelPhoto) async throws -> PanelDetection {
+        throw NSError(domain: "MenuScan", code: 1, userInfo: [NSLocalizedDescriptionKey: "No panel detected"])
     }
 }

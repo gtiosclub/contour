@@ -21,6 +21,8 @@ The app now requests AR world tracking and uses hybrid alignment on supported de
 
 ## Verification
 
-On Xcode 27.0: 204 Tracking tests passed twice, 94 app tests passed, dependency isolation passed, and an unsigned iPhone build succeeded. Tests include real OpenCV matching through the app factory, highlight options, independent sessions, same-frame AR-plane handoff, growing plane coverage, missing data, diverging/converging rays, rejected feature-training views, and stale error measurements.
+On Xcode 27.0, after incorporating the tested build's lifecycle changes: 208 Tracking tests, 102 app tests, 48 Feedback tests and 123 Surface Understanding tests passed; dependency isolation passed and an unsigned iPhone build succeeded. Tests include real OpenCV matching through the app factory, highlight options, independent sessions, same-frame AR-plane handoff, growing plane coverage, missing data, diverging/converging rays, rejected feature-training views, and stale error measurements.
 
 Physical AR plane discovery, focus at microwave distance, and reflective-surface repeatability are not established by simulator or synthetic-plane tests. The unavailable Drive recordings were not reviewed. These changes expose the reported failure point without claiming that ARKit will always discover a microwave panel.
+
+See [the Issue 97 follow-up](TRACKING_DEVICE_REPORT_FOLLOWUP.md) for the tested-branch reconciliation, manual-menu/loss-speech repairs, measured scanner limitations, and the remaining phone checklist.
