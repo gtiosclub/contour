@@ -449,6 +449,35 @@ func timeCookFromDifferentKeys() {
     #expect(timeCook([word("Time", x: 260, y: 690, width: 40), word("Cook", x: 320, y: 690, width: 40)]) == nil)   // beside it, a key away
 }
 
+private func reading(_ text: String, _ left: Double, _ right: Double, _ top: Double, _ bottom: Double) -> LabelReader.Word {
+    LabelReader.Word(text: text, left: left, right: right, top: top, bottom: bottom)
+}
+
+@Test("Time on one key and Cook on the next aren't Time Cook, even when one reading of Time runs up to Cook")
+func timeCookAcrossTwoKeys() {
+    // Frame 06 with Time printed under the 0 and Cook under the Timer, on one line.
+    // One reading gave Time a box 51 wide instead of 33, right up to Cook, so the
+    // gap between the keys was gone. The rest of the row is close by.
+    let grid = KeypadReader.Grid(origin: CGPoint(x: 263, y: 650), columnStep: CGVector(dx: 52, dy: 6),
+                                 rowStep: CGVector(dx: 1, dy: 43), read: Set("123456789"))
+    let words = [reading("Timer", 352, 382, 782, 797), reading("Power", 254, 283, 798, 813),
+                 reading("Time", 301, 334, 812, 829), reading("Time", 301, 352, 812, 832),
+                 reading("Cook", 352, 390, 818, 836), reading("Cook", 358, 389, 819, 837),
+                 reading("START", 349, 385, 848, 866)]
+    #expect(KeypadReader.timeCookLabel(in: words, grid: grid) == nil)
+}
+
+@Test("Time on one key over Cook on the key below isn't Time Cook, on a tilted keypad")
+func timeCookOnTwoStackedKeys() {
+    // A generated panel tilted 20°: Time and Cook are each a key, almost a row apart,
+    // but the tilt makes the word boxes tall enough to pass for two lines of one label.
+    let grid = KeypadReader.Grid(origin: CGPoint(x: 282, y: 619), columnStep: CGVector(dx: 41.5, dy: -15.2),
+                                 rowStep: CGVector(dx: 11.2, dy: 31.2), read: Set("125689"))
+    let words = [reading("Memory", 346, 378, 702, 719.5), reading("Power", 308.5, 345, 730, 751),
+                 reading("Time", 388.6, 419.1, 686.1, 703.8), reading("Cook", 396, 429.2, 712, 734.5)]
+    #expect(KeypadReader.timeCookLabel(in: words, grid: grid) == nil)
+}
+
 @Test("Time Defrost and Express Cook aren't Time Cook, on any layout")
 func timeCookDecoys() {
     #expect(timeCook(stacked("Time", "Defrost")) == nil)
@@ -494,9 +523,9 @@ func cookTimeOnATiltedKeypad() {
     }
     #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 320, y: 700), tall("Time", x: 312, y: 718)], grid: tilted) == nil)
     #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 320, y: 700), tall("Cook", x: 312, y: 718)], grid: tilted) != nil)
-    // Along a tilted line, Time first and Cook first.
-    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 300, y: 700), tall("Cook", x: 336, y: 717)], grid: tilted) != nil)
-    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 300, y: 700), tall("Time", x: 336, y: 717)], grid: tilted) == nil)
+    // Along a tilted line on the key below the 9, Time first and Cook first.
+    #expect(KeypadReader.timeCookLabel(in: [tall("Time", x: 210, y: 716), tall("Cook", x: 246, y: 733)], grid: tilted) != nil)
+    #expect(KeypadReader.timeCookLabel(in: [tall("Cook", x: 210, y: 716), tall("Time", x: 246, y: 733)], grid: tilted) == nil)
 }
 
 @Test("Time Cook with anything printed on it is some other key")

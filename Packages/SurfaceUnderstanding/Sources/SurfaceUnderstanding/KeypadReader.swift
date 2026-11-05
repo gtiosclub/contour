@@ -241,6 +241,13 @@ struct KeypadReader: Sendable {
             return abs(down) >= abs(along) ? down > 0 : along > 0
         }
 
+        /// Whether `a` and `b` are in one key's cell, as the middles of one label's
+        /// words are: the same column, and less than half a row apart. Rows are judged
+        /// by the gap, since the keys below the digits needn't sit on whole rows.
+        func inOneCell(_ a: CGPoint, _ b: CGPoint) -> Bool {
+            column(of: a).rounded() == column(of: b).rounded() && abs(row(of: a) - row(of: b)) < 0.5
+        }
+
         /// Does this look like a keypad? Digits read in all three rows, columns
         /// running right, rows running down, roughly square corners, no more than
         /// 30° of tilt, and every key on the frame.
@@ -469,7 +476,9 @@ struct KeypadReader: Sendable {
     /// button gets the bare label Time Cook and nobody can see what was printed:
     ///
     /// - Two words that just happen to be close have to pass the rule LabelReader
-    ///   uses for the lines of one label.
+    ///   uses for the lines of one label, and sit in one key's cell. Time on one key
+    ///   and Cook on the next, beside it or below it, isn't a label, even when one
+    ///   reading of Time runs its box right up to the Cook.
     /// - Another word on it makes it another key: Time Defrost, Express Cook, Cook
     ///   Power, Time Cook 2. So does a longer word that a tile edge cut down: Timer.
     /// - Cook before Time is printed Cook Time. On an oven that's another kind of key:
@@ -494,6 +503,7 @@ struct KeypadReader: Sendable {
         }
         guard inOnePlace,
               places.allSatisfy({ grid.row(of: $0) >= -0.5 }),
+              pairs.allSatisfy({ grid.inOneCell(CGPoint(x: $0.time.centre.x, y: $0.time.centre.y), CGPoint(x: $0.cook.centre.x, y: $0.cook.centre.y)) }),
               pairs.allSatisfy({ grid.reads(CGPoint(x: $0.time.centre.x, y: $0.time.centre.y), before: CGPoint(x: $0.cook.centre.x, y: $0.cook.centre.y)) }),
               !words.contains(where: { word in pairs.contains { isAnotherWord(word, on: $0.time, $0.cook) } })
         else { return nil }
