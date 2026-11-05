@@ -13,8 +13,8 @@ import SurfaceUnderstanding
 nonisolated struct OpenAIPlans: Sendable {
     static let projectID = "contour-6b924"
     static let baseURL = URL(string: "https://us-central1-contour-6b924.cloudfunctions.net/api")!
-    /// Includes getting a token. The server allows itself 8 s, but /plan's median is about 2 s.
-    static let timeout: Duration = .seconds(6)
+    /// Includes getting a token. A cold server start plus OpenAI took 5.5 to 5.8 s on the server on Nov 5, so 6 s was too short.
+    static let timeout: Duration = .seconds(12)
     /// A longer plan than any microwave needs is more likely the model going wrong.
     static let maxSteps = 8
 
