@@ -413,6 +413,7 @@ struct OpenAIVoiceFlowTests {
     @Test("Times the phone doesn't know don't reach the server either", arguments: [
         "cook for 45 seconds", "run it for 99 minutes", "heat it for a minute", "1:45", "cook for 90",
         "2 and a half minutes", "add 45 seconds", "set a timer for 2 minutes",
+        "cook for one", "heat it up for one", "defrost one pound",
     ])
     func unknownTimes(say: String) async {
         let r = await rig(say: say)
@@ -761,11 +762,12 @@ struct ServerStepsTests {
 struct MentionsATimeTests {
     @Test("Times and numbers", arguments: [
         "cook for 45 seconds", "a minute", "half a minute", "1:30", "90", "ninety", "two minutes", "an hour", "cook for 1",
+        "cook for one", "heat it up for one", "defrost one pound", "the popcorn one",
     ])
     func yes(request: String) { #expect(CookTime.mentionsATime(request)) }
 
     @Test("Everything else", arguments: [
-        "heat up my coffee", "reheat my food", "cook a baked potato", "turn it off", "the popcorn one", "defrost",
+        "heat up my coffee", "reheat my food", "cook a baked potato", "turn it off", "defrost",
     ])
     func no(request: String) { #expect(!CookTime.mentionsATime(request)) }
 }

@@ -37,10 +37,11 @@ nonisolated struct CookTime: Equatable {
 
     /// Whether `request` has any amount of time or number in it, known or not. The
     /// plan server got 1:30 wrong again on Monday with no warning, so these stay on
-    /// the phone. "One" spelled out can be just a word: "the popcorn one".
+    /// the phone. "One" spelled out counts too: the server planned "cook for one" as
+    /// 1, 0, 0, so "the popcorn one" stays on the phone as well.
     static func mentionsATime(_ request: String) -> Bool {
         request.contains(where: \.isNumber) || words(in: request).contains { word in
-            units.contains(word) || (word != "1" && word.contains(where: \.isNumber))
+            units.contains(word) || word.contains(where: \.isNumber)
         }
     }
 
