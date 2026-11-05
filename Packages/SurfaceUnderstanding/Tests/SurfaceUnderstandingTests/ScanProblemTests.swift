@@ -1,6 +1,6 @@
 //
 //  ScanProblemTests.swift
-//  SurfaceUnderstanding - Surface / Labels
+//  SurfaceUnderstanding — Surface / Labels
 //
 
 import ContourCore

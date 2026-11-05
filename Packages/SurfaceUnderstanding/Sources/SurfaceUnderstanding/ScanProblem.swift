@@ -1,6 +1,6 @@
 //
 //  ScanProblem.swift
-//  SurfaceUnderstanding - Surface / Labels
+//  SurfaceUnderstanding — Surface / Labels
 //
 //  Converts scan failures and missing targets into feedback
 //  that Experience can speak.
@@ -43,7 +43,7 @@ public enum ScanProblem: Hashable, Sendable {
         }
     }
 
-    /// Converts a scan error into a problem, or nil when the scan was cancelled.
+    /// A scan that threw. nil when it was cancelled.
     public static func after(_ error: any Error) -> ScanProblem? {
         if error is CancellationError {
             return nil
@@ -65,12 +65,10 @@ public enum ScanProblem: Hashable, Sendable {
         return .scanFailed
     }
 
-    /// Explains why a detected panel cannot guide to the requested target.
-    public static func after(
-        _ detection: PanelDetection,
-        photo: PanelPhoto,
-        target: String?
-    ) -> ScanProblem? {
+    /// A scan that came back. nil when it can guide to `target`.
+    /// `target` is the button's name ("Start"), not the whole sentence.
+    /// With no target, only the scan itself is checked.
+    public static func after(_ detection: PanelDetection,photo: PanelPhoto,target: String?) -> ScanProblem? {
         if detection.quad == .fullFrame {
             return .panelCutOff
         }
@@ -110,7 +108,8 @@ public enum ScanProblem: Hashable, Sendable {
         if advice != .ready {
             return .aim(target: target, advice: advice)
         }
-
+        
+        // Check for OCR errors before suggesting camera repositioning
         if isNearMiss(target: target, in: detection.map) {
             return .cantRead(target: target)
         }
@@ -119,13 +118,15 @@ public enum ScanProblem: Hashable, Sendable {
     }
 
     static func isNearMiss(target: String, in map: SurfaceMap) -> Bool {
-        let targetWords = target.split(whereSeparator: { !$0.isLetter })
+        let targetWords = target.split{$0.isWhitespace || $0 == "/"}
 
         guard targetWords.count == 1 else {
             return false
         }
 
-        let wanted = String(targetWords[0]).lowercased()
+        let wanted = String(targetWords[0])
+            .filter{$0.isLetter }
+            .lowercased()
 
         guard wanted.count >= 5 else {
             return false
@@ -136,11 +137,11 @@ public enum ScanProblem: Hashable, Sendable {
                 continue
             }
 
-            let words = label.lowercased()
-                .split(whereSeparator: { !$0.isLetter })
+            let words = label.split{$0.isWhitespace || $0 == "/"}
 
-            for word in words {
-                if isOneEditAway(wanted, String(word)) {
+            for word in words{
+                let cleaned = String(word).filter{$0.isLetter}.lowercased()
+                if isOneEditAway(wanted, cleaned) {
                     return true
                 }
             }
