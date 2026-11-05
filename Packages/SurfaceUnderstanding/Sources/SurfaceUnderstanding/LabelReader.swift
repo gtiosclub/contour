@@ -54,7 +54,8 @@ public struct LabelReader: Sendable {
         /// key, so these are buttons too.
         var textButtons: [(label: String, bounds: PanelRect)]
         /// Regions holding several separate labels: a frame around a group of
-        /// keys, not a key. Their words went to `textButtons` instead.
+        /// keys, not a key. Their words went to `textButtons` instead. Also
+        /// boxes on the clock display, which are digits, not keys.
         var frames: Set<Int> = []
     }
 
@@ -81,11 +82,33 @@ public struct LabelReader: Sendable {
         }
 
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
-        let words = locateWords(in: observations, panel: panel)
-        let assigned = Self.assign(words, to: regions)
+        return Self.reading(locateWords(in: observations, panel: panel), regions: regions)
+    }
+
+    /// Hands the words to the regions and collects the leftovers.
+    ///
+    /// The clock and the status text printed inside the display never label a
+    /// key, so they come out before any region can take them. A box centred on
+    /// them is a digit on the display, not a key, so it takes nothing and is
+    /// reported as a frame. Only text that starts above the clock's bottom edge
+    /// counts: the labels just under the display are real keys.
+    static func reading(_ located: [Word], regions: [PanelRect]) -> Reading {
+        let kept = removingClockWords(from: located)
+        let removed = located.filter { !kept.contains($0) }
+        let clockBottom = removed.max { $0.height < $1.height }?.bottom ?? -.infinity
+        let display = removed.filter { $0.top < clockBottom }
+        let words = located.filter { !display.contains($0) }
+        let displayBoxes = Set(regions.indices.filter { index in
+            let center = regions[index].center
+            return display.contains { word in
+                word.left <= center.x && center.x <= word.right
+                    && word.top <= center.y && center.y <= word.bottom
+            }
+        })
+        let assigned = assign(words, to: regions, skipping: displayBoxes)
         return Reading(
             labels: assigned.labels,
-            textButtons: Self.textButtons(from: assigned.unused),
+            textButtons: textButtons(from: assigned.unused),
             frames: assigned.frames
         )
     }
@@ -173,18 +196,18 @@ public struct LabelReader: Sendable {
     /// region's height, and under it horizontally. That line can come from a
     /// box the detector drew tightly around the word itself; that box is the
     /// label, not a key, so it's dropped too.
-    static func assign(_ words: [Word], to regions: [PanelRect]) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
+    static func assign(_ words: [Word], to regions: [PanelRect], skipping: Set<Int> = []) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
         var taken = Array(repeating: [Word](), count: regions.count)
         var unused: [Word] = []
         for word in words {
-            if let index = regions.firstIndex(where: { $0.contains(word.centre) }) {
+            if let index = regions.indices.first(where: { !skipping.contains($0) && regions[$0].contains(word.centre) }) {
                 taken[index].append(word)
             } else {
                 unused.append(word)
             }
         }
 
-        var frames = Set<Int>()
+        var frames = skipping
         for index in regions.indices where groups(of: taken[index]).count > 1 {
             frames.insert(index)
             unused += taken[index]
