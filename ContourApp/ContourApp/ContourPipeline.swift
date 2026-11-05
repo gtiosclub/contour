@@ -133,11 +133,17 @@ final class ContourPipeline {
     /// Everything real, on `camera`: Surface Understanding reads the panel,
     /// Tracking follows it and the fingertip, and guidance vibrates.
     static func live(camera: CameraService) -> ContourPipeline {
-        ContourPipeline(
+        let method: PanelTrackingMethod = camera.usesWorldTracking ? .hybrid : .features
+        let options = FeatureTrackingOptions()
+        // The live factory supports every method; use it for the initial session
+        // as well as later settings changes and independent diagnostics.
+        return ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: LiveTrackingSource(camera: camera),
+            tracking: LiveTrackingSource(camera: camera,
+                panelTracker: GuidanceSessionFactories.panelTracker(for: method, options: options)),
             feedback: LiveFeedbackEngine(),
-            liveComponents: Set(Component.allCases), sessionCamera: camera
+            liveComponents: Set(Component.allCases), sessionFactory: GuidanceSessionFactories.live,
+            sessionCamera: camera, trackingMethod: method, featureOptions: options
         )
     }
 

@@ -45,8 +45,25 @@ nonisolated enum GuidanceSessionFactoryError: LocalizedError, Equatable {
 }
 
 enum GuidanceSessionFactories {
-    /// S0 preserves current behavior. Later assembly adds real feature/hybrid
-    /// implementations; an unsupported selection is never silently substituted.
+    /// Guidance and diagnostics create separate trackers with identical settings.
+    static let live: GuidanceSessionFactory = { camera, method, options, onSample in
+        LiveTrackingSource(camera: camera, panelTracker: panelTracker(for: method, options: options),
+                           onSample: onSample)
+    }
+
+    static func panelTracker(for method: PanelTrackingMethod,
+                             options: FeatureTrackingOptions) -> any PanelTracking {
+        switch method {
+        case .vision:
+            return PanelTracker()
+        case .features:
+            return FeaturePanelTracker(options: options)
+        case .hybrid:
+            return HybridPanelTracker(visual: FeaturePanelTracker(options: options))
+        }
+    }
+
+    /// Vision-only factory retained for explicitly limited/injected sessions.
     static let vision: GuidanceSessionFactory = { camera, method, _, onSample in
         guard method == .vision else { throw GuidanceSessionFactoryError.unimplemented(method) }
         return LiveTrackingSource(camera: camera, onSample: onSample)
