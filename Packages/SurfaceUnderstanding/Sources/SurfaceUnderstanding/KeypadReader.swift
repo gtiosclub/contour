@@ -564,3 +564,16 @@ struct KeypadReader: Sendable {
         return row[b.count]
     }
 }
+
+extension SurfaceMap {
+
+    /// Is any button labelled with one digit? `false` means nothing on this map can
+    /// type a number, either because the panel has no number keys or because the
+    /// scan missed them. The map can't say which.
+    public var hasNumberKeys: Bool {
+        buttons.contains { button in
+            guard let label = button.label, label.count == 1 else { return false }
+            return KeypadReader.layout[Character(label)] != nil
+        }
+    }
+}

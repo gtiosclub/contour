@@ -92,8 +92,7 @@ final class CameraLaunchModel {
                     guard lifecycleID == id, active else { return }
                     ready = true
                     error = nil
-                    status = map == nil ? "Aim at the whole control panel, then scan."
-                        : "Panel ready. Say a button name or choose one below."
+                    status = map.map(Self.readyStatus) ?? "Aim at the whole control panel, then scan."
                 } catch {
                     guard lifecycleID == id, active else { return }
                     self.error = error.localizedDescription
@@ -105,6 +104,14 @@ final class CameraLaunchModel {
         return task
     }
 
+    /// What to say once a panel is ready. Ovens and some panels really have no number
+    /// keys, so the warning has to hold for those too.
+    nonisolated static func readyStatus(for map: SurfaceMap) -> String {
+        let ready = "Panel ready. Say a button name or choose one below."
+        return map.hasNumberKeys ? ready
+            : ready + " Number keys not found. If this panel has them, move closer and scan again."
+    }
+
     func waitForWork() async { await work?.value }
 
     func referenceChanged() {
@@ -114,8 +121,7 @@ final class CameraLaunchModel {
         guard !scanning else { return }
         stopWork()
         error = nil
-        status = map == nil ? "Aim at the whole control panel, then scan."
-            : "Panel ready. Say a button name or choose one below."
+        status = map.map(Self.readyStatus) ?? "Aim at the whole control panel, then scan."
     }
 
     /// Await this barrier before presenting diagnostics or starting replacement work.
@@ -171,7 +177,7 @@ final class CameraLaunchModel {
                 self.status = "Panel outline unclear. Show all four corners and scan again."
                 return
             }
-            self.status = "Panel ready. Say a button name or choose one below."
+            self.status = Self.readyStatus(for: map)
             self.warmUpOpenAI()
         }
     }

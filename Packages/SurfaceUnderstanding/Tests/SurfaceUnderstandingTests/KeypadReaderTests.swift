@@ -1083,3 +1083,39 @@ private func recordedPhoto(_ url: URL) throws -> PanelPhoto {
         timestamp: .distantPast
     )
 }
+
+// MARK: - Number keys on a map
+
+@Suite("Number keys on a map")
+struct NumberKeysTests {
+
+    private func map(_ labels: String?...) -> SurfaceMap {
+        SurfaceMap(buttons: labels.map { SurfaceMap.Button(label: $0, bounds: PanelRect(x: 0, y: 0, width: 0.1, height: 0.1), confidence: 1) },
+                   confidence: 1)
+    }
+
+    @Test("One digit key is enough", arguments: "0123456789")
+    func digit(_ digit: Character) {
+        #expect(map("Start", nil, String(digit)).hasNumberKeys)
+    }
+
+    @Test("Other labels with numbers in them aren't number keys",
+          arguments: ["Start", "", "10", "30 Sec", "Add 30", "+30", "1:35", "0:00", "1 2 3", "٣", "½"])
+    func notADigitKey(_ label: String) {
+        #expect(!map(label).hasNumberKeys)
+    }
+
+    @Test("Unread buttons and an empty map have no number keys")
+    func nothingToFind() {
+        #expect(!map(nil, nil).hasNumberKeys)
+        #expect(!SurfaceMap.empty.hasNumberKeys)
+    }
+
+    @Test("A keypad the reader placed counts")
+    func placedKeypad() throws {
+        let grid = KeypadReader.Grid(origin: CGPoint(x: 200, y: 500), columnStep: CGVector(dx: 60, dy: 0),
+                                     rowStep: CGVector(dx: 0, dy: 50), read: Set("123456789"))
+        let keys = try #require(KeypadReader.keyButtons(of: grid, size: CGSize(width: 720, height: 1280), panel: .fullFrame))
+        #expect(SurfaceMap(buttons: keys, confidence: 1).hasNumberKeys)
+    }
+}

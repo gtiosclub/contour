@@ -91,6 +91,11 @@ public struct LabelReader: Sendable {
     }
 
     static func recognize(_ image: CGImage, level: RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation] {
+        try await recognize(image, level: level, loading: modelLoading, using: request)
+    }
+
+    /// Vision itself, with nothing in front of it.
+    static func request(_ image: CGImage, level: RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation] {
         var request = RecognizeTextRequest()
         request.recognitionLevel = level
         request.usesLanguageCorrection = false
