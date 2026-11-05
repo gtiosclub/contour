@@ -97,6 +97,8 @@ struct CookTimeTests {
         "extra 30 seconds", "set a timer for 2 minutes", "kitchen timer 30 seconds", "defrost for 2 minutes",
         "popcorn for 2 minutes", "power level 2 for 2 minutes", "set the clock to 1:30", "delay start 2 minutes",
         "1:30 pm",
+        "stop after 30 seconds", "cancel 30 seconds", "pause for 30 seconds", "don't cook for 2 minutes",
+        "don’t cook for 2 minutes", "do not cook for 2 minutes", "minus 30 seconds", "take off 30 seconds", "wait 2 minutes",
     ])
     func otherKeys(request: String) {
         #expect(CookTime.parse(request) == nil)
