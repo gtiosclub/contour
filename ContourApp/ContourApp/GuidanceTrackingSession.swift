@@ -8,6 +8,7 @@ nonisolated protocol GuidanceTrackingSession: TrackingSource {
     func use(_ reference: PanelReference) async
     func registrationError() async -> PanelTrackingError?
     func hybridStatus() async -> HybridTrackingDiagnostics?
+    func stop() async
 }
 
 extension LiveTrackingSource: GuidanceTrackingSession {}
@@ -45,6 +46,23 @@ nonisolated enum GuidanceSessionFactoryError: LocalizedError, Equatable {
 }
 
 enum GuidanceSessionFactories {
+    /// Each invocation owns independent reference/calibration state.
+    static func productionSource(camera: any CameraFrameSource, method: PanelTrackingMethod,
+                                 options: FeatureTrackingOptions,
+                                 onSample: (@Sendable (LiveTrackingSample) -> Void)? = nil) -> LiveTrackingSource {
+        let tracker: any PanelTracking
+        switch method {
+        case .vision: tracker = PanelTracker()
+        case .features: tracker = FeaturePanelTracker(options: options)
+        case .hybrid: tracker = HybridPanelTracker(visual: FeaturePanelTracker(options: options))
+        }
+        return LiveTrackingSource(camera: camera, panelTracker: tracker, onSample: onSample)
+    }
+
+    static let production: GuidanceSessionFactory = { camera, method, options, onSample in
+        productionSource(camera: camera, method: method, options: options, onSample: onSample)
+    }
+
     /// S0 preserves current behavior. Later assembly adds real feature/hybrid
     /// implementations; an unsupported selection is never silently substituted.
     static let vision: GuidanceSessionFactory = { camera, method, _, onSample in
