@@ -34,6 +34,7 @@ playground.xcworkspace
 # Secrets — never commit a signing identity or an API key
 .env
 *.xcconfig.local
+AppCheck.local.plist
 *.p12
 *.mobileprovision
 

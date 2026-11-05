@@ -2,6 +2,7 @@ import ContourCore
 import ContourFeedback
 import Foundation
 import Observation
+import SurfaceUnderstanding
 
 /// Coordinates cancellation before the shared camera changes ownership or a new request starts.
 @MainActor @Observable
@@ -20,6 +21,10 @@ final class CameraLaunchModel {
     private(set) var plan: CookTimePlan?
     private(set) var planIndex = 0
     private var planReferenceID: UUID?
+    /// Goes in front of the status, so the demo can't be fooled by a silent failure:
+    /// "Plan from OpenAI" or "Plan from phone". `nil` with no OpenAI set up.
+    private(set) var planNote: String?
+    private let openAI: OpenAIPlans?
     private var speaking = false
     private let listen: @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard
     private let listenForNext: @MainActor () async throws -> Bool
@@ -34,12 +39,14 @@ final class CameraLaunchModel {
     init(camera: CameraService, pipeline: ContourPipeline,
          listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) },
          listenForNext: @escaping @MainActor () async throws -> Bool = { try await VoiceRequest().listenForNext() },
-         speaker: any PlanSpeaking = PlanSpeaker()) {
+         speaker: any PlanSpeaking = PlanSpeaker(),
+         openAI: OpenAIPlans? = nil) {
         self.camera = camera
         self.pipeline = pipeline
         self.listen = listen
         self.listenForNext = listenForNext
         self.speaker = speaker
+        self.openAI = openAI
         knownReferenceID = pipeline.panelReference?.photo.id
     }
 
@@ -49,8 +56,9 @@ final class CameraLaunchModel {
         if guiding, let feedback = pipeline.feedback as? LiveFeedbackEngine {
             line = [feedback.instructionText, pipeline.guidanceGap].compactMap { $0 }.joined(separator: " ")
         }
-        guard let planProgress, line != planProgress else { return line }
-        return "\(planProgress). \(line)"
+        if let planProgress, line != planProgress { line = "\(planProgress). \(line)" }
+        if let planNote { line = "\(planNote). \(line)" }
+        return line
     }
 
     var planProgress: String? { plan?.progress(at: planIndex) }
@@ -124,6 +132,7 @@ final class CameraLaunchModel {
         guiding = false
         scanning = false
         plan = nil
+        planNote = nil
         speaking = false
         let cleanup = Task {
             await previous?.value
@@ -163,6 +172,27 @@ final class CameraLaunchModel {
                 return
             }
             self.status = "Panel ready. Say a button name or choose one below."
+            self.warmUpOpenAI()
+        }
+    }
+
+    /// Gets a token now so the first request doesn't spend its time limit on one.
+    /// This only talks to App Check. Nothing goes to the plan server during a scan.
+    private func warmUpOpenAI() {
+        guard let openAI else { return }
+        let referenceID = pipeline.panelReference?.photo.id
+        Task {
+            let note: String
+            do {
+                _ = try await openAI.token()
+                note = "OpenAI ready"
+            } catch is CancellationError {
+                return
+            } catch {
+                note = "OpenAI not ready, \(error.localizedDescription)"
+            }
+            guard pipeline.panelReference?.photo.id == referenceID, planNote == nil else { return }
+            planNote = note
         }
     }
 
@@ -182,25 +212,72 @@ final class CameraLaunchModel {
             }
             switch CookTimePlan.make(for: heard.text, in: map) {
             case .missing(let sentence):
+                self.notePhonePlan()
                 await self.announce(sentence)
                 return
             case .plan(let plan):
-                self.plan = plan
-                self.planIndex = 0
-                self.planReferenceID = referenceID
-                await self.announce(plan.say)
-                if let warning = plan.warning { await self.announce(warning) }
-                await self.walk(plan, from: 0, referenceID: referenceID)
+                self.notePhonePlan()
+                await self.start(plan, referenceID: referenceID)
                 return
             case nil:
                 break
+            }
+            if let openAI = self.openAI, !ButtonLookup.isConfident(heard.text, in: map) {
+                await self.ask(openAI, heard.text, map: map, referenceID: referenceID)
+                return
             }
             guard let button = heard.button else {
                 self.status = "No button matching “\(heard.text)”. Try again or choose a button below."
                 return
             }
+            self.notePhonePlan()
             await self.guide(button, referenceID: referenceID)
         }
+    }
+
+    private func notePhonePlan() {
+        if openAI != nil { planNote = "Plan from phone" }
+    }
+
+    private func start(_ plan: CookTimePlan, referenceID: UUID?) async {
+        self.plan = plan
+        planIndex = 0
+        planReferenceID = referenceID
+        await announce(plan.say)
+        if let warning = plan.warning { await announce(warning) }
+        await walk(plan, from: 0, referenceID: referenceID)
+    }
+
+    /// Everything the phone can't do alone, like "heat up my coffee". The model can
+    /// be silently wrong, so its whole plan is said out loud before the first key.
+    private func ask(_ openAI: OpenAIPlans, _ request: String, map: SurfaceMap, referenceID: UUID?) async {
+        guard !CookTime.mentionsATime(request) else {
+            notePhonePlan()
+            await announce("I only know a minute and a half, 2 minutes and 30 seconds, so I won't guess that.")
+            return
+        }
+        async let answer = openAI.planner.plan(request, in: map)
+        await announce("Asking OpenAI.")
+        let plan = await answer
+        guard !Task.isCancelled, pipeline.panelReference?.photo.id == referenceID else { return }
+
+        if let fallback = plan.fallback {
+            planNote = "Plan from phone, OpenAI \(fallback.why)"
+            await announce("OpenAI \(fallback.why), so using the phone.")
+            await announce(plan.say)
+            if let button = plan.steps.first { await guide(button, referenceID: referenceID) }
+            return
+        }
+        planNote = "Plan from OpenAI"
+        guard !plan.steps.isEmpty else {
+            await announce(plan.say)
+            return
+        }
+        guard plan.steps.count <= OpenAIPlans.maxSteps else {
+            await announce("OpenAI's plan has \(plan.steps.count) steps. That's too many to trust, so I won't run it.")
+            return
+        }
+        await start(CookTimePlan(serverSteps: plan.steps, in: map), referenceID: referenceID)
     }
 
     func choose(_ button: SurfaceMap.Button) {
@@ -227,15 +304,18 @@ final class CameraLaunchModel {
     func next() {
         guard let plan else { return }
         let referenceID = planReferenceID
+        let note = planNote
         let following = planIndex + 1
         guard following < plan.steps.count else {
             replaceWork { await self.announce("That was the last key.") }
+            planNote = note
             return
         }
         replaceWork { await self.walk(plan, from: following, referenceID: referenceID) }
         // Replacing the work ended the plan. This is the same plan, one key on.
         self.plan = plan
         planIndex = following
+        planNote = note
     }
 
     /// One key at a time. Stop, a rescan and `next` all cancel this work, so a

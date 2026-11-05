@@ -16,7 +16,8 @@ struct ContentView: View {
     init(pipeline: ContourPipeline, camera: CameraService) {
         self.pipeline = pipeline
         self.camera = camera
-        _experience = State(initialValue: CameraLaunchModel(camera: camera, pipeline: pipeline))
+        _experience = State(initialValue: CameraLaunchModel(camera: camera, pipeline: pipeline,
+                                                            openAI: OpenAIPlans.fromBundle()))
     }
 
     var body: some View {
