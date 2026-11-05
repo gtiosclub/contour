@@ -64,12 +64,14 @@ private struct NoFingertipEver: TrackingSource {
 private final class FakeSpeaker: PlanSpeaking {
     var log: [String] = []
     var stops = 0
+    /// Sentences starting with this take long enough to tap Next during.
+    var slow: String?
     var spoken: [String] { log.filter { !$0.hasPrefix("[") } }
 
     func speak(_ text: String) async {
         log.append(text)
         // A real sentence takes a while. The model must wait for all of it.
-        try? await Task.sleep(for: .milliseconds(5))
+        try? await Task.sleep(for: .milliseconds(slow.map { text.hasPrefix($0) } == true ? 300 : 5))
         log.append("[finished]")
     }
 
@@ -129,10 +131,10 @@ struct PlanWalkTests {
         await model.waitForWork()
         #expect(speaker.spoken == [
             "Cook for a minute and a half: Time Cook, 1, 3, 0, Start.",
-            "Step 1 of 5: Time Cook", "Press Time Cook, then say next.",
-            "Step 2 of 5: 1", "Press 1, then say next.",
-            "Step 3 of 5: 3", "Press 3, then say next.",
-            "Step 4 of 5: 0", "Press 0, then say next.",
+            "Step 1 of 5: Time Cook", "Press Time Cook. Say next to move on.",
+            "Step 2 of 5: 1", "Press 1. Say next to move on.",
+            "Step 3 of 5: 3", "Press 3. Say next to move on.",
+            "Step 4 of 5: 0", "Press 0. Say next to move on.",
             "Step 5 of 5: Start", "Press Start. That's the last key.",
         ])
         #expect(finger.streamCount == 5)
@@ -148,7 +150,7 @@ struct PlanWalkTests {
         model.sayAButton()
         await model.waitForWork()
         #expect(finger.streamCount == 5)
-        #expect(speaker.spoken.filter { $0 == "Press 0, then say next." }.count == 2)
+        #expect(speaker.spoken.filter { $0 == "Press 0. Say next to move on." }.count == 2)
         #expect(speaker.spoken.contains("Step 3 of 5: 0") && speaker.spoken.contains("Step 4 of 5: 0"))
         #expect(model.status == "Press Start. That's the last key.")
     }
@@ -163,7 +165,7 @@ struct PlanWalkTests {
         #expect(mic.count == 4)
         for index in mic {
             #expect(speaker.log[index - 1] == "[finished]")
-            #expect(speaker.log[index - 2].hasSuffix("then say next."))
+            #expect(speaker.log[index - 2].hasSuffix("Say next to move on."))
         }
     }
 
@@ -206,7 +208,38 @@ struct PlanWalkTests {
         await until { model.listening && model.planIndex == 0 }
         model.next()
         await until { model.listening && model.planIndex == 1 }
-        #expect(speaker.spoken.contains("Press 1, then say next."))
+        #expect(speaker.spoken.contains("Press 1. Say next to move on."))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Two quick taps on Next move on one key, and that key is said")
+    func twoQuickNexts() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening && model.planIndex == 0 }
+        model.next(); model.next()
+        await until { model.listening }
+        #expect(model.planProgress == "Step 2 of 5: 1")
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Next while the plan is read back skips nothing, not even the warning", arguments: [true, false])
+    func nextDuringReadBack(timeCook: Bool) async {
+        let speaker = FakeSpeaker()
+        speaker.slow = "Cook for"
+        let (model, _) = await scanned(map: panel(timeCook: timeCook), tracking: NoFingertipEver(), speaker: speaker)
+        model.sayAButton()
+        await until { model.status.hasPrefix("Cook for") }
+        model.next()
+        await until { model.guiding }
+        #expect(model.planProgress == (timeCook ? "Step 1 of 5: Time Cook" : "Step 1 of 4: 1"))
+        #expect(speaker.spoken.contains(model.planProgress ?? ""))
+        #expect((model.plan?.warning == nil) == timeCook)
+        if let warning = model.plan?.warning { #expect(speaker.spoken.contains(warning)) }
         model.stop()
         await model.waitForWork()
     }
@@ -217,7 +250,11 @@ struct PlanWalkTests {
         let (model, _) = await scanned(say: "30 seconds", tracking: NoFingertipEver(), speaker: speaker)
         model.sayAButton()
         await until { model.guiding }
-        model.next(); model.next(); model.next()
+        // A tap only counts once that key's guidance has started.
+        for step in 1...3 {
+            model.next()
+            await until { model.guiding && model.planIndex == step }
+        }
         #expect(model.planProgress == "Step 4 of 4: Start")
         model.next()
         #expect(model.plan == nil)

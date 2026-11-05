@@ -298,11 +298,11 @@ final class CameraLaunchModel {
         error = pipeline.trackingError
     }
 
-    /// Moves on from the current key, whatever it's doing: speech, guidance or
-    /// listening. Nothing detects a press, and arrival may never trigger, so this
-    /// always works.
+    /// Moves on from the current key once its guidance or listening has started.
+    /// Nothing detects a press, and arrival may never trigger, so this works then.
+    /// Before that, a tap would skip a key nobody has heard about yet.
     func next() {
-        guard let plan else { return }
+        guard let plan, guiding || listening else { return }
         let referenceID = planReferenceID
         let note = planNote
         let following = planIndex + 1
@@ -344,9 +344,9 @@ final class CameraLaunchModel {
                 return
             }
             // The screen leaves out the word: VoiceOver can read this text aloud
-            // while the microphone is open.
-            await announce(reached ? "\(lead), then say next." : "\(lead). Say next to move on.",
-                           showing: "\(lead). Listening to move on.")
+            // while the microphone is open. Out loud the word isn't last, so the
+            // end of the sentence, or its echo, is less likely to count as a "next".
+            await announce("\(lead). Say next to move on.", showing: "\(lead). Listening to move on.")
             guard await waitForNext() else { return }
         }
     }

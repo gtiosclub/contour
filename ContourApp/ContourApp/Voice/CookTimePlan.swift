@@ -65,10 +65,11 @@ nonisolated struct CookTime: Equatable {
         .sorted { $0.phrase.count > $1.phrase.count }
 
     /// These mean a different key: "add 30 seconds" is Add 30 Sec, and "set a
-    /// timer for 2 minutes" shouldn't cook anything.
+    /// timer for 2 minutes" or "don't cook for 2 minutes" shouldn't cook anything.
     private static let otherKeys: Set<String> = [
         "add", "plus", "+", "more", "extra", "another",
         "timer", "clock", "defrost", "popcorn", "power", "delay", "am", "pm",
+        "stop", "cancel", "pause", "don't", "don’t", "not", "minus", "off", "wait",
     ]
 
     private static let units: Set<String> = ["seconds", "minutes", "hour", "hours", "half", "quarter"]

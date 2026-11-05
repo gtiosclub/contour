@@ -481,7 +481,7 @@ struct OpenAIVoiceFlowTests {
         #expect(r.speaker.spoken == [
             "Asking OpenAI.",
             "Press Beverage, then Start.",
-            "Step 1 of 2: Beverage", "Press Beverage, then say next.",
+            "Step 1 of 2: Beverage", "Press Beverage. Say next to move on.",
             "Step 2 of 2: Start", "Press Start. That's the last key.",
         ])
         #expect(r.finger.streamCount == 2)
