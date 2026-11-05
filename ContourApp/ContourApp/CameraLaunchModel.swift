@@ -264,9 +264,9 @@ final class CameraLaunchModel {
                 return
             }
             // The screen leaves out the word: VoiceOver can read this text aloud
-            // while the microphone is open.
-            await announce(reached ? "\(lead), then say next." : "\(lead). Say next to move on.",
-                           showing: "\(lead). Listening to move on.")
+            // while the microphone is open. Out loud the word isn't last, so the
+            // end of the sentence, or its echo, is less likely to count as a "next".
+            await announce("\(lead). Say next to move on.", showing: "\(lead). Listening to move on.")
             guard await waitForNext() else { return }
         }
     }
