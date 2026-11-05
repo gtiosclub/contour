@@ -64,12 +64,14 @@ private struct NoFingertipEver: TrackingSource {
 private final class FakeSpeaker: PlanSpeaking {
     var log: [String] = []
     var stops = 0
+    /// Sentences starting with this take long enough to tap Next during.
+    var slow: String?
     var spoken: [String] { log.filter { !$0.hasPrefix("[") } }
 
     func speak(_ text: String) async {
         log.append(text)
         // A real sentence takes a while. The model must wait for all of it.
-        try? await Task.sleep(for: .milliseconds(5))
+        try? await Task.sleep(for: .milliseconds(slow.map { text.hasPrefix($0) } == true ? 300 : 5))
         log.append("[finished]")
     }
 
@@ -211,13 +213,48 @@ struct PlanWalkTests {
         await model.waitForWork()
     }
 
+    @Test("Two quick taps on Next move on one key, and that key is said")
+    func twoQuickNexts() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening && model.planIndex == 0 }
+        model.next(); model.next()
+        await until { model.listening }
+        #expect(model.planProgress == "Step 2 of 5: 1")
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Next while the plan is read back skips nothing, not even the warning", arguments: [true, false])
+    func nextDuringReadBack(timeCook: Bool) async {
+        let speaker = FakeSpeaker()
+        speaker.slow = "Cook for"
+        let (model, _) = await scanned(map: panel(timeCook: timeCook), tracking: NoFingertipEver(), speaker: speaker)
+        model.sayAButton()
+        await until { model.status.hasPrefix("Cook for") }
+        model.next()
+        await until { model.guiding }
+        #expect(model.planProgress == (timeCook ? "Step 1 of 5: Time Cook" : "Step 1 of 4: 1"))
+        #expect(speaker.spoken.contains(model.planProgress ?? ""))
+        #expect((model.plan?.warning == nil) == timeCook)
+        if let warning = model.plan?.warning { #expect(speaker.spoken.contains(warning)) }
+        model.stop()
+        await model.waitForWork()
+    }
+
     @Test("The Next button on the last key ends the plan")
     func nextOnTheLastKey() async {
         let speaker = FakeSpeaker()
         let (model, _) = await scanned(say: "30 seconds", tracking: NoFingertipEver(), speaker: speaker)
         model.sayAButton()
         await until { model.guiding }
-        model.next(); model.next(); model.next()
+        // A tap only counts once that key's guidance has started.
+        for step in 1...3 {
+            model.next()
+            await until { model.guiding && model.planIndex == step }
+        }
         #expect(model.planProgress == "Step 4 of 4: Start")
         model.next()
         #expect(model.plan == nil)

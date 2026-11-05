@@ -221,11 +221,11 @@ final class CameraLaunchModel {
         error = pipeline.trackingError
     }
 
-    /// Moves on from the current key, whatever it's doing: speech, guidance or
-    /// listening. Nothing detects a press, and arrival may never trigger, so this
-    /// always works.
+    /// Moves on from the current key once its guidance or listening has started.
+    /// Nothing detects a press, and arrival may never trigger, so this works then.
+    /// Before that, a tap would skip a key nobody has heard about yet.
     func next() {
-        guard let plan else { return }
+        guard let plan, guiding || listening else { return }
         let referenceID = planReferenceID
         let following = planIndex + 1
         guard following < plan.steps.count else {
