@@ -227,3 +227,79 @@ extension SyntheticGray {
 
     private static let context = CIContext()
 }
+
+// MARK: - Lighting
+
+extension SyntheticGray {
+    /// The same scene in dim, flat light: every value squeezed into `range` levels.
+    func dimmed(range: Int, floor: Int = 118) -> SyntheticGray {
+        var out = self
+        out.pixels = pixels.map { UInt8(floor + Int($0) * range / 255) }
+        return out
+    }
+
+    /// Clipped specular hotspots: a rectangle and a round spot.
+    static let glare: [(rect: (Int, Int, Int, Int)?, disc: (Int, Int, Int)?)] = [
+        ((220, 150, 90, 70), nil), (nil, (400, 300, 30)),
+    ]
+
+    func withGlare() -> SyntheticGray {
+        var out = self
+        for spot in Self.glare {
+            if let rect = spot.rect { out.fill(rect, value: 255) }
+            if let (x, y, r) = spot.disc { out.disc(cx: x, cy: y, r: r, value: 255) }
+        }
+        return out
+    }
+
+    /// Distance from `point` to the nearest glare pixel (0 inside).
+    static func distanceToGlare(_ point: CFTPoint) -> Float {
+        glare.map { spot -> Float in
+            if let (x, y, w, h) = spot.rect {
+                let dx = max(Float(x) - point.x, 0, point.x - Float(x + w - 1))
+                let dy = max(Float(y) - point.y, 0, point.y - Float(y + h - 1))
+                return hypot(dx, dy)
+            }
+            let (x, y, r) = spot.disc!
+            return max(0, hypot(point.x - Float(x), point.y - Float(y)) - Float(r))
+        }.min()!
+    }
+}
+
+// MARK: - Calibration views
+
+extension FeatureMatcherBackendTests {
+    /// The panel's left 35% (reference x < 180), as if a hand or a moving
+    /// reflection hid it in some views.
+    static let transientRegion = (40, 30, 140, 300)
+
+    /// One slightly different view of the panel, optionally with the transient
+    /// region hidden.
+    /// A small patch, like a moving reflection, rather than a third of the panel.
+    static let transientPatch = (280, 180, 90, 70)
+
+    static func calibrationView(_ index: Int, hideTransient: Bool) -> SyntheticGray {
+        calibrationView(index, hiding: hideTransient ? [transientRegion] : [])
+    }
+
+    /// A view with `hidden` reference-space rectangles painted flat, except
+    /// that `keep` (if given) always stays visible.
+    static func calibrationView(_ index: Int, hiding hidden: [(Int, Int, Int, Int)],
+                                keep: (Int, Int, Int, Int)? = nil) -> SyntheticGray {
+        var source = panel
+        for rect in hidden { source.fill(rect, value: 128) }
+        if let (x, y, w, h) = keep { source.paste(panel.crop(x: x, y: y, width: w, height: h), x: x, y: y) }
+        var frame = SyntheticGray.textured(width: 640, height: 480, seed: 99)
+        frame.warp(source, from: panelCorners, to: calibrationCorners(index))
+        return frame
+    }
+
+    /// The live corners nudged a few pixels: a slightly different viewpoint per index.
+    static func calibrationCorners(_ index: Int) -> [CFTPoint] {
+        let jitter: [(Float, Float)] = [(0, 0), (6, -4), (-5, 5), (4, 6), (-6, -3), (3, -6), (-4, 4), (5, 2), (-2, -5)]
+        let (dx, dy) = jitter[index % jitter.count]
+        return liveCorners.enumerated().map { corner, point in
+            CFTPoint(x: point.x + dx * (corner % 2 == 0 ? 1 : -0.5), y: point.y + dy * (corner < 2 ? 1 : 0.5))
+        }
+    }
+}

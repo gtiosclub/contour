@@ -23,13 +23,21 @@ struct SharedTrackingSetupTests {
             method: .hybrid, options: FeatureTrackingOptions(excludeHighlights: false, normalizeContrast: true))
         let reference = try reference()
         await pipeline.replaceReference(with: reference)
-        await pipeline.guide(to: reference.detection.map.buttons[0])
+        let guidance = Task { await pipeline.guide(to: reference.detection.map.buttons[0]) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while pipeline.trackingError == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
         #expect(selected == .hybrid)
         #expect(pipeline.trackingMethod == selected)
         #expect(pipeline.featureOptions == suppliedOptions)
         #expect(await session.referenceID == reference.photo.id)
         #expect(pipeline.trackingError != nil)
         #expect(pipeline.hybridStatus?.source == .unavailable)
+        await session.finish()
+        await guidance.value
+        #expect(pipeline.trackingError == nil)
+        #expect(pipeline.hybridStatus == nil)
     }
 
     @Test("The baseline factory rejects methods whose algorithms have not been implemented")
@@ -69,14 +77,21 @@ struct SharedTrackingSetupTests {
 
 private actor SetupSession: GuidanceTrackingSession {
     private(set) var referenceID: UUID?
+    nonisolated let stream: AsyncStream<TrackingFrame>
+    private let continuation: AsyncStream<TrackingFrame>.Continuation
+    init() {
+        let pair = AsyncStream<TrackingFrame>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+        continuation.yield(.lost(at: Date()))
+    }
     func use(_ reference: PanelReference) { referenceID = reference.photo.id }
     func registrationError() -> PanelTrackingError? { .registrationFailed }
     func hybridStatus() -> HybridTrackingDiagnostics? {
         HybridTrackingDiagnostics(mode: .reacquiring, message: "Scripted", calibrationFrames: 0, source: .unavailable)
     }
-    nonisolated func frames() -> AsyncStream<TrackingFrame> {
-        AsyncStream { $0.yield(.lost(at: Date())); $0.finish() }
-    }
+    nonisolated func frames() -> AsyncStream<TrackingFrame> { stream }
+    func finish() { continuation.finish() }
 }
 
 @MainActor

@@ -68,10 +68,12 @@ nonisolated final class CameraService: NSObject, CameraControl,
                             self.session.startRunning()
                         }
                     }
-                    // A run is live again, so an earlier failure no longer applies.
+                    // Repeated start calls share the same run. Publishing a new
+                    // revision for each subscriber would make revision-driven
+                    // diagnostics restart themselves forever.
+                    let generation = self.frames.current?.id
                     self.onMain { status in
-                        status.error = nil
-                        status.revision &+= 1
+                        if let generation { status.didStartRun(generation) }
                     }
                     continuation.resume()
                 } catch {

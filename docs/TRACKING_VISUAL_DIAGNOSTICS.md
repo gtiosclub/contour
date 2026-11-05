@@ -44,7 +44,55 @@ The former **Enter LiveCameraView** link is now **Camera and speech prototype**.
 That is the separate Experience prototype, not a prerequisite for the integrated
 scan/guide flow.
 
-## Responsiveness changes and verification limits
+## Evidence and comparison controls (#94)
+
+The **Tracking evidence** panel reads the diagnostics belonging to the displayed
+image. Source, calibration mode/readiness, and supplied reason messages are shown
+together. Expand calibration/recovery for sample and stable-feature counts,
+baseline, resets, alignment/corner errors, and visual-verification age. Expand
+feature matching for reference/frame counts, matches/inliers, coverage,
+reprojection error, processing time, and highlight fractions. Missing or invalid
+measurements say **Unavailable**. Hybrid fit errors use normalized image units;
+feature reprojection error uses processing-image pixels. Neither is physical depth.
+
+Source describes the returned geometry, not AR-capable hardware or readiness.
+Absent source evidence stays unavailable. A sample without accepted panel geometry
+cannot claim usable alignment even when its calibration remains ready. Possible
+glare is a heuristic explanation, not proof that reflections were removed.
+
+The existing tracking-method and highlight/contrast controls request Guidance-owned
+settings and start a fresh independent diagnostic session with the same reference.
+Camera revision changes restart that subscription too. Repeated starts of an
+already-running camera retain its revision; only a new capture generation changes
+it, preventing a self-triggered restart loop. Evidence publication uses monotonic
+time at no more than 10 Hz, independent of capture-date jumps.
+
+Exposure presets are **0, -0.7, -1.3 EV**. Controls are disabled while diagnostics
+is stopped, an exposure request is pending, or ARKit owns exposure. Successful
+requests show the actual device-clamped bias; unavailable adjustments and failures
+are explicit. Camera restart/navigation clears applied-value claims and ignores
+late completions. This is a comparison aid, not a glare-removal algorithm.
+
+Scripted tests cover supplied source/readiness combinations, absent/nonfinite
+evidence, glare explanations, forwarded settings, unsupported/clamped/failed
+exposure, stale exposure completion, same-frame image/evidence/points, timestamp
+jumps, independent replacement sessions, delayed renders, cancellation, and
+capture-generation revision identity. A pre-existing shared-setup fixture was
+corrected to inspect registration errors during its active stream, then assert
+that terminal cleanup clears the status.
+
+Physical-device acceptance remains:
+
+1. Prepare one textured panel; compare Vision, features, and hybrid with the same
+   reference. Check that source/readiness explain the displayed result.
+2. Move sideways to calibrate, occlude texture, and restore the view. Check
+   verification age, prediction/reacquisition, reset reasons, and absent evidence.
+3. Compare reflective/matte panels and supported exposure presets. Verify clamped
+   values and the unsupported-ARKit message; do not treat glare hints as certainty.
+4. Retry capture, change reference/settings, background/foreground, and reopen
+   Diagnostics. Verify fresh evidence and aligned overlays without restart loops.
+
+## Earlier responsiveness checks
 
 Diagnostics renders exact processed frames rather than repeatedly updating an
 AVCapture preview layer. CameraPreview only sets rotation when it changes.
