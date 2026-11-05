@@ -255,7 +255,7 @@ final class CameraLaunchModel {
     private func ask(_ openAI: OpenAIPlans, _ request: String, map: SurfaceMap, referenceID: UUID?) async {
         guard !CookTime.mentionsATime(request) else {
             notePhonePlan()
-            await announce("I only know a minute and a half, 2 minutes and 30 seconds, so I won't guess that.")
+            await announce("I only know a minute and a half, 2 minutes or 30 seconds, so I won't guess that.")
             return
         }
         async let answer = openAI.planner.plan(request, in: map)

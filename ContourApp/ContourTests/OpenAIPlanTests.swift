@@ -422,7 +422,7 @@ struct OpenAIVoiceFlowTests {
         #expect(r.server.requests.isEmpty)
         #expect(r.finger.streamCount == 0)
         #expect(r.model.planNote == "Plan from phone")
-        #expect(r.speaker.spoken == ["I only know a minute and a half, 2 minutes and 30 seconds, so I won't guess that."])
+        #expect(r.speaker.spoken == ["I only know a minute and a half, 2 minutes or 30 seconds, so I won't guess that."])
     }
 
     @Test("A button the phone is sure of doesn't reach the server",
