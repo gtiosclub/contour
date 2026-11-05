@@ -8,8 +8,10 @@ import Tracking
 
 /// The photo replay tool's controller, driven by scripted trackers so pairing,
 /// ordering and stale-result handling are tested independently of accuracy.
+// Serialized: the real-tracker example renders images on the main actor, and
+// on a slow CI simulator that starves the scripted tests running beside it.
 @MainActor
-@Suite("Tracking photo replay")
+@Suite("Tracking photo replay", .serialized)
 struct PhotoReplayControllerTests {
 
     @Test("Each tracker's result stays paired with the exact photo, in order")
@@ -196,7 +198,7 @@ struct PhotoReplayControllerTests {
                                         frame: try ReplayImageLoader.frame(from: photo.data, name: photo.name, index: index))
         }
         controller.setPhotos(photos)
-        try await controller.waitUntilIdle(timeout: .seconds(30))
+        try await controller.waitUntilIdle(timeout: .seconds(60))
 
         let features = photos.map { controller.result(.features, for: $0) }
         #expect(features.map { $0?.status } == [.tracked, .lost(.notFound), .tracked])
@@ -358,7 +360,7 @@ private final class Trackers {
 }
 
 @MainActor
-private func waitUntil(timeout: Duration = .seconds(5), _ condition: @MainActor () async -> Bool) async throws {
+private func waitUntil(timeout: Duration = .seconds(30), _ condition: @MainActor () async -> Bool) async throws {
     let deadline = ContinuousClock.now + timeout
     while await !condition() {
         guard ContinuousClock.now < deadline else {
@@ -370,7 +372,7 @@ private func waitUntil(timeout: Duration = .seconds(5), _ condition: @MainActor 
 }
 
 extension PhotoReplayController {
-    func waitUntilIdle(timeout: Duration = .seconds(5)) async throws {
+    func waitUntilIdle(timeout: Duration = .seconds(30)) async throws {
         try await waitUntil(timeout: timeout) { !self.isRunning }
     }
 }
