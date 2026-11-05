@@ -23,10 +23,12 @@ struct FakePlanService: PlanService {
     var delay: Duration? = nil   // sleep before answering
     var fails = false            // throw instead of answering
     var madeUpID = false         // add an id that was never sent
+    var fallback: PlanFallback?  // throw this instead of answering
 
     func plan(_ request: PlanRequest) async throws -> PlanResponse {
         if let delay { try await Task.sleep(for: delay) }
         if fails { throw FakeError() }
+        if let fallback { throw fallback }
 
         guard let answer = table[request.request] else {
             return PlanResponse(steps: [], say: "I can't do that on this panel.")
@@ -87,6 +89,63 @@ struct TaskPlannerTests {
             #expect(plan.steps.map(\.label) == ["Start/Pause"])
             #expect(plan.say == "Press Start/Pause.")
         }
+    }
+
+    @Test("a plan from the server says so")
+    func serverPlanHasNoFallback() async {
+        let plan = await TaskPlanner(service: FakePlanService()).plan("cook for a minute and a half", in: microwave)
+        #expect(plan.fallback == nil)
+    }
+
+    @Test("every fallback says why", arguments: [
+        PlanFallback.status(401), .noToken("App Check said 403"), .unreachable, .badAnswer,
+    ])
+    func fallbackSaysWhy(why: PlanFallback) async {
+        let plan = await TaskPlanner(service: FakePlanService(fallback: why)).plan("start", in: microwave)
+        #expect(plan.fallback == why)
+        #expect(plan.steps.map(\.label) == ["Start/Pause"])
+        #expect(plan.say == "Press Start/Pause.")
+    }
+
+    @Test("the other ways to fall back say why too")
+    func otherFallbacks() async {
+        let offline = await TaskPlanner(service: nil).plan("start", in: microwave)
+        #expect(offline.fallback == .noService)
+
+        let slow = await TaskPlanner(service: FakePlanService(delay: .seconds(1)), timeout: .milliseconds(50))
+            .plan("start", in: microwave)
+        #expect(slow.fallback == .timedOut)
+
+        let threw = await TaskPlanner(service: FakePlanService(fails: true)).plan("start", in: microwave)
+        #expect(threw.fallback == .unreachable)
+
+        let madeUp = await TaskPlanner(service: FakePlanService(madeUpID: true)).plan("start", in: microwave)
+        #expect(madeUp.fallback == .badAnswer)
+    }
+
+    @Test("a failure with nothing to fall back on still says why")
+    func failureWithNoMatch() async {
+        let plan = await TaskPlanner(service: FakePlanService(fallback: .status(401)))
+            .plan("heat up my coffee", in: microwave)
+        #expect(plan.steps.isEmpty)
+        #expect(plan.fallback == .status(401))
+        #expect(plan.say == "I couldn't find that on this panel.")
+    }
+
+    @Test("no steps from the server: the matcher goes first")
+    func noStepsTriesTheMatcher() async {
+        let plan = await TaskPlanner(service: FakePlanService(table: [:])).plan("start", in: microwave)
+        #expect(plan.steps.map(\.label) == ["Start/Pause"])
+        #expect(plan.say == "Press Start/Pause.")
+        #expect(plan.fallback == .noSteps)
+    }
+
+    @Test("no steps and no match: keeps the server's sentence")
+    func noStepsKeepsTheSentence() async {
+        let plan = await TaskPlanner(service: FakePlanService(table: [:])).plan("make me a sandwich", in: microwave)
+        #expect(plan.steps.isEmpty)
+        #expect(plan.say == "I can't do that on this panel.")
+        #expect(plan.fallback == nil)
     }
 
     @Test("the wire format matches the server contract")

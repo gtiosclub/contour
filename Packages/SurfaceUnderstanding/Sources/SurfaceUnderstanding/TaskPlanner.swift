@@ -13,10 +13,37 @@ import Foundation
 public struct TaskPlan: Hashable, Sendable {
     public var steps: [SurfaceMap.Button]
     public var say: String
+    /// Why the phone planned this and not the server. `nil` is the server's plan.
+    public var fallback: PlanFallback?
 
-    public init(steps: [SurfaceMap.Button], say: String) {
+    public init(steps: [SurfaceMap.Button], say: String, fallback: PlanFallback? = nil) {
         self.steps = steps
         self.say = say
+        self.fallback = fallback
+    }
+}
+
+/// Why the server's plan wasn't used, so a failure can't pass for a plan.
+public enum PlanFallback: Error, Hashable, Sendable {
+    case noService
+    case noToken(String)
+    case status(Int)
+    case timedOut
+    case unreachable
+    case badAnswer
+    case noSteps
+
+    /// Reads after the server's name: "OpenAI timed out".
+    public var why: String {
+        switch self {
+        case .noService: "isn't set up"
+        case .noToken(let detail): "has no token, \(detail)"
+        case .status(let code): "said \(code)"
+        case .timedOut: "timed out"
+        case .unreachable: "can't be reached"
+        case .badAnswer: "sent a bad answer"
+        case .noSteps: "had no steps"
+        }
     }
 }
 
@@ -78,17 +105,25 @@ public struct LivePlanService: PlanService {
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if let appCheckToken {
-            urlRequest.setValue(try await appCheckToken(), forHTTPHeaderField: "X-Firebase-AppCheck")
+            do {
+                urlRequest.setValue(try await appCheckToken(), forHTTPHeaderField: "X-Firebase-AppCheck")
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                throw PlanFallback.noToken(error.localizedDescription)
+            }
         }
         urlRequest.httpBody = try JSONEncoder().encode(request)
 
         let (data, response) = try await URLSession.shared.data(for: urlRequest)
         // Anything but a 200 is a failure.
-        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
-            throw URLError(.badServerResponse)
+        let status = (response as? HTTPURLResponse)?.statusCode
+        guard status == 200 else { throw PlanFallback.status(status ?? 0) }
+        do {
+            return try JSONDecoder().decode(PlanResponse.self, from: data)
+        } catch {
+            throw PlanFallback.badAnswer
         }
-        // Throws if the JSON doesn't decode.
-        return try JSONDecoder().decode(PlanResponse.self, from: data)
     }
 }
 
@@ -114,32 +149,48 @@ public struct TaskPlanner: Sendable {
             buttons: sent.map { PlanRequest.Button(id: $0.id.uuidString, label: $0.label ?? "") }
         )
 
-        if let service,
-           let response = await ask(service, body),
-           let plan = checked(response, sent: sent) {
-            return plan
+        guard let service else { return fallback(request, in: map, because: .noService) }
+        switch await ask(service, body) {
+        case .failure(let why):
+            return fallback(request, in: map, because: why)
+        case .success(let response):
+            guard let plan = checked(response, sent: sent) else {
+                return fallback(request, in: map, because: .badAnswer)
+            }
+            guard plan.steps.isEmpty else { return plan }
+            // No steps: the matcher may still know the key. If not, the server's
+            // sentence says why better than "I couldn't find that" would.
+            let phone = fallback(request, in: map, because: .noSteps)
+            return phone.steps.isEmpty ? plan : phone
         }
-        return fallback(request, in: map)
     }
 
-    /// The service's answer, or nil if it threw or lost the race to `timeout`.
-    private func ask(_ service: any PlanService, _ body: PlanRequest) async -> PlanResponse? {
+    /// The service's answer, or why there isn't one.
+    private func ask(_ service: any PlanService, _ body: PlanRequest) async -> Result<PlanResponse, PlanFallback> {
         let timeout = timeout
-        return await withTaskGroup(of: PlanResponse?.self) { group in
-            group.addTask { try? await service.plan(body) }
+        return await withTaskGroup(of: Result<PlanResponse, PlanFallback>.self) { group in
+            group.addTask {
+                do {
+                    return .success(try await service.plan(body))
+                } catch let why as PlanFallback {
+                    return .failure(why)
+                } catch {
+                    return .failure(.unreachable)
+                }
+            }
             group.addTask {
                 try? await Task.sleep(for: timeout)
-                return nil
+                return .failure(.timedOut)
             }
             // First one back wins; cancel the other.
-            let first = await group.next() ?? nil
+            let first = await group.next() ?? .failure(.timedOut)
             group.cancelAll()
             return first
         }
     }
 
     /// The plan if every step is an id we sent and `say` isn't empty.
-    /// Repeats are fine (1, 1, 0). `steps: []` with a sentence passes through.
+    /// Repeats are fine (1, 1, 0).
     private func checked(_ response: PlanResponse, sent: [SurfaceMap.Button]) -> TaskPlan? {
         guard !response.say.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
 
@@ -153,14 +204,14 @@ public struct TaskPlanner: Sendable {
     }
 
     /// Same as ButtonLookup today: drop fillers, ask TargetMatcher once.
-    private func fallback(_ request: String, in map: SurfaceMap) -> TaskPlan {
+    private func fallback(_ request: String, in map: SurfaceMap, because why: PlanFallback) -> TaskPlan {
         let named = request.split(whereSeparator: \.isWhitespace).filter { word in
             !Self.fillers.contains(word.lowercased().trimmingCharacters(in: .punctuationCharacters))
         }
         guard let button = TargetMatcher().match(named.joined(separator: " "), in: map)?.button else {
-            return TaskPlan(steps: [], say: "I couldn't find that on this panel.")
+            return TaskPlan(steps: [], say: "I couldn't find that on this panel.", fallback: why)
         }
-        return TaskPlan(steps: [button], say: "Press \(button.label ?? "that button").")
+        return TaskPlan(steps: [button], say: "Press \(button.label ?? "that button").", fallback: why)
     }
 
     /// Copied from ButtonLookup.swift lines 28-31. Keep the two in sync.
