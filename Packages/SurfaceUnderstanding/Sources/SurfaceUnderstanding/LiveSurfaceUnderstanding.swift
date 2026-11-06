@@ -39,9 +39,7 @@
 import ContourCore
 import CoreGraphics
 import Foundation
-import ImageIO
 import OSLog
-import UniformTypeIdentifiers
 
 /// The real Surface pipeline: panel, then buttons, then labels.
 ///
