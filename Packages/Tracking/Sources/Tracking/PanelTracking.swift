@@ -17,8 +17,8 @@ public protocol CalibratablePanelTracking: PanelTracking {
     func resetCalibration() async
 }
 
-/// Names only. Feature/hybrid implementations and their factory belong to later
-/// tasks; S0 never silently substitutes Vision for an unimplemented method.
+/// Available alignment engines. The app creates independent instances for
+/// guidance and diagnostics, using the same selected method and options.
 public enum PanelTrackingMethod: String, CaseIterable, Hashable, Sendable {
     case vision = "Vision rectangle (comparison)"
     case features = "OpenCV surface features"

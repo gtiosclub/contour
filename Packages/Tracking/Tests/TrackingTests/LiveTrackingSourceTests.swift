@@ -128,11 +128,11 @@ struct LiveTrackingSourceTests {
         let source = scriptedSource(camera: camera, panelTracker: scriptedPanel(),
                                         fingertipTracker: scriptedFingertip())
         let consumer = Task { for await _ in source.frames() {} }
-        try await Task.sleep(for: .milliseconds(50))
+        await camera.subscribed.wait()
 
         consumer.cancel()
         _ = await consumer.value
-        try await Task.sleep(for: .milliseconds(50))
+        await camera.released.wait()
 
         #expect(camera.released.value)
     }
@@ -236,13 +236,14 @@ private final class FakeCamera: CameraFrameSource, @unchecked Sendable {
     let count: Int?
     let timestampOffset: TimeInterval
     let released = Flag()
+    let subscribed = Flag()
     init(count: Int?, timestampOffset: TimeInterval = 0) {
         self.count = count
         self.timestampOffset = timestampOffset
     }
 
     func cameraFrames() async -> AsyncStream<CameraFrame> {
-        let count = count, released = released, timestampOffset = timestampOffset
+        let count = count, released = released, subscribed = subscribed, timestampOffset = timestampOffset
         return AsyncStream { continuation in
             let task = Task {
                 var index = 0
@@ -260,6 +261,7 @@ private final class FakeCamera: CameraFrameSource, @unchecked Sendable {
                 task.cancel()
                 released.set()
             }
+            subscribed.set()
         }
     }
 }
@@ -267,7 +269,20 @@ private final class FakeCamera: CameraFrameSource, @unchecked Sendable {
 private final class Flag: @unchecked Sendable {
     private let lock = NSLock()
     private var stored = false
-    func set() { lock.withLock { stored = true } }
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    func set() {
+        let pending = lock.withLock { stored = true; let pending = waiters; waiters = []; return pending }
+        pending.forEach { $0.resume() }
+    }
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            let ready = lock.withLock {
+                if stored { return true }
+                waiters.append(continuation); return false
+            }
+            if ready { continuation.resume() }
+        }
+    }
     var value: Bool { lock.withLock { stored } }
 }
 

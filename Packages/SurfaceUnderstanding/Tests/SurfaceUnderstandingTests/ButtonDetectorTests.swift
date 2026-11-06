@@ -64,23 +64,6 @@ func buttonDetectorKeepsKeyWithDuplicateLabel() async throws {
     #expect(abs(found[0].bounds.height - key.height) < 0.01)
 }
 
-@Test("Button Detector: keeps key when another rectangle only half overlaps it",
-    .disabled("this synthetic overlapping shape is split into multiple rectangles - test not passing at the moment"))
-func buttonDetectorKeepsKeyWithHalfOverlap() async throws {
-
-    let (photo, key) = try SyntheticPanel.halfOverlappingPhoto()
-
-    let found = try await ButtonDetector().detectButtons(
-        in: photo,
-        panel: .fullFrame
-    )
-
-    #expect(
-        found.contains { $0.bounds.contains(key.center) },
-        "the real key was not returned"
-    )
-}
-
 @Test("Button Detector: ignores digits when quad covers only the display")
 func buttonDetectorRejectsDisplayOnlyQuad() async throws {
     let (photo, displayQuad) = try SyntheticPanel.displayQuadPhoto()

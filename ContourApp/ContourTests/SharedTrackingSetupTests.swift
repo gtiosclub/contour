@@ -23,13 +23,21 @@ struct SharedTrackingSetupTests {
             method: .hybrid, options: FeatureTrackingOptions(excludeHighlights: false, normalizeContrast: true))
         let reference = try reference()
         await pipeline.replaceReference(with: reference)
-        await pipeline.guide(to: reference.detection.map.buttons[0])
+        let guidance = Task { await pipeline.guide(to: reference.detection.map.buttons[0]) }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
+        while pipeline.trackingError == nil, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(1))
+        }
         #expect(selected == .hybrid)
         #expect(pipeline.trackingMethod == selected)
         #expect(pipeline.featureOptions == suppliedOptions)
         #expect(await session.referenceID == reference.photo.id)
         #expect(pipeline.trackingError != nil)
         #expect(pipeline.hybridStatus?.source == .unavailable)
+        await session.finish()
+        await guidance.value
+        #expect(pipeline.trackingError == nil)
+        #expect(pipeline.hybridStatus == nil)
     }
 
     @Test("The baseline factory rejects methods whose algorithms have not been implemented")
@@ -58,6 +66,17 @@ struct SharedTrackingSetupTests {
         #expect(model.framesProcessed == 1)
     }
 
+    @Test("A live camera without AR uses real features and supports every comparison method")
+    func liveAssemblySupportsComparisonMethods() throws {
+        let camera = CameraService(worldTracking: false)
+        let pipeline = ContourPipeline.live(camera: camera)
+        #expect(pipeline.trackingMethod == .features)
+        for method in PanelTrackingMethod.allCases {
+            _ = try pipeline.sessionFactory(camera, method,
+                FeatureTrackingOptions(excludeHighlights: false, normalizeContrast: true), nil)
+        }
+    }
+
     private func reference() throws -> PanelReference {
         let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 32, height: 24), timestamp: Date())
         let quad = PanelQuad(topLeft: ImagePoint(x: 0.2, y: 0.2), topRight: ImagePoint(x: 0.8, y: 0.2),
@@ -69,14 +88,21 @@ struct SharedTrackingSetupTests {
 
 private actor SetupSession: GuidanceTrackingSession {
     private(set) var referenceID: UUID?
+    nonisolated let stream: AsyncStream<TrackingFrame>
+    private let continuation: AsyncStream<TrackingFrame>.Continuation
+    init() {
+        let pair = AsyncStream<TrackingFrame>.makeStream()
+        stream = pair.stream
+        continuation = pair.continuation
+        continuation.yield(.lost(at: Date()))
+    }
     func use(_ reference: PanelReference) { referenceID = reference.photo.id }
     func registrationError() -> PanelTrackingError? { .registrationFailed }
     func hybridStatus() -> HybridTrackingDiagnostics? {
         HybridTrackingDiagnostics(mode: .reacquiring, message: "Scripted", calibrationFrames: 0, source: .unavailable)
     }
-    nonisolated func frames() -> AsyncStream<TrackingFrame> {
-        AsyncStream { $0.yield(.lost(at: Date())); $0.finish() }
-    }
+    nonisolated func frames() -> AsyncStream<TrackingFrame> { stream }
+    func finish() { continuation.finish() }
 }
 
 @MainActor
@@ -115,4 +141,14 @@ private struct SetupFinger: TrackingFrameProcessor {
     func process(_ frame: CameraFrame) async -> TrackingDiagnostics {
         TrackingDiagnostics(timestamp: frame.timestamp, status: .notDetected)
     }
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSession {
+    func stop() async {}
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSampleSession {
+    func stop() async {}
 }

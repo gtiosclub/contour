@@ -18,6 +18,9 @@
 //  asymmetry is the entire architecture.
 //
 
+import AVFoundation
+import Combine
+import UIKit
 import ContourCore
 import ContourFeedback
 import ContourMocks
@@ -40,7 +43,9 @@ final class ContourPipeline {
     private(set) var trackingSettings: GuidanceTrackingSettings
     var trackingMethod: PanelTrackingMethod { trackingSettings.method }
     var featureOptions: FeatureTrackingOptions { trackingSettings.options }
-    private(set) var trackingReady = true
+    private var sessionReady = true
+    private var retiringGuidance = false
+    var trackingReady: Bool { sessionReady && !retiringGuidance }
     let feedback: any FeedbackEngine
 
     /// The reference whose map and live tracking belong to the current session.
@@ -48,6 +53,8 @@ final class ContourPipeline {
     private(set) var trackingError: String?
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     let guidanceStatus = GuidanceStatusDisplay()
+    private(set) var guidanceArrived = false
+    @ObservationIgnored private var lifecycleObservers: Set<AnyCancellable> = []
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
     private var guidanceGeneration: UInt64?
@@ -95,6 +102,7 @@ final class ContourPipeline {
         self.tracking = tracking
         self.feedback = feedback
         self.liveComponents = liveComponents
+        observeInterruptions()
     }
 
     // MARK: Configurations
@@ -127,11 +135,17 @@ final class ContourPipeline {
     /// Everything real, on `camera`: Surface Understanding reads the panel,
     /// Tracking follows it and the fingertip, and guidance vibrates.
     static func live(camera: CameraService) -> ContourPipeline {
-        ContourPipeline(
+        let method: PanelTrackingMethod = camera.usesWorldTracking ? .hybrid : .features
+        let options = FeatureTrackingOptions()
+        // The live factory supports every method; use it for the initial session
+        // as well as later settings changes and independent diagnostics.
+        return ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: LiveTrackingSource(camera: camera),
+            tracking: GuidanceSessionFactories.productionSource(camera: camera, method: method,
+                options: options),
             feedback: LiveFeedbackEngine(),
-            liveComponents: Set(Component.allCases), sessionCamera: camera
+            liveComponents: Set(Component.allCases), sessionFactory: GuidanceSessionFactories.production,
+            sessionCamera: camera, trackingMethod: method, featureOptions: options
         )
     }
 
@@ -150,13 +164,15 @@ final class ContourPipeline {
 
     /// Detect the panel in `photo`.
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
+        guidanceArrived = false
         generation &+= 1
         let scan = generation
         panelReference = nil
         trackingError = nil
         hybridStatus = nil
         guidanceStatus.reset()
-        trackingReady = false
+        sessionReady = false
+        retiringGuidance = false
         await cancelGuidance()
         guard generation == scan, !Task.isCancelled else { throw CancellationError() }
         let detection = try await surfaceUnderstanding.detectPanel(from: photo)
@@ -197,21 +213,33 @@ final class ContourPipeline {
     }
 
     private func beginSessionReplacement(with reference: PanelReference?) -> Task<Void, Never> {
+        // Only factory replacement owns a distinct old source. Injected sources
+        // without a factory camera are handed the new reference in place.
+        let retiring = sessionCamera == nil ? nil : tracking as? any GuidanceTrackingSession
+        guidanceArrived = false
+        (feedback as? LiveFeedbackEngine)?.stop()
         generation &+= 1
         let replacement = generation
         panelReference = reference
         trackingError = nil
         hybridStatus = nil
         guidanceStatus.reset()
-        trackingReady = false
+        sessionReady = false
+        retiringGuidance = false
         // An old stream may still be unwinding; it holds its own source. New
         // guidance must never subscribe to it while replacement is pending.
         if sessionCamera != nil { tracking = InactiveTrackingSource() }
-        return Task { await activateSession(request: replacement, reference: reference) }
+        return Task { await activateSession(request: replacement, reference: reference, retiring: retiring) }
     }
 
-    private func activateSession(request: UInt64, reference: PanelReference?) async {
+    private func activateSession(request: UInt64, reference: PanelReference?,
+                                 retiring: (any GuidanceTrackingSession)?) async {
+        guard generation == request, !Task.isCancelled else {
+            await retiring?.stop()
+            return
+        }
         await cancelGuidance()
+        await retiring?.stop()
         guard generation == request, !Task.isCancelled else { return }
         do {
             if let sessionCamera {
@@ -219,13 +247,16 @@ final class ContourPipeline {
                 // own call with these settings and never shares this session.
                 let candidate = try sessionFactory(sessionCamera, trackingMethod, featureOptions, nil)
                 if let reference { await candidate.use(reference) }
-                guard generation == request, !Task.isCancelled else { return }
+                guard generation == request, !Task.isCancelled else {
+                    await candidate.stop()
+                    return
+                }
                 tracking = candidate
             } else if let reference, let live = tracking as? any GuidanceTrackingSession {
                 await live.use(reference)
                 guard generation == request, !Task.isCancelled else { return }
             }
-            trackingReady = true
+            sessionReady = true
         } catch {
             guard generation == request, !Task.isCancelled else { return }
             // Keep the requested mode visible. An unsupported mode or failed
@@ -237,21 +268,66 @@ final class ContourPipeline {
 
     /// Stop guidance without discarding the reference, so it can be retried.
     func stopGuidance() async {
+        guidanceArrived = false
         generation &+= 1
+        let request = generation
+        let retiring = tracking as? any GuidanceTrackingSession
+        retiringGuidance = true
         hybridStatus = nil
         trackingError = nil
         guidanceStatus.reset(to: .stopped)
         await cancelGuidance()
+        if generation == request || sessionCamera != nil { await retiring?.stop() }
+        if generation == request { retiringGuidance = false }
     }
 
     private func cancelGuidance() async {
+        let request = generation
         let old = guidanceTask
+        // Also clear completed arrival effects when there is no running task.
+        if let live = feedback as? LiveFeedbackEngine { live.stop() }
         let oldGeneration = guidanceGeneration
         old?.cancel()
         await old?.value
+        guard generation == request else { return }
         if guidanceGeneration == oldGeneration {
             guidanceTask = nil
             guidanceGeneration = nil
+        }
+    }
+
+    private func observeInterruptions() {
+        for name in [UIApplication.willResignActiveNotification, AVAudioSession.interruptionNotification] {
+            NotificationCenter.default.publisher(for: name)
+                .receive(on: RunLoop.main)
+                .sink { [weak self] _ in MainActor.assumeIsolated { self?.interruptGuidance() } }
+                .store(in: &lifecycleObservers)
+        }
+        NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] notification in
+                guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+                      AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable else { return }
+                MainActor.assumeIsolated { self?.interruptGuidance() }
+            }
+            .store(in: &lifecycleObservers)
+    }
+
+    /// Invalidate synchronously so an in-flight frame cannot finish an old hold.
+    func interruptGuidance() {
+        guidanceArrived = false
+        generation &+= 1
+        let request = generation
+        let retiring = tracking as? any GuidanceTrackingSession
+        retiringGuidance = true
+        guidanceTask?.cancel()
+        (feedback as? LiveFeedbackEngine)?.stop()
+        guidanceStatus.reset(to: .stopped)
+        Task {
+            guard generation == request else { return }
+            await cancelGuidance()
+            if generation == request || sessionCamera != nil { await retiring?.stop() }
+            if generation == request { retiringGuidance = false }
         }
     }
 
@@ -268,6 +344,7 @@ final class ContourPipeline {
     /// picks up again when it's back. Arriving ends the session, and any other
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
+        guidanceArrived = false
         guard trackingReady else { return }
         generation &+= 1
         let session = generation
@@ -300,6 +377,7 @@ final class ContourPipeline {
                              source: any TrackingSource) async {
         var announced: OutcomeSignal?
         var loss = GuidanceLossEpisode()
+        var arrivalHold = GuidanceArrivalHold()
         var arrived = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
@@ -320,11 +398,16 @@ final class ContourPipeline {
                 }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
-            let state = MockGuidance.state(for: frame, target: target)
+            // MockGuidance's immediate arrival is only a geometric candidate.
+            // This policy is the sole authority that can confirm the dwell.
+            let now = guidanceNow()
+            let state = arrivalHold.update(MockGuidance.state(for: frame, target: target), at: now)
 
-            switch loss.update(isUsable: state.outcome != .lostTracking, at: guidanceNow()) {
+            switch loss.update(isUsable: state.outcome != .lostTracking, at: now) {
             case .quiet:
                 await feedback.present(GuidanceState(timestamp: frame.timestamp, vector: nil))
+                continue
+            case .holdingLoss:
                 continue
             case .announceLoss, .resume:
                 break
@@ -334,7 +417,9 @@ final class ContourPipeline {
             announced = state.outcome
             await feedback.present(state)
             if state.outcome == .arrived {
+                guard generation == session, !Task.isCancelled else { break }
                 arrived = true
+                guidanceArrived = true
                 break
             }
         }

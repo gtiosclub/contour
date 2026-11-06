@@ -54,7 +54,7 @@ func voiceRetreatAfterProgress() {
 func voiceArrivalAndLoss() {
     var policy = ExperienceVoicePolicy()
     _ = policy.update(.direction(.right, near: false), distance: 1, at: 0, isSpeaking: false)
-    #expect(policy.update(.arrived, distance: 0, at: 0.1, isSpeaking: true) == [.stop, .reached])
+    #expect(policy.update(.arrived, distance: 0, at: 0.1, isSpeaking: true) == [.reached])
     #expect(policy.update(.arrived, distance: 0, at: 20, isSpeaking: false) == nil)
     #expect(policy.update(.direction(.up, near: true), distance: 0.1, at: 21, isSpeaking: true) == [.nearUp])
     #expect(policy.update(.paused, distance: .nan, at: 22, isSpeaking: true) == [.paused])
@@ -90,4 +90,18 @@ func voiceResources() async throws {
         #expect(samples.contains { abs($0) > 0.05 }, "\(cue.rawValue): silent recording")
         #expect(abs(samples.first ?? 1) < 0.01 && abs(samples.last ?? 1) < 0.01)
     }
+}
+
+@Test("Stop interrupts on hold entry once, before confirmed success; re-entry says Stop again")
+func stopBeforeHold() {
+    var policy = ExperienceVoicePolicy()
+    _ = policy.update(.direction(.right, near: true), distance: 0.1, at: 0, isSpeaking: false)
+    #expect(policy.update(.holding, distance: 0, at: 0.1, isSpeaking: true) == [.stop])
+    #expect(policy.update(.holding, distance: 0, at: 0.2, isSpeaking: true) == nil)
+    #expect(policy.update(.holding, distance: 0, at: 1.3, isSpeaking: false) == nil)
+    #expect(policy.update(.arrived, distance: 0, at: 1.35, isSpeaking: false) == [.reached])
+    #expect(policy.update(.arrived, distance: 0, at: 1.4, isSpeaking: false) == nil)
+    _ = policy.update(.direction(.left, near: true), distance: 0.1, at: 2, isSpeaking: true)
+    #expect(policy.update(.holding, distance: 0, at: 2.1, isSpeaking: true) == [.stop])
+    #expect(policy.update(.paused, distance: .nan, at: 2.2, isSpeaking: true) == [.paused])
 }
