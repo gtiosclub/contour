@@ -183,6 +183,11 @@ public struct TargetMatcher: Sendable {
         if wanted.contains("start"), !notStart.isDisjoint(with: have) { return nil }
         // "cancel" never lands on a merged Start Cancel.
         if wanted.contains("cancel"), have.contains("start") { return nil }
+        // Glued keys from the 2x read: their centre sits between two keys.
+        // "Power CANCE STOP" isn't Stop or Cancel.
+        if wanted.contains("stop") || wanted.contains("cancel"), have.contains("power") { return nil }
+        // "Time Cook TART" or "Time Cook S7-07" isn't Time Cook.
+        if Set(wanted) == ["time", "cook"], have.count > 2 { return nil }
         return have
     }
 

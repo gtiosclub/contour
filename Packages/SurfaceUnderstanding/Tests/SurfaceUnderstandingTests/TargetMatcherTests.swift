@@ -180,3 +180,31 @@ func nonFiniteHeightIsIgnored() {
     #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
 }
 
+// MARK: - Glued keys from the 2x read
+
+/// A panel with just one label on it.
+private func only(_ label: String) -> SurfaceMap {
+    SurfaceMap(buttons: [SurfaceMap.Button(label: label, bounds: PanelRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1), confidence: 0.5)],
+               confidence: 1)
+}
+
+@Test("\"Power CANCE STOP\" isn't Stop or Cancel (frame 21:06:48.486Z-0032)")
+func powerCancelStopIsNotStop() {
+    let map = only("Power CANCE STOP")
+    #expect(TargetMatcher().match("stop", in: map) == nil)
+    #expect(TargetMatcher().match("cancel", in: map) == nil)
+}
+
+@Test("\"Time Cook S7-07\" isn't Time Cook (frame 21:06:48.486Z-0032)")
+func timeCookS707IsNotTimeCook() {
+    let map = only("Time Cook S7-07")
+    #expect(TargetMatcher().match("time cook", in: map) == nil)
+    #expect(TargetMatcher().match("time", in: map) == nil)
+}
+
+@Test("\"Time Cook TART\" isn't Time Cook (frame 21:03:30.972Z-0005)")
+func timeCookTartIsNotTimeCook() {
+    let map = only("Time Cook TART")
+    #expect(TargetMatcher().match("time cook", in: map) == nil)
+    #expect(TargetMatcher().match("time", in: map) == nil)
+}
