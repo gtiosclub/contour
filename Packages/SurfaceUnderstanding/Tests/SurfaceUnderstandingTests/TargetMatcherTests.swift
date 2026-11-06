@@ -1,7 +1,10 @@
 import ContourCore
 import ContourMocks
+import Foundation
 import Testing
 @testable import SurfaceUnderstanding
+
+// MARK: - Mock microwave
 
 @Test("stop and clear both find Stop/Clear on the mock")
 func stopAndClear() throws {
@@ -73,6 +76,8 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 14, panel: "hand-labelled microwave-01.jpg", say: "stop",  expect: "Cancel/Off"),
     PanelRow(n: 15, panel: "hand-labelled microwave-04.jpg", say: "pause", expect: "Stop/Cancel"),
     PanelRow(n: 16, panel: "microwave1_neat.heif", say: "pause",  expect: nil),
+    // No Stop or Cancel key: stop must not fall back to Start Pause.
+    PanelRow(n: 44, panel: "angle_microwave.jpg",  say: "stop",   expect: nil),
 
     // Time, timer, clock
     PanelRow(n: 17, panel: "microwave1_neat.heif", say: "timer",         expect: "Timer Set/Off"),
@@ -97,6 +102,7 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 34, panel: "hand-labelled microwave-01.jpg", say: "plus thirty seconds", expect: "Add 30 Sec"),
     PanelRow(n: 35, panel: "hand-labelled microwave-04.jpg", say: "add 30 seconds",      expect: "Start/+30 Sec"),
 
+    // Other
     PanelRow(n: 36, panel: "glare_microwave.jpg",   say: "start",   expect: "Start"),
     PanelRow(n: 37, panel: "hand-labelled microwave-04.jpg", say: "start", expect: "Start/+30 Sec"),
     PanelRow(n: 38, panel: "microwave1_neat.heif",  say: "three",   expect: nil),
@@ -105,9 +111,100 @@ struct PanelRow: Sendable, CustomTestStringConvertible {
     PanelRow(n: 41, panel: "angle_microwave.jpg",   say: "popcorn", expect: nil),
     PanelRow(n: 42, panel: "OvenStraight.heif",     say: "start",   expect: nil),
     PanelRow(n: 43, panel: "microwave2-neat2.jpg",  say: "defrost", expect: nil),
+    PanelRow(n: 45, panel: "Neat1.jpeg",            say: "start",   expect: "Start Pause"),
+    PanelRow(n: 46, panel: "neat-oven.heif",        say: "start",   expect: nil),
 ])
-
 func realPanelRow(_ row: PanelRow) {
     let result = TargetMatcher().match(row.say, in: RealPanelLabels.map(row.panel))
     #expect(result?.button.label == row.expect)
+}
+
+// MARK: - Merged labels
+
+/// Ordinary 0.1-tall keys plus the label under test.
+private func panel(with label: String, width: Double, height: Double) -> SurfaceMap {
+    let others = ["Popcorn", "Time Cook", "Cancel Off", "Clock", "Power"].enumerated().map { i, text in
+        SurfaceMap.Button(label: text, bounds: PanelRect(x: 0.6, y: Double(i) * 0.15, width: 0.3, height: 0.1), confidence: 1)
+    }
+    let target = SurfaceMap.Button(label: label, bounds: PanelRect(x: 0.1, y: 0.2, width: width, height: height), confidence: 1)
+    return SurfaceMap(buttons: others + [target], confidence: 1)
+}
+
+@Test("a label far taller than the panel's other labels isn't Start (TestSet microwave-02)")
+func tallMergedLabelIsNotStart() {
+    let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
+@Test("a normal-height Start Pause still matches (normal_microwave)")
+func normalStartPauseStays() {
+    let map = panel(with: "Start Pause", width: 0.33, height: 0.11)
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
+}
+
+@Test("Start Cancel read as one label isn't Start (neat-oven at 720x1280)")
+func startCancelIsSkipped() {
+    let map = panel(with: "Start Cancel", width: 0.22, height: 0.11)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
+@Test("the height rule only applies to start")
+func heightRuleIsStartOnly() {
+    let map = panel(with: "Start Pause Door Unlock", width: 0.27, height: 0.62)
+    #expect(TargetMatcher().match("unlock", in: map)?.button.label == "Start Pause Door Unlock")
+}
+
+@Test("a printed Start in the display loses to the taller Start Pause key (Neat1, microwave-08)")
+func printedStartLosesToKey() {
+    var map = panel(with: "Start Pause", width: 0.24, height: 0.05)
+    map.buttons.append(SurfaceMap.Button(label: "Start", bounds: PanelRect(x: 0.57, y: 0.26, width: 0.07, height: 0.01), confidence: 0.5))
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
+}
+
+@Test("\"Start Pause Unlock Door\" isn't Start (angle_microwave at 720)")
+func startUnlockDoorIsNotStart() {
+    let map = panel(with: "Start Pause Unlock Door", width: 0.1, height: 0.1)
+    #expect(TargetMatcher().match("start", in: map) == nil)
+}
+
+@Test("cancel doesn't land on a merged Start Cancel (neat-oven)")
+func cancelIsNotStartCancel() {
+    let merged = SurfaceMap.Button(label: "Start Cancel", bounds: PanelRect(x: 0.78, y: 0.03, width: 0.22, height: 0.1), confidence: 0.5)
+    #expect(TargetMatcher().match("cancel", in: SurfaceMap(buttons: [merged], confidence: 1)) == nil)
+}
+
+@Test("a label with no finite height doesn't break the height rule")
+func nonFiniteHeightIsIgnored() {
+    var map = panel(with: "Start Pause", width: 0.33, height: 0.11)
+    map.buttons.append(SurfaceMap.Button(label: "Clock", bounds: PanelRect(x: 0, y: 0, width: 0.1, height: .nan), confidence: 1))
+    #expect(TargetMatcher().match("start", in: map)?.button.label == "Start Pause")
+}
+
+// MARK: - Glued keys from the 2x read
+
+/// A panel with just one label on it.
+private func only(_ label: String) -> SurfaceMap {
+    SurfaceMap(buttons: [SurfaceMap.Button(label: label, bounds: PanelRect(x: 0.1, y: 0.1, width: 0.3, height: 0.1), confidence: 0.5)],
+               confidence: 1)
+}
+
+@Test("\"Power CANCE STOP\" isn't Stop or Cancel (frame 21:06:48.486Z-0032)")
+func powerCancelStopIsNotStop() {
+    let map = only("Power CANCE STOP")
+    #expect(TargetMatcher().match("stop", in: map) == nil)
+    #expect(TargetMatcher().match("cancel", in: map) == nil)
+}
+
+@Test("\"Time Cook S7-07\" isn't Time Cook (frame 21:06:48.486Z-0032)")
+func timeCookS707IsNotTimeCook() {
+    let map = only("Time Cook S7-07")
+    #expect(TargetMatcher().match("time cook", in: map) == nil)
+    #expect(TargetMatcher().match("time", in: map) == nil)
+}
+
+@Test("\"Time Cook TART\" isn't Time Cook (frame 21:03:30.972Z-0005)")
+func timeCookTartIsNotTimeCook() {
+    let map = only("Time Cook TART")
+    #expect(TargetMatcher().match("time cook", in: map) == nil)
+    #expect(TargetMatcher().match("time", in: map) == nil)
 }

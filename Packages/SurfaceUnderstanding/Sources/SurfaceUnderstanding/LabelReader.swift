@@ -62,8 +62,12 @@ public struct LabelReader: Sendable {
     /// buttons.
     func read(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> Reading {
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+        return try await read(in: try photo.cgImage(), panel: panel, regions: regions)
+        }
 
-        let image = try photo.cgImage()
+    /// Same, for an image that's already decoded and upright.
+    func read(in image: CGImage, panel: PanelQuad, regions: [PanelRect]) async throws -> Reading {
+        guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
         // On macOS/iOS 27 the neural model behind `.accurate` sometimes
         // fails to load (e5rtError, "precompiled compute operation"), and
         // once it fails it keeps failing for the rest of the process.

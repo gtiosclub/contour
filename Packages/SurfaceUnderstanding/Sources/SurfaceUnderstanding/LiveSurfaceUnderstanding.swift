@@ -37,6 +37,7 @@
 //
 
 import ContourCore
+import CoreGraphics
 import Foundation
 import OSLog
 
@@ -133,7 +134,11 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
         let reading: LabelReader.Reading
         do {
-            reading = try await LabelReader().read(in: photo, panel: panel, regions: regions)
+            if let input = Self.labelInput(for: photo, panel: panel) {
+                reading = try await LabelReader().read(in: input.image, panel: input.panel, regions: regions)
+            } else {
+                reading = try await LabelReader().read(in: photo, panel: panel, regions: regions)
+            }
         } catch {
             try checkCancellation()
             return LabelReader.Reading(labels: Array(repeating: nil, count: regions.count), textButtons: [])
@@ -149,6 +154,40 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         return reading
     }
 
+    /// A 2x crop of the panel for LabelReader when the photo's short side is
+    /// under 1000 px, with the quad moved into the crop so labels keep their
+    /// panel coordinates. Nil means read the photo as it is.
+    static func labelInput(for photo: PanelPhoto, panel: PanelQuad) -> (image: CGImage, panel: PanelQuad)? {
+        // Size check first, so big photos aren't decoded here too.
+        guard min(photo.pixelSize.width, photo.pixelSize.height) < 1000,
+              let image = try? photo.cgImage() else { return nil }   // upright
+
+        // The panel's bounding box plus a 5% margin, in pixels, kept inside the photo.
+        let iw = Double(image.width), ih = Double(image.height)
+        let corners = [panel.topLeft, panel.topRight, panel.bottomRight, panel.bottomLeft]
+        let xs = corners.map { $0.x * iw }, ys = corners.map { $0.y * ih }
+        let box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        let crop = box.insetBy(dx: -0.05 * box.width, dy: -0.05 * box.height).integral
+            .intersection(CGRect(x: 0, y: 0, width: iw, height: ih))
+        guard !crop.isEmpty, let cropped = image.cropping(to: crop) else { return nil }
+
+        // Double the crop. Kept as an image: a TIFF copy used too much memory.
+        let w = cropped.width * 2, h = cropped.height * 2
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: w, height: h))
+        guard let doubled = ctx.makeImage() else { return nil }
+
+        // Same quad, normalized to the crop.
+        func moved(_ p: ImagePoint) -> ImagePoint {
+            ImagePoint(x: (p.x * iw - crop.minX) / crop.width, y: (p.y * ih - crop.minY) / crop.height)
+        }
+        return (doubled, PanelQuad(topLeft: moved(panel.topLeft), topRight: moved(panel.topRight),
+                                bottomRight: moved(panel.bottomRight), bottomLeft: moved(panel.bottomLeft)))
+    }
+    
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
     /// the contract, so throw ours instead.
     private func checkCancellation() throws {
