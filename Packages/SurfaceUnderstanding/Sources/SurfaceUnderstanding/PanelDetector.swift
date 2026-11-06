@@ -220,11 +220,42 @@ public struct PanelDetector: Sendable {
                           right: p.map(\.x).max()!, bottom: p.map(\.y).max()!)
             return box.width > 0 && box.height > 0 ? box : nil
         }
+        // A display or preset key can sit above a tall keypad. Do not infer a
+        // short strip from it when a repeated column continues down the photo.
+        // Require comparable sizes, separate rows and bounded gaps: scattered
+        // logos/handle detections below an oven are not a continuing key bank.
+        func hasContinuingColumn(below anchor: Box) -> Bool {
+            let below = boxes.filter {
+                $0.y > anchor.bottom && $0.x >= anchor.left - anchor.width * 0.25 &&
+                $0.x <= anchor.right + anchor.width * 0.25 &&
+                (0.025...anchor.width * 0.75).contains($0.width) &&
+                (0.008...anchor.height * 0.75).contains($0.height)
+            }
+            for seed in below {
+                let column = below.filter {
+                    abs($0.x - seed.x) <= max($0.width, seed.width) * 0.6 &&
+                    (0.5...2).contains($0.width / seed.width) &&
+                    (0.5...2).contains($0.height / seed.height)
+                }.sorted { $0.y < $1.y }
+                var rows: [Box] = []
+                for box in column {
+                    if let last = rows.last, box.y - last.y > anchor.height * 1.5 {
+                        rows.removeAll(keepingCapacity: true)
+                    }
+                    if let last = rows.last, box.top < last.bottom { continue }
+                    rows.append(box)
+                    if rows.count >= 4, box.y - rows[0].y >= anchor.height * 2,
+                       box.y > anchor.bottom + anchor.height * 2.5 { return true }
+                }
+            }
+            return false
+        }
         for anchor in boxes.sorted(by: { $0.area > $1.area }) {
             // Pixel aspect matters for portrait camera frames. Reject large
             // enclosing doors and tiny text fragments as display anchors.
             guard anchor.width >= 0.2, (0.025...0.18).contains(anchor.height),
-                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height) else { continue }
+                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height),
+                  !hasContinuingColumn(below: anchor) else { continue }
             let nearby = boxes.filter { box in
                 box.area < anchor.area * 0.5 && box.width >= 0.025 && box.height >= 0.008 &&
                 box.x >= anchor.left - anchor.width * 1.2 &&
@@ -260,7 +291,8 @@ public struct PanelDetector: Sendable {
         // controls spread in both axes. Do not extrapolate a cropped keypad.
         for anchor in boxes.sorted(by: { $0.area > $1.area }) {
             guard (0.15...0.35).contains(anchor.width), (0.025...0.12).contains(anchor.height),
-                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height) else { continue }
+                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height),
+                  !hasContinuingColumn(below: anchor) else { continue }
             let nearby = boxes.filter { box in
                 box.area < anchor.area * 0.5 && box.width >= 0.025 && box.height >= 0.008 &&
                 box.x >= anchor.left - anchor.width * 0.65 && box.x <= anchor.right + anchor.width * 0.65 &&
