@@ -15,22 +15,16 @@ import simd
 struct CalibrationTrace: Codable {
     static let currentFormatVersion = 1
 
-    struct Notes: Codable {
-        /// True for traces generated in code. Never label these phone recordings.
-        var synthetic: Bool
-        var device: String
-        var system: String
-        var conditions: String
-        var operatorNotes: String
-        /// What the operator saw happen, written down at recording time, in order.
-        var expectedEvents: [String]
-    }
+    typealias Notes = TraceNotes
 
     struct Sampling: Codable {
-        /// Frames the camera delivered while recording.
+        /// Frames the camera delivered to the recorder.
         var framesOffered: Int
-        /// Frames the bounded buffer had no room for.
+        /// Frames delivered but not in the trace: skipped by sampling, failed
+        /// by the tracker, or evicted from the bounded buffer.
         var framesDropped: Int
+        /// The recorder kept at most one frame in this many.
+        var everyNthFrame: Int = 1
     }
 
     var formatVersion: Int
@@ -62,7 +56,8 @@ struct CalibrationTrace: Codable {
         guard formatVersion == Self.currentFormatVersion else {
             throw TraceDecodingError.unsupportedVersion(formatVersion)
         }
-        guard sampling.framesOffered >= frames.count + sampling.framesDropped else {
+        // Every delivered frame is either in the trace or counted as dropped.
+        guard sampling.framesOffered == frames.count + sampling.framesDropped else {
             throw TraceDecodingError.inconsistentSampling
         }
         for (previous, next) in zip(frames, frames.dropFirst()) {
@@ -73,6 +68,49 @@ struct CalibrationTrace: Codable {
                 throw TraceDecodingError.outOfOrder(index: next.index)
             }
         }
+    }
+}
+
+/// What the operator knew about a recording, written down when it was made.
+public struct TraceNotes: Codable, Sendable {
+    /// Something the operator saw happen, as a window of seconds since the
+    /// trace's first frame. Replay checks these; they are never derived from a
+    /// replay of the same trace.
+    public struct ExpectedEvent: Codable, Hashable, Sendable {
+        /// A `TraceReplay.Change.label`, e.g. "ready.true", "source.world", "reset".
+        public var change: String
+        public var earliest: TimeInterval
+        public var latest: TimeInterval
+        /// False for "this must not happen inside the window".
+        public var occurs: Bool
+        public var description: String
+
+        public init(change: String, earliest: TimeInterval, latest: TimeInterval,
+                    occurs: Bool = true, description: String) {
+            self.change = change
+            self.earliest = earliest
+            self.latest = latest
+            self.occurs = occurs
+            self.description = description
+        }
+    }
+
+    /// True for traces generated in code. Never label these phone recordings.
+    public var synthetic: Bool
+    public var device: String
+    public var system: String
+    public var conditions: String
+    public var operatorNotes: String
+    public var expectedEvents: [ExpectedEvent]
+
+    public init(synthetic: Bool, device: String, system: String, conditions: String,
+                operatorNotes: String, expectedEvents: [ExpectedEvent]) {
+        self.synthetic = synthetic
+        self.device = device
+        self.system = system
+        self.conditions = conditions
+        self.operatorNotes = operatorNotes
+        self.expectedEvents = expectedEvents
     }
 }
 

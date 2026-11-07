@@ -27,6 +27,16 @@ struct TraceReplay {
         case mode(HybridTrackingDiagnostics.Mode)
         case calibrationReady(Bool)
         case reset(reason: String?)
+
+        /// The name an `ExpectedEvent` uses for this change.
+        var label: String {
+            switch self {
+            case .source(let source): "source.\(source)"
+            case .mode(let mode): "mode.\(mode)"
+            case .calibrationReady(let ready): "ready.\(ready)"
+            case .reset: "reset"
+            }
+        }
     }
 
     /// A step where something changed. The first step reports its source and mode.
@@ -62,6 +72,17 @@ struct TraceReplay {
                         calibrationReady: diagnostics.calibrationReady,
                         resetCount: diagnostics.resetCount, lastResetReason: diagnostics.lastResetReason,
                         message: diagnostics.message))
+        }
+    }
+
+    /// The operator's expectations this replay did not meet. Empty means it
+    /// behaved as written down at recording time.
+    func unmet(_ expectations: [TraceNotes.ExpectedEvent]) -> [TraceNotes.ExpectedEvent] {
+        expectations.filter { expected in
+            let happened = events.contains {
+                $0.change.label == expected.change && (expected.earliest...expected.latest).contains($0.offset)
+            }
+            return happened != expected.occurs
         }
     }
 
