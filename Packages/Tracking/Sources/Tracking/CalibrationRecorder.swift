@@ -29,7 +29,14 @@ public actor CalibrationRecorder {
         }
     }
 
+    public enum RecorderError: Error, Equatable {
+        case alreadyRecording
+        /// `record` has not returned yet. Cancel its task and await it first.
+        case stillRecording
+    }
+
     private var buffer: TraceBuffer
+    private var isRecording = false
 
     public init(configuration: Configuration = Configuration()) {
         buffer = TraceBuffer(capacity: configuration.capacity, everyNthFrame: configuration.everyNthFrame)
@@ -42,6 +49,9 @@ public actor CalibrationRecorder {
     /// sharing one with the live loop would split that chain between them.
     public func record(camera: any CameraFrameSource, tracker: any PanelTracking,
                        reference: PanelReference) async throws {
+        guard !isRecording else { throw RecorderError.alreadyRecording }
+        isRecording = true
+        defer { isRecording = false }
         try await tracker.startTracking(reference)
         let referenceID = reference.photo.id
         for await frame in await camera.cameraFrames() {
@@ -62,9 +72,12 @@ public actor CalibrationRecorder {
     /// Frames currently held, for a recording indicator.
     public var recordedFrames: Int { buffer.frames.count }
 
-    /// The recording so far, as trace-file bytes. Call after `record` returns.
+    /// The recording as trace-file bytes. Throws `stillRecording` until `record`
+    /// has returned: the actor is reentrant, so mid-recording a frame can be
+    /// counted as offered while its tracking is still in flight.
     public func encodedTrace(notes: TraceNotes) throws -> Data {
-        try buffer.trace(notes: notes).encoded()
+        guard !isRecording else { throw RecorderError.stillRecording }
+        return try buffer.trace(notes: notes).encoded()
     }
 }
 

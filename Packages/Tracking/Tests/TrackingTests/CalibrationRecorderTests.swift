@@ -97,6 +97,44 @@ private actor ScriptedTracker: PanelTracking {
     func stopTracking() async { stopped = true }
 }
 
+/// Holds the first `track` call open until released, so a test can act while a
+/// frame is in flight.
+private actor TrackGate {
+    private var entered = false
+    private var released = false
+    private var enteredWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func enter() async {
+        entered = true
+        enteredWaiter?.resume()
+        enteredWaiter = nil
+        if released { return }
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+
+    func waitUntilEntered() async {
+        if entered { return }
+        await withCheckedContinuation { enteredWaiter = $0 }
+    }
+
+    func release() {
+        released = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
+    }
+}
+
+private struct GatedTracker: PanelTracking {
+    let gate: TrackGate
+    func startTracking(_ reference: PanelReference) async throws {}
+    func track(_ frame: CameraFrame) async throws -> PanelObservation {
+        await gate.enter()
+        return .lost(.notFound, at: frame.timestamp)
+    }
+    func stopTracking() async {}
+}
+
 /// Scripted tracking never decodes the photo, so any bytes will do.
 private func reference() throws -> PanelReference {
     let photo = PanelPhoto(data: Data([0]), pixelSize: PixelSize(width: 64, height: 48),
@@ -150,6 +188,51 @@ struct CalibrationRecorderTests {
         #expect(trace.frames.allSatisfy { $0.world != nil }, "each observation kept its world snapshot")
         #expect(await tracker.stopped)
         #expect(try TraceReplay(trace).unmet(trace.notes.expectedEvents).isEmpty)
+    }
+
+    /// Exporting while a frame is still being tracked would save a frame that
+    /// was counted as offered but never appended. The recorder refuses until
+    /// `record` has returned; afterwards the counts add up.
+    @Test func exportWaitsForTheRecordingToFinish() async throws {
+        let gate = TrackGate()
+        let recorder = CalibrationRecorder()
+        let frames = try cameraFrames(moves: [.zero, .zero])
+        let reference = try reference()
+        let task = Task {
+            try await recorder.record(camera: ScriptedCamera(frames: frames),
+                                      tracker: GatedTracker(gate: gate), reference: reference)
+        }
+
+        await gate.waitUntilEntered()
+        await #expect(throws: CalibrationRecorder.RecorderError.stillRecording) {
+            try await recorder.encodedTrace(notes: notes([]))
+        }
+
+        task.cancel()
+        await gate.release()
+        try await task.value
+        let trace = try CalibrationTrace.decode(await recorder.encodedTrace(notes: notes([])))
+        #expect(trace.frames.count + trace.sampling.framesDropped == trace.sampling.framesOffered)
+    }
+
+    @Test func secondRecordingAtOnceIsRefused() async throws {
+        let gate = TrackGate()
+        let recorder = CalibrationRecorder()
+        let frames = try cameraFrames(moves: [.zero])
+        let reference = try reference()
+        let task = Task {
+            try await recorder.record(camera: ScriptedCamera(frames: frames),
+                                      tracker: GatedTracker(gate: gate), reference: reference)
+        }
+
+        await gate.waitUntilEntered()
+        await #expect(throws: CalibrationRecorder.RecorderError.alreadyRecording) {
+            try await recorder.record(camera: ScriptedCamera(frames: frames),
+                                      tracker: ScriptedTracker([.seen]), reference: reference)
+        }
+
+        await gate.release()
+        try await task.value
     }
 
     /// The check has to be able to fail, or a passing replay proves nothing.

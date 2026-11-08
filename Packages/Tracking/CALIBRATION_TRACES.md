@@ -27,7 +27,8 @@ camera frame:
 Matrices are flattened column-major. Production types are not made `Codable`;
 the trace has its own representation, versioned by `formatVersion`.
 
-Malformed or incomplete files fail on load, never silently: wrong array lengths,
+Malformed or incomplete files fail on load (`CalibrationTrace.decode`), never
+silently and never first at replay: wrong array lengths, unknown orientation,
 unknown enum values, a quad that disagrees with tracked/lost, an observation
 stamped with another frame's time, indices or timestamps out of order, an
 unknown format version, or sampling counts that don't add up.
@@ -46,6 +47,7 @@ let task = Task {
 }
 // ...operator performs the movement, then:
 task.cancel()
+try await task.value        // wait for the in-flight frame; exporting earlier throws
 let data = try await recorder.encodedTrace(notes: TraceNotes(
     synthetic: false, device: "iPhone 16 Pro", system: "iOS 26.1",
     conditions: "kitchen, overhead light", operatorNotes: "...",
