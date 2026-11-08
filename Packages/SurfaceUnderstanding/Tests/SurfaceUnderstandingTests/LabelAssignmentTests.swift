@@ -63,6 +63,20 @@ func frameGivesItsLabelsBack() {
     #expect(Set(result.unused.map(\.text)) == ["Popcorn", "Pizza"])
 }
 
+@Test("stacked word boxes become one text label")
+func stackedWordBoxesBecomeOneTextLabel() {
+    let timeBox = PanelRect(x: 0.10, y: 0.50, width: 0.08, height: 0.03)
+    let cookBox = PanelRect(x: 0.11, y: 0.535, width: 0.06, height: 0.03)
+    let time = word("Time", x: 0.10, y: 0.50, width: 0.08)
+    let cook = word("Cook", x: 0.11, y: 0.535, width: 0.06)
+
+    let result = LabelReader.assign([time, cook], to: [timeBox, cookBox])
+
+    #expect(result.labels == [nil, nil])
+    #expect(result.frames == [0, 1])
+    #expect(LabelReader.textButtons(from: result.unused).map(\.label) == ["Time Cook"])
+}
+
 @Test("words on one line with small gaps are one label")
 func oneLineIsOneLabel() {
     let words = [word("Add", x: 0.10, y: 0.5, width: 0.04), word("30", x: 0.15, y: 0.5, width: 0.03),

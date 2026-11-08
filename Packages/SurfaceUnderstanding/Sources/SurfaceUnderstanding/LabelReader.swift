@@ -221,6 +221,19 @@ public struct LabelReader: Sendable {
             return wordArea >= regions[index].width * regions[index].height * 0.4
         }
 
+        let huggers = regions.indices.filter { hugsItsWord($0) }
+        for a in huggers {
+            for b in huggers where b > a
+                && !taken[a].isEmpty
+                && !taken[b].isEmpty
+                && belongTogether(taken[a][0], taken[b][0]) {
+                unused += taken[a] + taken[b]
+                taken[a] = []
+                taken[b] = []
+                frames.formUnion([a, b])
+            }
+        }
+
         for (index, region) in regions.enumerated() where taken[index].isEmpty && !frames.contains(index) {
             let wordBoxes = regions.indices.filter { $0 != index && !frames.contains($0) && hugsItsWord($0) }
             let candidates = unused + wordBoxes.flatMap { taken[$0] }
