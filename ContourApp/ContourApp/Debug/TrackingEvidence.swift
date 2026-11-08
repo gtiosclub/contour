@@ -28,6 +28,9 @@ struct TrackingEvidence {
             Row(label: "Mode", value: hybrid?.mode.rawValue ?? "Unavailable"),
             Row(label: "Readiness", value: hybrid.map { $0.calibrationReady ? "Ready" : "Not ready" } ?? "Unavailable"),
             Row(label: "Calibration samples", value: Self.count(hybrid?.calibrationFrames)),
+            Row(label: "AR planes", value: Self.count(hybrid?.surfaceSelection?.detectedPlaneCount)),
+            Row(label: "Fitting planes", value: Self.count(hybrid?.surfaceSelection?.fittingPlaneCount)),
+            Row(label: "Surface rejections", value: Self.surfaceRejections(hybrid?.surfaceSelection)),
             Row(label: "Stable features", value: Self.count(hybrid?.stableFeatures)),
             Row(label: "Baseline", value: Self.measurement(hybrid?.baselineCentimeters, unit: "cm")),
             Row(label: "Alignment error", value: Self.measurement(hybrid?.alignmentError, unit: "image units", precision: 3)),
@@ -57,6 +60,15 @@ struct TrackingEvidence {
         case nil: break
         }
         explanations = messages
+    }
+
+    private static func surfaceRejections(_ selection: HybridTrackingDiagnostics.SurfaceSelection?) -> String {
+        guard let selection, selection.fittingPlaneCount != nil else { return "Unavailable" }
+        let reasons = WorldGeometryError.allCases.compactMap { error -> String? in
+            guard let count = selection.rejections[error], count > 0 else { return nil }
+            return "\(error.diagnosticDescription): \(count)"
+        }
+        return reasons.isEmpty ? "None" : reasons.joined(separator: "; ")
     }
 
     private static func count(_ value: Int?) -> String {
