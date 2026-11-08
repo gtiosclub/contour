@@ -212,17 +212,50 @@ struct CalibrationTraceFileTests {
         #expect(throws: TraceDecodingError.self) { try CalibrationTrace.decode(trace.encoded()) }
     }
 
-    @Test func observationFromAnotherFrameThrows() {
+    // Each malformed frame must be refused by decode(), not first at replay.
+
+    @Test func observationFromAnotherFrameFailsToLoad() throws {
         var record = frame(0, at: 0)
         record.timestamp = seen.addingTimeInterval(0.033)
 
-        #expect(throws: TraceDecodingError.self) { try record.inputs() }
+        #expect(throws: TraceDecodingError.mismatchedFrame(index: 0)) {
+            try CalibrationTrace.decode(file([record]).encoded())
+        }
     }
 
-    @Test func unknownOrientationThrows() {
+    @Test func unknownOrientationFailsToLoad() throws {
         var record = frame(0, at: 0)
         record.orientation = 42
 
-        #expect(throws: TraceDecodingError.self) { try record.imageOrientation() }
+        #expect(throws: TraceDecodingError.unknownValue(field: "orientation", value: "42")) {
+            try CalibrationTrace.decode(file([record]).encoded())
+        }
+    }
+
+    @Test func incompleteCameraMatrixFailsToLoad() throws {
+        var record = frame(0, at: 0)
+        record.world?.cameraToWorld.removeLast()
+
+        #expect(throws: TraceDecodingError.wrongCount(field: "cameraToWorld", expected: 16, actual: 15)) {
+            try CalibrationTrace.decode(file([record]).encoded())
+        }
+    }
+
+    @Test func malformedPlaneFailsToLoad() throws {
+        var record = frame(0, at: 0)
+        record.world?.planes[0].extent = [2]
+
+        #expect(throws: TraceDecodingError.wrongCount(field: "extent", expected: 2, actual: 1)) {
+            try CalibrationTrace.decode(file([record]).encoded())
+        }
+    }
+
+    @Test func trackedObservationWithoutQuadFailsToLoad() throws {
+        var record = frame(0, at: 0)
+        record.visual.quad = nil
+
+        #expect(throws: TraceDecodingError.inconsistentObservation(status: "tracked")) {
+            try CalibrationTrace.decode(file([record]).encoded())
+        }
     }
 }

@@ -60,6 +60,11 @@ struct CalibrationTrace: Codable {
         guard sampling.framesOffered == frames.count + sampling.framesDropped else {
             throw TraceDecodingError.inconsistentSampling
         }
+        // Per-frame checks run on load, not first at replay.
+        for frame in frames {
+            _ = try frame.imageOrientation()
+            _ = try frame.inputs()
+        }
         for (previous, next) in zip(frames, frames.dropFirst()) {
             guard next.index > previous.index else {
                 throw TraceDecodingError.outOfOrder(index: next.index)
@@ -259,7 +264,7 @@ struct TraceWorldSnapshot: Codable {
     }
 }
 
-enum TraceDecodingError: Error {
+enum TraceDecodingError: Error, Equatable {
     case wrongCount(field: String, expected: Int, actual: Int)
     case unknownValue(field: String, value: String)
     case inconsistentObservation(status: String)
