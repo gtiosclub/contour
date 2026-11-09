@@ -81,20 +81,22 @@ func slowAccurateFallsBackToFast() async throws {
             "Slow recognition took \(elapsed); expected under 3 seconds")
 }
 
-@Test("Quick accurate recognition does not call fast")
+@Test("Quick accurate recognition does not call fast", .timeLimit(.minutes(1)))
 func quickAccurateSkipsFast() async throws {
     let photo = try SyntheticPanel.photo()
     let image = try photo.cgImage()
     let counter = FastCallCounter()
-    let clock = ContinuousClock()
-    let start = clock.now
+    let accurateCounter = FastCallCounter()
 
+    // This tests which recognizer wins, not runner scheduling latency. Return
+    // immediately and leave ample deadline headroom while image tests run in
+    // parallel. The test time limit still catches a hung recognition call.
     let result = try await LabelReader.recognizeText(
         in: image,
-        budget: .seconds(2),
+        budget: .seconds(30),
         using: { _, level in
             if level == .accurate {
-                try await Task.sleep(for: .milliseconds(50))
+                await accurateCounter.record()
             } else {
                 await counter.record()
             }
@@ -103,12 +105,9 @@ func quickAccurateSkipsFast() async throws {
         }
     )
 
-    let elapsed = start.duration(to: clock.now)
-
     #expect(result.isEmpty)
+    #expect(await accurateCounter.count() == 1)
     #expect(await counter.count() == 0)
-    #expect(elapsed < .seconds(1),
-            "Quick recognition took \(elapsed); expected under 1 second")
 }
 
 @Test("Accurate recognition error falls back to fast")
