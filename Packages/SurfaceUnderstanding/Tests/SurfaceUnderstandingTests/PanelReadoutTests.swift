@@ -9,7 +9,24 @@
 import ContourCore
 import Foundation
 import Testing
+import Vision
 @testable import SurfaceUnderstanding
+
+private actor RecognitionLevelRecorder {
+    private var levels: [RecognizeTextRequest.RecognitionLevel] = []
+
+    func record(_ level: RecognizeTextRequest.RecognitionLevel) {
+        levels.append(level)
+    }
+
+    func recordedLevels() -> [RecognizeTextRequest.RecognitionLevel] {
+        levels
+    }
+}
+
+private enum ReadoutRecognizerError: Error {
+    case expected
+}
 
 private func readoutWord(
     _ text: String,
@@ -230,4 +247,21 @@ func syntheticMissingDisplay() async throws {
         "I can't read the display.")
     #expect(await readout.readDisplay(in: try SyntheticPanel.photo(), panel: .fullFrame).spoken ==
         "I can't read the display.")
+}
+
+@Test("display reading does not fall back to fast recognition")
+func displayDoesNotUseFastRecognition() async throws {
+    let recorder = RecognitionLevelRecorder()
+    let readout = PanelReadout { _, level in
+        await recorder.record(level)
+        throw ReadoutRecognizerError.expected
+    }
+
+    let reading = await readout.readDisplay(
+        in: try SyntheticPanel.displayPhoto(time: "3:00"),
+        panel: .fullFrame
+    )
+
+    #expect(reading.spoken == "I can't read the display.")
+    #expect(await recorder.recordedLevels() == [.accurate])
 }

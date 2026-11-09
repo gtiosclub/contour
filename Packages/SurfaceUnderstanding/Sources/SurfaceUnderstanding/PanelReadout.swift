@@ -29,7 +29,15 @@ public struct PanelReadout: Sendable {
         var isNumberPad = false
     }
 
-    public init() {}
+    private let recognizer: LabelReader.Recognizer
+
+    public init() {
+        recognizer = LabelReader.recognize
+    }
+
+    init(recognizer: @escaping LabelReader.Recognizer) {
+        self.recognizer = recognizer
+    }
 
     /// Answers "What buttons are there?" without running Vision.
     public func buttonList(for map: SurfaceMap) -> String {
@@ -97,7 +105,10 @@ public struct PanelReadout: Sendable {
     public func readDisplay(in photo: PanelPhoto, panel: PanelQuad) async -> DisplayReading {
         do {
             let image = try photo.cgImage()
-            let observations = try await LabelReader.recognizeText(in: image)
+            let observations = try await LabelReader.recognizeText(in: image) { image, level in
+                guard level == .accurate else { throw CancellationError() }
+                return try await recognizer(image, level)
+            }
             let words = LabelReader().locateWords(in: observations, panel: panel).filter {
                 (0...1).contains($0.centre.x) && (-0.5...1).contains($0.centre.y)
             }
