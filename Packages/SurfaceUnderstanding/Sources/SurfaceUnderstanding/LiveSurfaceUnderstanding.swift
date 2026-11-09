@@ -94,7 +94,11 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         // Labels with no key outline around them are keys too on a flat
         // membrane panel. Less certain than an outlined key, so lower confidence.
         let printedOnly = Self.printedButtons(from: reading.textButtons)
-        let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
+        let buttons = Self.resolvePrintedButtons(
+            keys: keys,
+            printed: printedOnly
+        )
+        let map = SurfaceMap(buttons: buttons, confidence: confidence)
         logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
@@ -108,6 +112,50 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             SurfaceMap.Button(label: $0.label, bounds: $0.bounds, confidence: 0.5)
         }
     }
+    
+    /// If a  printed button overlaps a labeled key, the printed button is dropped
+    static func resolvePrintedButtons(
+        keys: [SurfaceMap.Button],
+        printed: [SurfaceMap.Button]
+    ) -> [SurfaceMap.Button] {
+        var resolvedKeys = keys
+        var remainingPrinted: [SurfaceMap.Button] = []
+
+        for textButton in printed {
+            let overlappingKeys = resolvedKeys.indices.filter { index in
+                let key = resolvedKeys[index].bounds
+                let text = textButton.bounds
+
+                return min(key.maxX, text.maxX) > max(key.minX, text.minX)
+                    && min(key.maxY, text.maxY) > max(key.minY, text.minY)
+            }
+
+            if overlappingKeys.isEmpty {
+                remainingPrinted.append(textButton)
+                continue
+            }
+
+            // Transfer text to an unlabeled overlapping key.
+            if let index = overlappingKeys.first(where: {
+                resolvedKeys[$0].label == nil
+            }) {
+                let key = resolvedKeys[index]
+
+                resolvedKeys[index] = SurfaceMap.Button(
+                    label: textButton.label,
+                    bounds: key.bounds,
+                    confidence: key.confidence
+                )
+            }
+
+            // Otherwise, discard the printed button.
+            // It overlaps a physical key, so it should not
+            // become an additional button.
+        }
+
+        return resolvedKeys + remainingPrinted
+    }
+
 
     /// Buttons inside `panel`. A failure here (Vision's own errors aren't
     /// `SurfaceUnderstandingError`s) means no buttons found, not no answer:

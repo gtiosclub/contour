@@ -292,3 +292,142 @@ func oven1GlarePreservesKeysAboveClock() {
     #expect(labels.contains("COOK TIME"))
     #expect(labels.contains("TIMER SET OFF"))
 }
+
+@Test("Defrost Weight/Time remains one stacked label")
+func defrostWeightTimeStaysTogether() {
+    let words = [
+        word("Defrost", x: 0.30, y: 0.40,
+             width: 0.095, height: 0.025),
+        word("Weight/Time", x: 0.285, y: 0.431,
+             width: 0.125, height: 0.025)
+    ]
+
+    let buttons = LabelReader.textButtons(from: words)
+
+    #expect(buttons.count == 1)
+    #expect(buttons.first?.label == "Defrost Weight/Time")
+}
+
+@Test("Start Pause remains one stacked label")
+func startPauseStaysTogether() {
+    let words = [
+        word("Start", x: 0.40, y: 0.60,
+             width: 0.065, height: 0.025),
+        word("Pause", x: 0.405, y: 0.631,
+             width: 0.065, height: 0.025)
+    ]
+
+    let buttons = LabelReader.textButtons(from: words)
+
+    #expect(buttons.count == 1)
+    #expect(buttons.first?.label == "Start Pause")
+}
+
+@Test("Add 30 Sec remains one label")
+func add30SecStaysTogether() {
+    let words = [
+        word("Add", x: 0.10, y: 0.50,
+             width: 0.04, height: 0.03),
+        word("30", x: 0.15, y: 0.50,
+             width: 0.03, height: 0.03),
+        word("Sec", x: 0.19, y: 0.50,
+             width: 0.04, height: 0.03)
+    ]
+
+    let buttons = LabelReader.textButtons(from: words)
+
+    #expect(buttons.map(\.label) == ["Add 30 Sec"])
+}
+
+@Test("Adjacent words inside different keys remain separate")
+func differentKeysDoNotMerge() {
+    let regions = [
+        PanelRect(x: 0.10, y: 0.40,
+                  width: 0.10, height: 0.08),
+        PanelRect(x: 0.20, y: 0.40,
+                  width: 0.10, height: 0.08)
+    ]
+
+    let words = [
+        word("Cook", x: 0.155, y: 0.42,
+             width: 0.04, height: 0.025),
+        word("Power", x: 0.205, y: 0.42,
+             width: 0.06, height: 0.025)
+    ]
+
+    let groups = LabelReader.groups(
+        of: words,
+        regions: regions
+    )
+
+    #expect(groups.count == 2)
+    #expect(Set(groups.flatMap { $0.map(\.text) })
+            == ["Cook", "Power"])
+}
+
+@Test("Large horizontal gap separates printed labels")
+func largeGapDoesNotMerge() {
+    let words = [
+        word("Popcorn", x: 0.10, y: 0.50,
+             width: 0.08, height: 0.025),
+        word("Reheat", x: 0.25, y: 0.50,
+             width: 0.08, height: 0.025)
+    ]
+
+    let buttons = LabelReader.textButtons(from: words)
+
+    #expect(Set(buttons.map(\.label))
+            == ["Popcorn", "Reheat"])
+}
+
+@Test("Neighboring words in different keys stay separate")
+func neighboringWordsDoNotFormOneLongLabel() {
+    let regions = [
+        PanelRect(x: 0.09, y: 0.47, width: 0.115, height: 0.09),
+        PanelRect(x: 0.205, y: 0.47, width: 0.125, height: 0.09)
+    ]
+
+    let words = [
+        word("Cook", x: 0.10, y: 0.50, width: 0.04, height: 0.03),
+        word("Power", x: 0.15, y: 0.50, width: 0.05, height: 0.03),
+        word("Timer", x: 0.21, y: 0.50, width: 0.05, height: 0.03),
+        word("Start", x: 0.27, y: 0.50, width: 0.05, height: 0.03)
+    ]
+
+    let buttons = LabelReader.textButtons(
+        from: words,
+        regions: regions
+    )
+
+    #expect(buttons.count == 2)
+    #expect(Set(buttons.map(\.label)) == [
+        "Cook Power",
+        "Timer Start"
+    ])
+}
+
+@Test("Adjacent physical keys receive their own multiword labels")
+func adjacentKeysReceiveSeparateLabels() {
+    let regions = [
+        PanelRect(x: 0.09, y: 0.47, width: 0.115, height: 0.09),
+        PanelRect(x: 0.205, y: 0.47, width: 0.125, height: 0.09)
+    ]
+
+    let words = [
+        word("Cook", x: 0.10, y: 0.50, width: 0.04, height: 0.03),
+        word("Power", x: 0.15, y: 0.50, width: 0.05, height: 0.03),
+        word("Timer", x: 0.21, y: 0.50, width: 0.05, height: 0.03),
+        word("Start", x: 0.27, y: 0.50, width: 0.05, height: 0.03)
+    ]
+
+    let result = LabelReader.assign(words, to: regions)
+
+    #expect(result.labels == [
+        "Cook Power",
+        "Timer Start"
+    ])
+
+    #expect(result.unused.isEmpty)
+    #expect(result.frames.isEmpty)
+}
+

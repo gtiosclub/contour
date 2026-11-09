@@ -211,3 +211,4 @@ func printedButtonsStayOnPanel() {
     }
     #expect(LiveSurfaceUnderstanding.printedButtons(from: outside).isEmpty)
 }
+
