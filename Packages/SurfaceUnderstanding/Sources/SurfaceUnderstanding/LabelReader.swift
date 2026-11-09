@@ -85,7 +85,7 @@ public struct LabelReader: Sendable {
         let assigned = Self.assign(words, to: regions)
         return Reading(
             labels: assigned.labels,
-            textButtons: Self.textButtons(from: assigned.unused),
+            textButtons: Self.textButtons(from: assigned.unused,regions: regions),
             frames: assigned.frames
         )
     }
@@ -231,13 +231,13 @@ public struct LabelReader: Sendable {
     /// Sec"), or are stacked tightly above each other ("Dinner" over "Plate").
     /// Labels a normal key-width apart stay separate. Each label's area is its
     /// words' box plus a little margin.
-    static func textButtons(from words: [Word]) -> [(label: String, bounds: PanelRect)] {
+    static func textButtons(from words: [Word], regions: [PanelRect] = []) -> [(label: String, bounds: PanelRect)] {
         let words = removingClockWords(from: words).filter { word in
             word.text.contains { $0.isLetter || $0.isNumber }
             && [word.left, word.right, word.top, word.bottom].allSatisfy(\.isFinite)
         }
 
-        return groups(of: words).map { group in
+        return groups(of: words, regions: regions).map { group in
             let margin = group.map(\.height).max()! * 0.15
             let minX = group.map(\.left).min()! - margin, maxX = group.map(\.right).max()! + margin
             let minY = group.map(\.top).min()! - margin, maxY = group.map(\.bottom).max()! + margin
@@ -310,17 +310,39 @@ public struct LabelReader: Sendable {
             return true
         }
     }
-    /// The words split into labels: words that belong together end up in one
-    /// group.
-    static func groups(of words: [Word]) -> [[Word]] {
+    /// The words split into labels: words that belong together end up in one group
+    static func groups(of words: [Word], regions: [PanelRect] = []) -> [[Word]] {
         var parent = Array(words.indices)
-        func root(_ i: Int) -> Int { parent[i] == i ? i : root(parent[i]) }
+        
+        func root(_ index: Int) -> Int {
+            if parent[index] == index {
+                return index
+            }
+            return root(parent[index])
+        }
+        func keyIndex(for word: Word) -> Int? {
+            regions.firstIndex { $0.contains(word.centre) }
+        }
+
         for i in words.indices {
-            for j in words.indices where j > i && belongTogether(words[i], words[j]) {
-                parent[root(j)] = root(i)
+            for j in words.indices where j > i {
+                let firstKey = keyIndex(for: words[i])
+                let secondKey = keyIndex(for: words[j])
+
+                // Never combine words belonging to different keys.
+                if firstKey != secondKey {
+                    continue
+                }
+
+                if belongTogether(words[i], words[j]) {
+                    parent[root(j)] = root(i)
+                }
             }
         }
-        return Dictionary(grouping: words.indices, by: root).values.map { $0.map { words[$0] } }
+
+        return Dictionary(grouping: words.indices, by: root)
+            .values
+            .map { $0.map { words[$0] } }
     }
 
     /// On one line with a word-sized gap, or stacked as the two lines of one
@@ -331,15 +353,25 @@ public struct LabelReader: Sendable {
     /// lines of one label sit 1–1.5 heights apart and separate keys 1.9 or more.
     private static func belongTogether(_ a: Word, _ b: Word) -> Bool {
         let height = min(a.height, b.height)
+        guard height > 0 else { return false }
         let rise = abs(a.centre.y - b.centre.y)
         if rise <= height * 0.5 {
-            let gap = max(a.left, b.left) - min(a.right, b.right)
+            let gap = max(
+                0,
+                max(a.left, b.left) - min(a.right, b.right)
+            )
+
+            // Words on one line must be close together.
             return gap <= height * 0.6
         }
 
         let overlap = min(a.right, b.right) - max(a.left, b.left)
         let narrower = min(a.right - a.left, b.right - b.left)
-        return overlap >= narrower * 0.5 && rise <= height * 1.6
+
+        // Stacked words must overlap horizontally and be close vertically.
+        return narrower > 0
+            && overlap >= narrower * 0.5
+            && rise <= height * 1.6
     }
     /// Orders words from top to bottom, then left to right within each row.
     ///
