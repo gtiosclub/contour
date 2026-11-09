@@ -310,9 +310,7 @@ public struct LabelReader: Sendable {
             return true
         }
     }
-    /// The words split into labels: words that belong together end up in one
-    /// group.
-    
+    /// The words split into labels: words that belong together end up in one group
     static func groups(of words: [Word], regions: [PanelRect] = []) -> [[Word]] {
         var parent = Array(words.indices)
         
@@ -346,7 +344,6 @@ public struct LabelReader: Sendable {
             .values
             .map { $0.map { words[$0] } }
     }
-
 
     /// On one line with a word-sized gap, or stacked as the two lines of one
     /// label.
