@@ -68,7 +68,7 @@ public enum ScanProblem: Hashable, Sendable {
     /// A scan that came back. nil when it can guide to `target`.
     /// `target` is the button's name ("Start"), not the whole sentence.
     /// With no target, only the scan itself is checked.
-    public static func after(_ detection: PanelDetection,photo: PanelPhoto,target: String?) -> ScanProblem? {
+    public static func after(_ detection: PanelDetection, photo: PanelPhoto, target: String?) -> ScanProblem? {
         if detection.quad == .fullFrame {
             return .panelCutOff
         }
@@ -109,7 +109,7 @@ public enum ScanProblem: Hashable, Sendable {
             return .aim(target: target, advice: advice)
         }
         
-        // Check for OCR errors before suggesting camera repositioning
+        // Check for OCR errors after suggesting camera repositioning
         if isNearMiss(target: target, in: detection.map) {
             return .cantRead(target: target)
         }
