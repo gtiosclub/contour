@@ -373,7 +373,6 @@ public struct LabelReader: Sendable {
             && overlap >= narrower * 0.5
             && rise <= height * 1.6
     }
-
     /// Orders words from top to bottom, then left to right within each row.
     ///
     /// Words are processed by ascending vertical centre. A word joins the
