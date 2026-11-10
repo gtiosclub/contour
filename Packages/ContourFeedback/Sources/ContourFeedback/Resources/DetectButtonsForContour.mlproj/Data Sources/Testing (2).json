@@ -1,0 +1,75 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T06:25:37Z",
+        "event" : "dataSourceCreated",
+        "id" : "7FDA8728-669D-4F2E-8C23-0759B452423F",
+        "subtitle" : "Testing",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T06:25:37Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Testing/",
+  "dataResult" : {
+    "classesCount" : 5,
+    "createdDate" : "2026-11-03T06:25:37Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "5 classes found, including pushbutton, knob, touch",
+          "severity" : "debug"
+        },
+        {
+          "description" : "12260 annotations found, automatically creating validation set",
+          "severity" : "good"
+        },
+        {
+          "description" : "Smallest class is \"slider\" with 155 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"pushbutton\" with 6840 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "knob" : 3077,
+          "pushbutton" : 6840,
+          "slider" : 155,
+          "toggle" : 310,
+          "touch" : 1878
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 1,
+        "classCount" : 5,
+        "counterExamples" : 0,
+        "sampleCount" : 2748,
+        "suggestedMaxIterations" : 35000
+      }
+    },
+    "dataSourceID" : "557E3FA6-ED22-4550-8921-82EB590D3DD0",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Testing/",
+    "itemsCount" : 2748
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Testing/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "557E3FA6-ED22-4550-8921-82EB590D3DD0",
+  "modifiedDate" : "2026-11-03T15:12:29Z",
+  "pathType" : 0,
+  "preferredFilename" : "Testing (2)",
+  "title" : "Testing (2)",
+  "version" : "1.0"
+}

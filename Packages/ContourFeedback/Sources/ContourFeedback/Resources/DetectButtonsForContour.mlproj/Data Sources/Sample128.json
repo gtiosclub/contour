@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:21:15Z",
+        "event" : "dataSourceCreated",
+        "id" : "47CF8745-2374-4A71-9167-C974F9EF719E",
+        "subtitle" : "Sample128",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:21:15Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/Sample128/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:21:15Z",
+    "dataSourceID" : "7B26D44E-BBA4-4199-9EAA-D96198C03D13",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/Sample128/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/Sample128/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "7B26D44E-BBA4-4199-9EAA-D96198C03D13",
+  "modifiedDate" : "2026-11-03T15:21:15Z",
+  "pathType" : 0,
+  "preferredFilename" : "Sample128",
+  "title" : "Sample128",
+  "version" : "1.0"
+}

@@ -1,0 +1,29 @@
+{
+  "activityEntities" : [
+    "projectCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T05:06:29Z",
+        "event" : "projectCreated",
+        "id" : "B24D05CA-7AFE-41F9-A3A1-6D610FAA65C2",
+        "subtitle" : "DetectButtonsForContour",
+        "title" : "Project Created"
+      }
+    ]
+  ],
+  "authorName" : ". .",
+  "createdDate" : "2026-11-03T05:06:29Z",
+  "description" : "",
+  "id" : "81CF5EC6-C8D1-420C-9BD0-29486D0C0561",
+  "license" : "",
+  "location" : "",
+  "modifiedDate" : "2026-11-03T05:06:29Z",
+  "projectName" : "DetectButtonsForContour",
+  "settingsEntity" : {
+    "snapshotOnExtendTraining" : true,
+    "snapshotOnResumeTraining" : false
+  },
+  "taskType" : "objectDetector",
+  "title" : "Object Detection",
+  "version" : "1.1"
+}

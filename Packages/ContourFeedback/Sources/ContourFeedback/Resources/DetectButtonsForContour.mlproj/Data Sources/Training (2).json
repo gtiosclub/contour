@@ -1,0 +1,95 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T06:24:25Z",
+        "event" : "dataSourceCreated",
+        "id" : "A1364776-ACF7-4FEE-96C3-A26EC5438618",
+        "subtitle" : "Training",
+        "title" : "Data Source Created"
+      }
+    ],
+    "dataSourceTrainingStarted",
+    [
+      {
+        "createdDate" : "2026-11-03T06:25:47Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "EFD3BE1D-9433-48CA-975B-FB533DD89DA3",
+        "subtitle" : "DetectButtonsForContour 2",
+        "title" : "Used By"
+      }
+    ],
+    "dataSourceMetrics",
+    [
+      {
+        "createdDate" : "2026-11-03T06:25:47Z",
+        "event" : "dataSourceMetrics",
+        "id" : "EB568689-0DDF-411A-85A2-6197C9BE0E1B",
+        "subtitle" : "5 Classes, 9,598 Items",
+        "title" : "Data Summary"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T06:24:25Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Training/",
+  "dataResult" : {
+    "classesCount" : 5,
+    "createdDate" : "2026-11-03T06:24:25Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "5 classes found, including pushbutton, knob, touch",
+          "severity" : "debug"
+        },
+        {
+          "description" : "56103 annotations found, automatically creating validation set",
+          "severity" : "good"
+        },
+        {
+          "description" : "Smallest class is \"slider\" with 747 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"pushbutton\" with 37195 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "knob" : 12594,
+          "pushbutton" : 37195,
+          "slider" : 747,
+          "toggle" : 1363,
+          "touch" : 4204
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 1,
+        "classCount" : 5,
+        "counterExamples" : 0,
+        "sampleCount" : 9598,
+        "suggestedMaxIterations" : 74000
+      }
+    },
+    "dataSourceID" : "11EE7D7D-06B1-4433-B1F0-3217D5485499",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Training/",
+    "itemsCount" : 9598
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Training/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "11EE7D7D-06B1-4433-B1F0-3217D5485499",
+  "modifiedDate" : "2026-11-03T15:11:56Z",
+  "pathType" : 0,
+  "preferredFilename" : "Training (2)",
+  "title" : "Training (2)",
+  "version" : "1.0"
+}
