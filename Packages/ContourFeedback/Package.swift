@@ -25,7 +25,10 @@ let package = Package(
         .target(
             name: "ContourFeedback",
             dependencies: [.product(name: "ContourCore", package: "ContourCore")],
-            resources: [.copy("Resources/VoicePrompts")]
+            resources: [
+                .copy("Resources/VoicePrompts"),
+                .process("Resources/ButtonDetection.mlmodel")
+            ]
         ),
         .testTarget(
             name: "ContourFeedbackTests",
