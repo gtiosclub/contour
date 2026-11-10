@@ -73,7 +73,18 @@ check() {
 
     # Remote dependencies are not banned outright, but they are a three-lead
     # decision in ContourCore and a lead's decision anywhere else. Flag them.
-    if grep -qE '\.package\(url:' "$manifest"; then
+    # Agreed exceptions are listed in allowed_remote and must be pinned exactly.
+    local remotes
+    remotes=$(grep -E '\.package\(url:' "$manifest" || true)
+    if [[ -n "$remotes" && "$package" != "ContourCore" ]]; then
+        local line
+        while IFS= read -r line; do
+            if allowed_remote "$package" "$line"; then
+                remotes=$(grep -vF "$line" <<<"$remotes" || true)
+            fi
+        done <<<"$remotes"
+    fi
+    if [[ -n "$remotes" ]]; then
         if [[ "$package" == "ContourCore" ]]; then
             echo "FAIL  ContourCore must depend on nothing, including remote packages"
             status=1
@@ -86,6 +97,19 @@ check() {
     if [[ $failed -eq 0 ]]; then
         echo "ok    $package"
     fi
+}
+
+# Remote packages a lead has agreed to, per package. Each must be an exact pin
+# so every team builds the same binary.
+#   Tracking → OpenCV for the ContourFeatureMatcher C++ target only (#81).
+allowed_remote() {
+    local package="$1" line="$2"
+    case "$package" in
+        Tracking)
+            [[ "$line" =~ \.package\(url:\ *\"https://github\.com/yeatse/opencv-spm\.git\",\ *exact:\ *\"[0-9]+\.[0-9]+\.[0-9]+\"\) ]]
+            ;;
+        *) return 1 ;;
+    esac
 }
 
 echo "Checking package manifests…"
@@ -147,6 +171,29 @@ done
 [[ $imports_clean -eq 1 ]] && echo "ok    no cross-team imports"
 
 # ContourCore genuinely depends on nothing, in sources and tests alike.
+# OpenCV stays behind the C interface: only the C++ matcher target may include
+# it, and no Swift file anywhere may import it.
+echo
+echo "Checking that OpenCV stays inside ContourFeatureMatcher…"
+opencv_contained=1
+leaks=$(grep -rlE '#include +[<"]opencv2/' Packages/*/Sources Packages/*/Tests ContourApp Harness \
+            --include='*.h' --include='*.hpp' --include='*.c' --include='*.cpp' \
+            --include='*.mm' --include='*.m' 2>/dev/null \
+        | grep -v '^Packages/Tracking/Sources/ContourFeatureMatcher/[^/]*\.cpp$' || true)
+if [[ -n "$leaks" ]]; then
+    echo "FAIL  OpenCV is included outside ContourFeatureMatcher's implementation:"
+    echo "$leaks" | sed 's/^/        /'
+    status=1
+    opencv_contained=0
+fi
+if grep -rqE '^ *(@testable |@_implementationOnly |internal |public )?import +(opencv2|OpenCV)\b' \
+        Packages/*/Sources Packages/*/Tests ContourApp Harness --include='*.swift' 2>/dev/null; then
+    echo "FAIL  a Swift file imports OpenCV directly"
+    status=1
+    opencv_contained=0
+fi
+[[ $opencv_contained -eq 1 ]] && echo "ok    OpenCV is confined to the C++ matcher"
+
 echo
 echo "Checking that ContourCore stays self-contained…"
 if grep -rqE "^ *(@testable )?import +(SurfaceUnderstanding|Tracking|ContourFeedback|ContourUI|ContourMocks)\b" \

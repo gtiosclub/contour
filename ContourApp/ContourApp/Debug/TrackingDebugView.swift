@@ -7,7 +7,8 @@ import Tracking
 struct TrackingDebugView: View {
     let camera: CameraService
     let pipeline: ContourPipeline
-    @State private var model = TrackingDebugModel()
+    @State private var model: TrackingDebugModel
+    @State private var comparison: TrackingComparisonModel
     @State private var showOverlay = true
     @State private var showReferenceSetup = false
     @State private var showManualSetup = false
@@ -18,9 +19,27 @@ struct TrackingDebugView: View {
     @State private var manualReference = ManualReferenceState()
     @Environment(\.scenePhase) private var scenePhase
 
-    private struct RunID: Hashable { let reference: UUID?; let active: Bool }
+    init(camera: CameraService, pipeline: ContourPipeline) {
+        self.camera = camera
+        self.pipeline = pipeline
+        _model = State(initialValue: TrackingDebugModel(sessionFactory: pipeline.sessionFactory))
+        _comparison = State(initialValue: TrackingComparisonModel(
+            supportsManualExposure: !camera.usesWorldTracking,
+            setExposure: { try await camera.setExposureBias($0) },
+            requestSettings: { method, options in
+                pipeline.requestTrackingSettings(method: method, options: options)
+            }))
+    }
+
+    private struct RunID: Hashable {
+        let reference: UUID?; let active: Bool
+        let method: PanelTrackingMethod; let options: FeatureTrackingOptions
+        let cameraRevision: Int
+    }
     private var runID: RunID {
-        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active)
+        RunID(reference: manualReference.reference?.photo.id, active: scenePhase == .active,
+              method: pipeline.trackingMethod, options: pipeline.featureOptions,
+              cameraRevision: camera.status.revision)
     }
 
     private var distanceToTarget: Double? {
@@ -36,20 +55,62 @@ struct TrackingDebugView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if let image = model.image {
-                    TrackingImageView(image: image,
-                        quad: showOverlay ? model.panelQuad : nil,
-                        fingertip: showOverlay ? model.latest?.fingertip : nil,
-                        buttons: showOverlay ? manualReference.reference?.detection.map.buttons ?? [] : [],
-                        targetID: manualReference.selectedTargetID)
+                if let displayed = model.displayedFrame {
+                    TrackingImageView(
+                        image: displayed.image,
+                        quad: showOverlay ? displayed.panelQuad : nil,
+                        fingertip: showOverlay ? displayed.diagnostics.fingertip : nil,
+                        buttons: showOverlay
+                            ? manualReference.reference?.detection.map.buttons ?? []
+                            : [],
+                        targetID: manualReference.selectedTargetID,
+                        acceptedFeaturePoints: showOverlay ? model.acceptedFeaturePoints : []
+                    )
                 } else {
-                    Rectangle().fill(.black).aspectRatio(9.0 / 16, contentMode: .fit)
-                        .overlay { Text(model.error ?? "Waiting for camera frames…").foregroundStyle(.white).padding() }
+                    Rectangle()
+                        .fill(.black)
+                        .aspectRatio(9.0 / 16, contentMode: .fit)
+                        .overlay {
+                            Text(model.error ?? "Waiting for camera frames…")
+                                .foregroundStyle(.white)
+                                .padding()
+                        }
                 }
                 Text("Yellow: panel. Green: fingertip. Cyan: buttons. Orange: selected target. Pixels and overlays come from the same processed frame.")
                     .font(.caption).foregroundStyle(.secondary)
                 Text("The green fingertip can remain visible when the panel is lost. Target distance and guidance still require usable panel tracking.")
                     .font(.caption).foregroundStyle(.secondary)
+                TrackingEvidenceView(evidence: TrackingEvidence(sample: model.displayedFrame?.sample))
+                Picker("Tracking method", selection: Binding(
+                    get: { pipeline.trackingMethod },
+                    set: { requestSettings(method: $0, options: pipeline.featureOptions) }
+                )) {
+                    ForEach(PanelTrackingMethod.allCases, id: \.self) { method in
+                        Text(method.rawValue).tag(method)
+                    }
+                }
+                Toggle("Exclude bright highlights", isOn: Binding(
+                    get: { pipeline.featureOptions.excludeHighlights },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.excludeHighlights = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                Toggle("Enhance contrast", isOn: Binding(
+                    get: { pipeline.featureOptions.normalizeContrast },
+                    set: { value in
+                        var options = pipeline.featureOptions
+                        options.normalizeContrast = value
+                        requestSettings(method: pipeline.trackingMethod, options: options)
+                    }
+                ))
+                if let trackingError = pipeline.trackingError {
+                    Text(trackingError).foregroundStyle(.red)
+                }
+                Text("Guidance and Diagnostics use the same settings with separate tracking sessions.")
+                    .font(.caption).foregroundStyle(.secondary)
+                exposureControls
                 Toggle("Show tracking overlay", isOn: $showOverlay)
                 Button(capturing ? "Capturing…" : "Capture manual panel and target") { capturePanel() }
                     .buttonStyle(.borderedProminent).disabled(capturing)
@@ -88,8 +149,10 @@ struct TrackingDebugView: View {
                     LabeledContent("Tracking quality", value: frame.trackingQuality.rawValue.capitalized)
                     LabeledContent("Panel confidence", value: frame.panel.confidence.formatted(.percent))
                 }
-                if let assessment = model.assessment {
-                    Text(assessment.reason.message).font(.caption).foregroundStyle(.secondary)
+                if let assessment = model.displayedFrame?.assessment {
+                    Text(assessment.reason.message)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 if let latency = model.latency {
                     LabeledContent("Capture-to-display age", value: "\(Int(latency * 1_000)) ms")
@@ -131,9 +194,14 @@ struct TrackingDebugView: View {
         }
         .task(id: runID) {
             guard runID.active else { model.clearDisplayedResults(); return }
-            await model.run(camera: camera, reference: manualReference.reference)
+            await model.run(camera: camera, reference: manualReference.reference,
+                            method: pipeline.trackingMethod, options: pipeline.featureOptions)
         }
-        .onDisappear { capture?.cancel() }
+        .onDisappear {
+            capture?.cancel()
+            comparison.resetExposure()
+        }
+        .onChange(of: camera.status.revision) { _, _ in comparison.resetExposure() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { capture?.cancel() }
         }
@@ -145,6 +213,40 @@ struct TrackingDebugView: View {
         model.clearDisplayedResults()
         manualReference.replace(with: reference)
         manualReference.selectTarget(reference.detection.map.buttons.first?.id)
+    }
+
+    private func requestSettings(method: PanelTrackingMethod, options: FeatureTrackingOptions) {
+        comparison.requestSettings(method: method, options: options)
+    }
+
+    private var exposureControls: some View {
+        GroupBox("Exposure comparison") {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    ForEach(CameraService.exposurePresets, id: \.self) { bias in
+                        Button("\(bias.formatted(.number.precision(.fractionLength(1)))) EV") {
+                            Task { await comparison.applyExposure(bias) }
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .disabled(!model.running || !comparison.supportsManualExposure || comparison.isApplyingExposure)
+                if camera.usesWorldTracking {
+                    Text("ARKit owns exposure during world tracking; manual presets are unavailable.")
+                } else if let applied = comparison.appliedExposure {
+                    Text("Applied bias: \(applied.formatted(.number.precision(.fractionLength(1)))) EV (device limits may clamp the request).")
+                } else if comparison.automaticExposureConfirmed {
+                    Text("Camera reports automatic exposure.")
+                } else {
+                    Text("Exposure has not been adjusted in this session.")
+                }
+                if let error = comparison.exposureError { Text(error).foregroundStyle(.red) }
+                Text("Lower exposure can help compare bright highlights; it does not prove glare has been removed.")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func capturePanel() {

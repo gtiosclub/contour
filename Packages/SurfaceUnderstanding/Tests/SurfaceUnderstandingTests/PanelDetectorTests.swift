@@ -187,3 +187,145 @@ func panelDetectionCancellation() async {
     }
     await #expect(throws: SurfaceUnderstandingError.cancelled) { _ = try await task.value }
 }
+
+private func expectPanelCorners(_ actual: PanelQuad, _ expected: PanelQuad) {
+    for (a, e) in zip([actual.topLeft, actual.topRight, actual.bottomRight, actual.bottomLeft],
+                      [expected.topLeft, expected.topRight, expected.bottomRight, expected.bottomLeft]) {
+        #expect(abs(a.x - e.x) < 0.03)
+        #expect(abs(a.y - e.y) < 0.03)
+    }
+}
+
+@Test("Small labelled panels retain their outer corners", arguments: [0.4, 0.5])
+func smallPanelRetainsCorners(scale: Double) async throws {
+    let fixture = try SyntheticPanel.smallPanelPhoto(scale: scale)
+    let result = try await PanelDetector().detectPanel(in: fixture.photo)
+    expectPanelCorners(result.quad, fixture.quad)
+}
+
+@Test("Keys select the panel instead of the larger door")
+func smallPanelBeatsDoor() async throws {
+    let fixture = try SyntheticPanel.smallPanelPhoto(scale: 0.4, door: true)
+    let result = try await PanelDetector().detectPanel(in: fixture.photo)
+    expectPanelCorners(result.quad, fixture.quad)
+}
+
+@Test("A fully visible inset panel should keep its outer edges")
+func insetPanelRetainsOuterEdges() async throws {
+    let context = try #require(CGContext(data: nil, width: 900, height: 600,
+        bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+        bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+    context.setFillColor(CGColor(gray: 0.05, alpha: 1))
+    context.fill(CGRect(x: 0, y: 0, width: 900, height: 600))
+    context.setFillColor(CGColor(gray: 0.8, alpha: 1))
+    context.fill(CGRect(x: 250, y: 160, width: 400, height: 270))
+    context.setFillColor(CGColor(gray: 0.1, alpha: 1))
+    for x in [270, 400, 530] {
+        for y in [180, 280] { context.fill(CGRect(x: x, y: y, width: 100, height: 70)) }
+    }
+    let image = try #require(context.makeImage())
+    let data = NSMutableData()
+    let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+    CGImageDestinationAddImage(destination, image, nil)
+    #expect(CGImageDestinationFinalize(destination))
+    let photo = PanelPhoto(data: data as Data, pixelSize: PixelSize(width: 900, height: 600), timestamp: Date())
+    let result = try await PanelDetector().detectPanel(in: photo)
+    let expected = PanelQuad(topLeft: ImagePoint(x: 250.0 / 900, y: 170.0 / 600),
+                             topRight: ImagePoint(x: 650.0 / 900, y: 170.0 / 600),
+                             bottomRight: ImagePoint(x: 650.0 / 900, y: 440.0 / 600),
+                             bottomLeft: ImagePoint(x: 250.0 / 900, y: 440.0 / 600))
+    expectPanelCorners(result.quad, expected)
+}
+
+@Test("A preset group expands to the continuing keypad without distant scene boxes")
+func panelKeyGroupIncludesContinuingColumn() {
+    let seed = PanelQuad(topLeft: ImagePoint(x: 0.3, y: 0.1), topRight: ImagePoint(x: 0.7, y: 0.1),
+                         bottomRight: ImagePoint(x: 0.7, y: 0.4), bottomLeft: ImagePoint(x: 0.3, y: 0.4))
+    func box(_ x: Double, _ y: Double) -> [ImagePoint] {
+        [(x,y), (x+0.15,y), (x+0.15,y+0.12), (x,y+0.12)].map {
+            ImagePoint(x: 0.3 + 0.4 * $0.0, y: 0.1 + 0.3 * $0.1)
+        }
+    }
+    let inside = [box(0.1,0.1), box(0.4,0.1), box(0.7,0.1)]
+    let outside = [box(0.1,1.1), box(0.7,1.1), box(0.1,1.5), box(0.7,1.5)]
+    let distant = box(2,1.2)
+    let detector = PanelDetector()
+    let expanded = detector.enclosingKeyGroups(seed: seed, keys: inside + outside + [distant])
+    #expect(expanded != seed)
+    for point in (inside + outside).flatMap({ $0 }) {
+        #expect(detector.rectify(point, within: expanded).isOnPanel)
+    }
+    #expect(!detector.rectify(distant[0], within: expanded).isOnPanel)
+    // A few neighbouring boxes alone must not enlarge a complete panel.
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(outside.prefix(3))) == seed)
+    #expect(detector.enclosingKeyGroups(seed: seed, keys: inside + Array(repeating: distant, count: 8)) == seed)
+}
+
+/// A box's corners in normalized image coordinates.
+private func imageBox(_ x: Double, _ y: Double, _ width: Double, _ height: Double) -> [ImagePoint] {
+    [ImagePoint(x: x, y: y), ImagePoint(x: x + width, y: y),
+     ImagePoint(x: x + width, y: y + height), ImagePoint(x: x, y: y + height)]
+}
+
+private func imageRect(_ x: Double, _ y: Double, _ width: Double, _ height: Double) -> PanelQuad {
+    let corners = imageBox(x, y, width, height)
+    return PanelQuad(topLeft: corners[0], topRight: corners[1], bottomRight: corners[2], bottomLeft: corners[3])
+}
+
+private func expectInsidePhoto(_ quad: PanelQuad) {
+    for corner in [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft] {
+        #expect((-0.02...1.02).contains(corner.x), "corner \(corner) is off the photo")
+        #expect((-0.02...1.02).contains(corner.y), "corner \(corner) is off the photo")
+    }
+}
+
+@Test("A keypad running off the bottom of a close-up never pushes the outline off the photo")
+func keyGroupOutlineStaysInsidePhoto() {
+    let detector = PanelDetector()
+    // A bordered row of presets; the keypad below it continues to the photo's bottom edge.
+    let seed = imageRect(0.15, 0.2, 0.7, 0.5)
+    let presets = [0.18, 0.41, 0.64].map { imageBox($0, 0.3, 0.18, 0.1) }
+    let keypad = [0.72, 0.815, 0.91].flatMap { y in [0.18, 0.41, 0.64].map { imageBox($0, y, 0.18, 0.08) } }
+    let outline = detector.enclosingKeyGroups(seed: seed, keys: presets + keypad)
+    expectInsidePhoto(outline)
+    for point in presets.flatMap({ $0 }) {
+        #expect(detector.rectify(point, within: outline).isOnPanel)
+    }
+
+    // The same keypad stopping short of the edge still joins the presets.
+    let shorter = Array(keypad.prefix(6))
+    let grown = detector.enclosingKeyGroups(seed: seed, keys: presets + shorter)
+    expectInsidePhoto(grown)
+    for point in (presets + shorter).flatMap({ $0 }) {
+        #expect(detector.rectify(point, within: grown).isOnPanel)
+    }
+}
+
+@Test("A few keys do not grow over a door, a handle, a stove strip or a cabinet in their column")
+func keyGroupIgnoresNonKeysInItsColumn() {
+    // A display and one row of three keys, like a black glass panel with the keypad unlit.
+    let seed = imageRect(0.25, 0.2, 0.5, 0.45)
+    let keys = [imageBox(0.3, 0.25, 0.4, 0.1)] + [0.32, 0.45, 0.58].map { imageBox($0, 0.55, 0.1, 0.05) }
+    let door = imageBox(0.2, 0.68, 0.6, 0.25)                                   // far bigger than a key
+    let handle = [0.68, 0.75, 0.82].map { imageBox(0.425, $0, 0.02, 0.06) }     // between the key columns
+        + [imageBox(0.385, 0.67, 0.1, 0.05)]
+    let stove = [0.32, 0.45, 0.58].map { imageBox($0, 0.88, 0.1, 0.05) }        // key-like, but well below
+    let cabinet = [0.32, 0.58].map { imageBox($0, 0.02, 0.1, 0.05) }           // key-like, but well above
+    let outline = PanelDetector().enclosingKeyGroups(seed: seed, keys: keys + [door] + handle + stove + cabinet)
+    #expect(outline == seed)
+}
+
+@Test("A detected rectangle past the photo's edge is clamped onto it")
+func rectanglePastPhotoEdgeIsClamped() {
+    let detector = PanelDetector()
+    let past = PanelQuad(topLeft: ImagePoint(x: 0.01, y: 0.13), topRight: ImagePoint(x: 1.07, y: 0.13),
+                         bottomRight: ImagePoint(x: 0.91, y: 0.36), bottomLeft: ImagePoint(x: -0.17, y: 0.35))
+    let clamped = detector.clampedToPhoto(past)
+    expectInsidePhoto(clamped)
+    #expect(clamped.topRight == ImagePoint(x: 1, y: 0.13))
+    #expect(clamped.bottomLeft == ImagePoint(x: 0, y: 0.35))
+    #expect(clamped.topLeft == past.topLeft)
+    // Slightly past the edge is still trackable and is left alone.
+    let edge = imageRect(-0.01, 0.2, 1.02, 0.5)
+    #expect(detector.clampedToPhoto(edge) == edge)
+}

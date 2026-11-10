@@ -84,6 +84,8 @@ reference quads use Core’s separate image-space types. Full convention:
 | `FingertipTracker.swift` | Per-frame Vision index fingertip → timestamped image-space observation. |
 | `FingertipFrameProcessor.swift` | Adapts fingertip observations to debug diagnostics. |
 | `PanelTracker.swift` | Panel pose across frames as the phone moves. |
+| `FeaturePanelTracker.swift` | Actor wrapping the OpenCV matcher as a `CalibratablePanelTracking` (#82). |
+| `ContourFeatureMatcher/` | C++ OpenCV panel matcher behind a C header (#81). See [docs/FEATURE_MATCHING_BACKEND.md](../../docs/FEATURE_MATCHING_BACKEND.md). |
 
 `PanelTracker` and `LiveTrackingSource` remain stubs. `FingertipTracker` now
 accepts each `CameraFrame` through `detect(in:)`; it does not require `PanelPose`

@@ -12,8 +12,10 @@
 
 import ContourCore
 import ContourMocks
+import ContourFeedback
 import Foundation
 import Testing
+import Tracking
 @testable import ContourApp
 
 @MainActor
@@ -56,8 +58,9 @@ struct PipelineWiringTests {
         await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
 
         let received = await engine.received
-        #expect(received.count == 4)
-        #expect(await engine.outcomes.last == .arrived)
+        #expect(received.count == 5)
+        #expect(received[3].vector == .onTarget && received[3].outcome == nil)
+        #expect(await engine.outcomes.isEmpty, "A stream ending on target does not complete the hold")
     }
 
     @Test("stopping guidance leaves the feedback engine with nothing to play")
@@ -148,17 +151,187 @@ struct PipelineWiringTests {
         // Lost for 0.1 s (a blur), back, then lost for 0.5 s.
         let frames = [good(0), .lost(at: at(0.05)), .lost(at: at(0.15)), good(0.2),
                       .lost(at: at(0.3)), .lost(at: at(0.5)), .lost(at: at(0.7)), .lost(at: at(0.8))]
+        let epoch = ContinuousClock.now
+        let offsets = [0, 50, 150, 200, 300, 500, 700, 800]
+        var index = 0
         let pipeline = ContourPipeline(
             surfaceUnderstanding: MockSurfaceUnderstanding(),
             tracking: ScriptedFrames(script: frames),
             feedback: engine,
-            liveComponents: []
+            liveComponents: [],
+            guidanceNow: {
+                defer { index += 1 }
+                return epoch.advanced(by: .milliseconds(offsets[index]))
+            }
         )
 
         await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
 
         #expect(await engine.outcomes == [.lostTracking])
+        let received = await engine.received
+        // One-shot loss playback must not be cancelled by the next lost frame.
+        // The final empty state belongs to session cleanup after the stream ends.
+        try #require(received.count == 8)
+        for index in [1, 2, 4, 5, 7] {
+            #expect(received[index].vector == nil && received[index].outcome == nil)
+        }
+        #expect(received[0].vector != nil && received[3].vector != nil)
+        #expect(received[6].outcome == .lostTracking)
     }
+
+    @Test("Usable AR prediction guides normally and a missing finger stays quiet")
+    func predictionAndMissingFinger() async throws {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let pose = PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+            column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1)
+        let target = MockSurfaceMaps.microwaveStartButton
+        let frames = [
+            TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.1, y: 0.1), panel: pose, trackingQuality: .degraded),
+            TrackingFrame(timestamp: Date(), fingertip: nil, panel: pose, trackingQuality: .good),
+            TrackingFrame(timestamp: Date(), fingertip: target.bounds.center, panel: pose, trackingQuality: .good)
+        ]
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedPrediction(script: frames), feedback: engine, liveComponents: [])
+        await pipeline.guide(to: target)
+        let received = await engine.received
+        try #require(received.count == 4)
+        #expect(received[0].vector != nil && received[0].outcome == nil)
+        #expect(received[1].vector == nil && received[1].outcome == nil)
+        #expect(received[2].vector == .onTarget && received[2].outcome == nil)
+        #expect(received[3].vector == nil)
+        #expect(await engine.outcomes.isEmpty)
+    }
+
+    @Test("Stop and reference replacement end an active loss episode", arguments: [false, true], [false, true])
+    func lossCannotOutliveSession(replace: Bool, announceBeforeStop: Bool) async throws {
+        let source = ControlledFrames()
+        let engine = LossFeedback()
+        let clock = LossTestClock()
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: source, feedback: engine, liveComponents: [],
+            guidanceNow: { clock.now })
+        let guiding = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
+        await source.waitForSubscription()
+        source.send(TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.1, y: 0.1),
+            panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .good))
+        await engine.waitForCount(1)
+        clock.offset = .milliseconds(100)
+        source.send(.lost(at: Date()))
+        await engine.waitForCount(2)
+        if announceBeforeStop {
+            clock.offset = .milliseconds(500)
+            source.send(.lost(at: Date()))
+            await engine.waitForCount(3)
+        }
+        if replace {
+            let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
+            let reference = try PanelReference(photo: photo, detection: PanelDetection(
+                referencePhotoID: photo.id, quad: .fullFrame, map: MockSurfaceMaps.microwave))
+            await pipeline.replaceReference(with: reference)
+        } else {
+            await pipeline.stopGuidance()
+        }
+        await guiding.value
+        clock.offset = .seconds(2)
+        source.send(.lost(at: Date()))
+        source.finish()
+        let received = await engine.received
+        #expect(received.count == (announceBeforeStop ? 4 : 3))
+        #expect(received.compactMap(\.outcome) == (announceBeforeStop ? [.lostTracking] : []))
+        #expect(received.last?.vector == nil && received.last?.outcome == nil)
+    }
+    private func targetFrame(fingertip: PanelPoint? = MockSurfaceMaps.microwaveStartButton.bounds.center,
+                             confidence: Double = 1) -> TrackingFrame {
+        TrackingFrame(timestamp: Date(), fingertip: fingertip,
+            panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: confidence), trackingQuality: .good)
+    }
+
+    @Test("Pipeline confirms arrival once after fresh target frames complete the hold")
+    func arrivalDwell() async {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let epoch = ContinuousClock.now
+        var tick = 0
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: (0..<16).map { _ in targetFrame() }),
+            feedback: engine, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+        let received = await engine.received
+        #expect(received.count == 14)
+        #expect(received.dropLast().allSatisfy { $0.vector == .onTarget && $0.outcome == nil })
+        #expect(await engine.outcomes == [.arrived])
+    }
+
+    @Test("Missing finger, retreat, loss and low confidence restart a pending hold", arguments: [0, 1, 2, 3])
+    func holdCancellation(reason: Int) async {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let epoch = ContinuousClock.now
+        var tick = 0
+        let interrupted: TrackingFrame
+        switch reason {
+        case 0: interrupted = targetFrame(fingertip: nil)
+        case 1: interrupted = targetFrame(fingertip: PanelPoint(x: 0, y: 0))
+        case 2: interrupted = .lost(at: Date())
+        default: interrupted = targetFrame(confidence: 0.1)
+        }
+        let script = (0..<11).map { _ in targetFrame() } + [interrupted]
+            + (0..<14).map { _ in targetFrame() }
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: script), feedback: engine, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+        let received = await engine.received
+        #expect(received.count == 26)
+        #expect(received.last?.outcome == .arrived)
+        #expect(received.dropLast().allSatisfy { $0.outcome != .arrived })
+    }
+
+    @Test("Stop, replacement and interruption cancel a pending hold", arguments: [0, 1, 2])
+    func holdCannotOutliveSession(action: Int) async throws {
+        let source = ControlledFrames()
+        let engine = LossFeedback()
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: source, feedback: engine, liveComponents: [])
+        let guiding = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
+        await source.waitForSubscription()
+        source.send(targetFrame())
+        await engine.waitForCount(1)
+        switch action {
+        case 0: await pipeline.stopGuidance()
+        case 1:
+            let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
+            let reference = try PanelReference(photo: photo, detection: PanelDetection(
+                referencePhotoID: photo.id, quad: .fullFrame, map: MockSurfaceMaps.microwave))
+            await pipeline.replaceReference(with: reference)
+        default: pipeline.interruptGuidance()
+        }
+        await guiding.value
+        source.send(targetFrame())
+        source.finish()
+        let received = await engine.received
+        #expect(received.first?.vector == .onTarget && received.first?.outcome == nil)
+        #expect(received.last?.vector == nil)
+        #expect(received.allSatisfy { $0.outcome != .arrived })
+    }
+
+    @Test("Stopping after guidance has already ended clears completed feedback")
+    func stopCompletedFeedback() async {
+        let engine = LiveFeedbackEngine()
+        engine.setChannels(audio: false, voice: false, haptics: false)
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: []), feedback: engine, liveComponents: [])
+        await engine.present(.outcome(.arrived, at: Date()))
+        #expect(engine.didReachTarget)
+        await pipeline.stopGuidance()
+        #expect(!engine.didReachTarget)
+    }
+
 }
 
 /// A tracking source that plays back fixed frames and finishes.
@@ -213,4 +386,43 @@ private actor DeferredSurface: ContourCore.SurfaceUnderstanding {
         await withCheckedContinuation { waiter = $0 }
     }
     func finish() { result?.resume(); result = nil }
+}
+
+private struct ScriptedPrediction: GuidanceTrackingSession {
+    let script: [TrackingFrame]
+    func frames() -> AsyncStream<TrackingFrame> { ScriptedFrames(script: script).frames() }
+    func use(_ reference: PanelReference) async {}
+    func registrationError() async -> PanelTrackingError? { nil }
+    func hybridStatus() async -> HybridTrackingDiagnostics? {
+        HybridTrackingDiagnostics(mode: .predicted, message: "Usable prediction", calibrationFrames: 12,
+            source: .world, calibrationReady: true, visualVerificationAge: 0.2)
+    }
+}
+
+private actor LossFeedback: FeedbackEngine {
+    private(set) var received: [GuidanceState] = []
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    func present(_ state: GuidanceState) {
+        received.append(state)
+        let ready = waiters.filter { received.count >= $0.0 }
+        waiters.removeAll { received.count >= $0.0 }
+        for waiter in ready { waiter.1.resume() }
+    }
+    func waitForCount(_ target: Int) async {
+        if received.count >= target { return }
+        await withCheckedContinuation { waiters.append((target, $0)) }
+    }
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension ScriptedPrediction {
+    func stop() async {}
+}
+
+
+@MainActor
+private final class LossTestClock {
+    private let epoch = ContinuousClock.now
+    var offset = Duration.zero
+    var now: ContinuousClock.Instant { epoch.advanced(by: offset) }
 }

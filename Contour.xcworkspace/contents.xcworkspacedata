@@ -28,5 +28,8 @@
       <FileRef
          location = "group:ContourMocks">
       </FileRef>
+      <FileRef
+         location = "group:HarnessConnectivity">
+      </FileRef>
    </Group>
 </Workspace>

@@ -86,3 +86,48 @@ func capturePreservesCornerLandmarks() throws {
     #expect(blue[0] < 40 && blue[1] < 40 && blue[2] > 200)
     #expect(yellow[0] > 200 && yellow[1] > 200 && yellow[2] < 40)
 }
+
+@Test("A sideways .right frame is stored upright, with swapped size and corners turned clockwise")
+func rightFrameIsStoredUpright() throws {
+    // 128 wide × 72 tall, like the landscape buffers ARKit delivers.
+    let source = try frame(width: 128, height: 72, orientation: .right)
+    CVPixelBufferLockBaseAddress(source.pixelBuffer, [])
+    let pixels = try #require(CVPixelBufferGetBaseAddress(source.pixelBuffer))
+        .assumingMemoryBound(to: UInt8.self)
+    let stride = CVPixelBufferGetBytesPerRow(source.pixelBuffer)
+    for y in 0..<72 {
+        for x in 0..<128 {
+            let offset = y * stride + x * 4
+            // Top-left red, top-right green, bottom-left blue, bottom-right yellow (BGRA).
+            let color: [UInt8] = y < 36 ? (x < 64 ? [0, 0, 255] : [0, 255, 0])
+                : (x < 64 ? [255, 0, 0] : [0, 255, 255])
+            for channel in 0..<3 { pixels[offset + channel] = color[channel] }
+            pixels[offset + 3] = 255
+        }
+    }
+    CVPixelBufferUnlockBaseAddress(source.pixelBuffer, [])
+
+    let photo = try PanelPhoto(frame: source)
+
+    #expect(photo.orientation == .up)
+    #expect(photo.pixelSize == PixelSize(width: 72, height: 128))
+
+    let image = try #require(CIImage(data: photo.data))
+    #expect(image.extent.size == CGSize(width: 72, height: 128))
+    let context = CIContext()
+    func sample(_ x: Double, _ y: Double) -> [UInt8] {
+        var rgba = [UInt8](repeating: 0, count: 4)
+        context.render(image, toBitmap: &rgba, rowBytes: 4,
+            bounds: CGRect(x: x, y: y, width: 1, height: 1), format: .RGBA8,
+            colorSpace: CGColorSpaceCreateDeviceRGB())
+        return rgba
+    }
+    // A clockwise quarter turn moves each corner one step around: red goes
+    // top-left → top-right, green → bottom-right, yellow → bottom-left, blue → top-left.
+    let red = sample(64, 120), green = sample(64, 8)
+    let yellow = sample(8, 8), blue = sample(8, 120)
+    #expect(red[0] > 200 && red[1] < 40 && red[2] < 40)
+    #expect(green[0] < 40 && green[1] > 200 && green[2] < 40)
+    #expect(blue[0] < 40 && blue[1] < 40 && blue[2] > 200)
+    #expect(yellow[0] > 200 && yellow[1] > 200 && yellow[2] < 40)
+}

@@ -6,6 +6,27 @@ import Observation
 import OSLog
 import Tracking
 
+struct DisplayedTrackingFrame {
+    let image: CGImage
+    let sample: LiveTrackingSample?
+    let diagnostics: TrackingDiagnostics
+    let standaloneTrackingFrame: TrackingFrame?
+    let standaloneAssessment: TrackingAssessment?
+    let latency: TimeInterval
+
+    var panelQuad: PanelQuad? {
+        sample?.panelQuad
+    }
+
+    var trackingFrame: TrackingFrame? {
+        sample?.frame ?? standaloneTrackingFrame
+    }
+
+    var assessment: TrackingAssessment? {
+        sample?.assessment ?? standaloneAssessment
+    }
+}
+
 @MainActor
 @Observable
 final class TrackingDebugModel {
@@ -14,20 +35,37 @@ final class TrackingDebugModel {
     private(set) var framesProcessed = 0
     private(set) var error: String?
     private(set) var running = false
-    private(set) var image: CGImage?
-    private(set) var panelQuad: PanelQuad?
-    private(set) var trackingFrame: TrackingFrame?
-    private(set) var latency: TimeInterval?
+
+    private(set) var displayedFrame: DisplayedTrackingFrame?
+    private(set) var acceptedFeaturePoints: [ImagePoint] = []
+
+    var image: CGImage? { displayedFrame?.image }
+    var panelQuad: PanelQuad? { displayedFrame?.panelQuad }
+    var trackingFrame: TrackingFrame? { displayedFrame?.trackingFrame }
+    var latency: TimeInterval? { displayedFrame?.latency }
+
+    private let sessionFactory: GuidanceSessionFactory
     private let worker: DiagnosticWorker
-    private let renderer = FrameImageRenderer()
+    private let renderImage: @MainActor (CameraFrame) async -> CGImage?
+    private let displayNow: @MainActor () -> ContinuousClock.Instant
     private let evaluator: TrackingQualityEvaluator
     private var previous: TrackingObservation?
     private var referenceGeneration: UInt64 = 0
     private var lastLogTime: ContinuousClock.Instant?
-    private let logger = Logger(subsystem: "edu.gatech.contour", category: "TrackingDiagnostics")
+    private let logger = Logger(
+        subsystem: "edu.gatech.contour",
+        category: "TrackingDiagnostics"
+    )
 
-    init(processor: any TrackingFrameProcessor = FingertipFrameProcessor()) {
+    init(processor: any TrackingFrameProcessor = FingertipFrameProcessor(),
+         sessionFactory: @escaping GuidanceSessionFactory = GuidanceSessionFactories.vision,
+         renderImage: (@MainActor (CameraFrame) async -> CGImage?)? = nil,
+         displayNow: @escaping @MainActor () -> ContinuousClock.Instant = { .now }) {
+        self.sessionFactory = sessionFactory
         self.worker = DiagnosticWorker(processor: processor)
+        let renderer = FrameImageRenderer()
+        self.renderImage = renderImage ?? { await renderer.image(for: $0) }
+        self.displayNow = displayNow
         var thresholds = TrackingQualityThresholds()
         thresholds.panelRequired = false
         self.evaluator = TrackingQualityEvaluator(thresholds: thresholds)
@@ -44,10 +82,8 @@ final class TrackingDebugModel {
         lastLogTime = nil
         framesProcessed = 0
         error = nil
-        image = nil
-        panelQuad = nil
-        trackingFrame = nil
-        latency = nil
+        displayedFrame = nil
+        acceptedFeaturePoints = []
         running = false
     }
 
@@ -80,7 +116,9 @@ final class TrackingDebugModel {
 
     /// Screen owns only its subscription, never the shared camera lifetime.
     /// Full tracking uses the production emitter's exact same-frame sample.
-    func run(camera: CameraService, reference: PanelReference? = nil) async {
+    func run(camera: any CameraControl, reference: PanelReference? = nil,
+             method: PanelTrackingMethod = .vision,
+             options: FeatureTrackingOptions = FeatureTrackingOptions()) async {
         clearDisplayedResults()
         let session = referenceGeneration
         do {
@@ -90,8 +128,12 @@ final class TrackingDebugModel {
             running = true
             if let reference {
                 let pair = AsyncStream<LiveTrackingSample>.makeStream(bufferingPolicy: .bufferingNewest(1))
-                let source = LiveTrackingSource(camera: camera, onSample: { pair.continuation.yield($0) })
+                let source = try sessionFactory(camera, method, options, { pair.continuation.yield($0) })
                 await source.use(reference)
+                guard !Task.isCancelled, referenceGeneration == session else {
+                    await source.stop()
+                    return
+                }
                 let drive = Task {
                     for await _ in source.frames() {
                         if Task.isCancelled { break }
@@ -99,22 +141,43 @@ final class TrackingDebugModel {
                     pair.continuation.finish()
                 }
                 await withTaskCancellationHandler {
-                    var lastDisplay = Date.distantPast
+                    var lastDisplay: ContinuousClock.Instant?
                     for await sample in pair.stream {
                         guard !Task.isCancelled, referenceGeneration == session else { break }
                         // Production processes every delivered frame; UI draws at most 10 Hz.
-                        guard sample.cameraFrame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
-                        lastDisplay = sample.cameraFrame.timestamp
-                        let finger = await visualFingertip(in: sample.cameraFrame,
-                            panelTracked: sample.panelQuad != nil, fingertip: sample.imageFingertip)
-                        let rendered = await renderer.image(for: sample.cameraFrame)
-                        guard !Task.isCancelled, referenceGeneration == session else { break }
-                        image = rendered
-                        panelQuad = sample.panelQuad
-                        trackingFrame = sample.frame
-                        assessment = sample.assessment
-                        latency = max(0, Date().timeIntervalSince(sample.cameraFrame.timestamp))
+                        guard lastDisplay.map({ $0.duration(to: displayNow()) >= .milliseconds(100) }) ?? true else { continue }
+                        let finger = await visualFingertip(
+                            in: sample.cameraFrame,
+                            panelTracked: sample.panelQuad != nil,
+                            fingertip: sample.imageFingertip
+                        )
+
+                        guard let rendered = await renderImage(sample.cameraFrame) else {
+                            continue
+                        }
+
+                        guard !Task.isCancelled,
+                              referenceGeneration == session else {
+                            break
+                        }
+
+                        let display = DisplayedTrackingFrame(
+                            image: rendered,
+                            sample: sample,
+                            diagnostics: finger,
+                            standaloneTrackingFrame: nil,
+                            standaloneAssessment: nil,
+                            latency: max(
+                                0,
+                                Date().timeIntervalSince(sample.cameraFrame.timestamp)
+                            )
+                        )
+
+                        displayedFrame = display
+                        lastDisplay = displayNow()
+                        acceptedFeaturePoints = sample.featureDiagnostics?.inlierPoints ?? []
                         latest = finger
+                        assessment = sample.assessment
                         error = sample.registrationError == nil ? nil
                             : "Panel tracking could not initialize from this reference. Capture again and mark its actual corners."
                         framesProcessed += 1
@@ -122,20 +185,35 @@ final class TrackingDebugModel {
                 } onCancel: { drive.cancel() }
                 drive.cancel()
                 await drive.value
+                await source.stop()
             } else {
-                var lastDisplay = Date.distantPast
+                var lastDisplay: ContinuousClock.Instant?
                 for await frame in await camera.cameraFrames() {
                     try Task.checkCancellation()
                     guard referenceGeneration == session else { break }
-                    guard frame.timestamp.timeIntervalSince(lastDisplay) >= 0.1 else { continue }
-                    lastDisplay = frame.timestamp
+                    guard lastDisplay.map({ $0.duration(to: displayNow()) >= .milliseconds(100) }) ?? true else { continue }
                     let result = await process(frame)
-                    let rendered = await renderer.image(for: frame)
+                    guard let rendered = await renderImage(frame) else {
+                        continue
+                    }
+
                     try Task.checkCancellation()
                     guard referenceGeneration == session else { break }
-                    image = rendered
-                    latency = max(0, Date().timeIntervalSince(frame.timestamp))
+
                     accept(result, from: session)
+
+                    displayedFrame = DisplayedTrackingFrame(
+                        image: rendered,
+                        sample: nil,
+                        diagnostics: result,
+                        standaloneTrackingFrame: nil,
+                        standaloneAssessment: assessment,
+                        latency: max(
+                            0,
+                            Date().timeIntervalSince(frame.timestamp)
+                        )
+                    )
+                    lastDisplay = displayNow()
                 }
             }
         } catch is CancellationError {
@@ -146,9 +224,8 @@ final class TrackingDebugModel {
         if referenceGeneration == session {
             running = false
             latest = nil
-            image = nil
-            panelQuad = nil
-            trackingFrame = nil
+            displayedFrame = nil
+            acceptedFeaturePoints = []
             assessment = nil
         }
     }

@@ -11,6 +11,20 @@ import Foundation
 import Testing
 @testable import SurfaceUnderstanding
 
+private actor FastCallCounter {
+    private var calls = 0
+    func record() {
+        calls += 1
+    }
+    func count() -> Int {
+        calls
+    }
+}
+
+private enum RecognizerTestError: Error {
+    case expected
+}
+
 @Test("Labels: read through the real quad when the panel doesn't fill the photo",
       .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
       TextRecognitionCheck.timeLimit)
@@ -36,3 +50,160 @@ func labelReaderSplitsAMergedLine() async throws {
     // line by its centre would give [nil, "Popcorn Beverage Defrost", nil].
     #expect(TextRecognitionCheck.labelsMatch(labels, expected), "read \(labels), expected \(expected)")
 }
+
+@Test("Slow accurate recognition falls back to fast")
+func slowAccurateFallsBackToFast() async throws {
+    let photo = try SyntheticPanel.photo()
+    let image = try photo.cgImage()
+    let counter = FastCallCounter()
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let result = try await LabelReader.recognizeText(
+        in: image,
+        budget: .milliseconds(100),
+        using: { _, level in
+            if level == .accurate {
+                try await Task.sleep(for: .seconds(10))
+            } else {
+                await counter.record()
+            }
+
+            return []
+        }
+    )
+
+    let elapsed = start.duration(to: clock.now)
+
+    #expect(result.isEmpty)
+    #expect(await counter.count() == 1)
+    #expect(elapsed < .seconds(3),
+            "Slow recognition took \(elapsed); expected under 3 seconds")
+}
+
+@Test("Quick accurate recognition does not call fast")
+func quickAccurateSkipsFast() async throws {
+    let photo = try SyntheticPanel.photo()
+    let image = try photo.cgImage()
+    let counter = FastCallCounter()
+    let clock = ContinuousClock()
+    let start = clock.now
+
+    let result = try await LabelReader.recognizeText(
+        in: image,
+        budget: .seconds(2),
+        using: { _, level in
+            if level == .accurate {
+                try await Task.sleep(for: .milliseconds(50))
+            } else {
+                await counter.record()
+            }
+
+            return []
+        }
+    )
+
+    let elapsed = start.duration(to: clock.now)
+
+    #expect(result.isEmpty)
+    #expect(await counter.count() == 0)
+    #expect(elapsed < .seconds(1),
+            "Quick recognition took \(elapsed); expected under 1 second")
+}
+
+@Test("Accurate recognition error falls back to fast")
+func accurateErrorFallsBackToFast() async throws {
+    let photo = try SyntheticPanel.photo()
+    let image = try photo.cgImage()
+    let counter = FastCallCounter()
+
+    let result = try await LabelReader.recognizeText(
+        in: image,
+        budget: .seconds(2),
+        using: { _, level in
+            if level == .accurate {
+                throw RecognizerTestError.expected
+            }
+
+            await counter.record()
+            return []
+        }
+    )
+
+    #expect(result.isEmpty)
+
+    let fastCalls = await counter.count()
+    #expect(fastCalls == 1)
+}
+
+@Test("Accurate and fast errors become an underlying error")
+func bothRecognizersFail() async throws {
+    let photo = try SyntheticPanel.photo()
+    let reader = LabelReader(
+        recognizer: { _, _ in
+            throw RecognizerTestError.expected
+        }
+    )
+
+    do {
+        _ = try await reader.read(
+            in: photo,
+            panel: .fullFrame,
+            regions: []
+        )
+        Issue.record("Expected recognition to fail")
+    } catch let error as SurfaceUnderstandingError {
+        if case .underlying = error {
+            // Expected: both recognition attempts failed.
+        } else {
+            Issue.record("Expected .underlying, got \(error)")
+        }
+    } catch {
+        Issue.record("Unexpected error type: \(error)")
+    }
+}
+
+
+@Test("Cancelling recognition produces a cancelled error")
+func cancellingRecognition() async throws {
+    let photo = try SyntheticPanel.photo()
+    let reader = LabelReader(
+        recognizer: { _, _ in
+            try await Task.sleep(for: .seconds(10))
+            return []
+        }
+    )
+
+    let task = Task {
+        try await reader.read(
+            in: photo,
+            panel: .fullFrame,
+            regions: []
+        )
+    }
+
+    // Allow the recognition task to begin.
+    try await Task.sleep(for: .milliseconds(100))
+
+    let clock = ContinuousClock()
+    let cancelTime = clock.now
+    task.cancel()
+
+    do {
+        _ = try await task.value
+        Issue.record("Expected recognition to be cancelled")
+    } catch let error as SurfaceUnderstandingError {
+        if case .cancelled = error {
+            // Expected.
+        } else {
+            Issue.record("Expected .cancelled, got \(error)")
+        }
+    } catch {
+        Issue.record("Unexpected error type: \(error)")
+    }
+
+    let elapsed = cancelTime.duration(to: clock.now)
+    #expect(elapsed < .milliseconds(500),
+            "Cancellation took \(elapsed); expected under 500 ms")
+}
+
