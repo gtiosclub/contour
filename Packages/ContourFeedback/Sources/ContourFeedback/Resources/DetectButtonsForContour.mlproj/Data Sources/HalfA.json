@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:22:04Z",
+        "event" : "dataSourceCreated",
+        "id" : "5518F7FF-AF40-40E6-AE30-D9FAEE35F631",
+        "subtitle" : "HalfA",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:22:04Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/HalfA/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:22:04Z",
+    "dataSourceID" : "EE5E34ED-8222-4C77-A29F-2043634A3FB9",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/HalfA/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/HalfA/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "EE5E34ED-8222-4C77-A29F-2043634A3FB9",
+  "modifiedDate" : "2026-11-03T15:22:04Z",
+  "pathType" : 0,
+  "preferredFilename" : "HalfA",
+  "title" : "HalfA",
+  "version" : "1.0"
+}

@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:20:26Z",
+        "event" : "dataSourceCreated",
+        "id" : "C8496EDC-C2EC-4BD6-B24B-D52497BF3608",
+        "subtitle" : "Blank",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:20:26Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/Blank/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:20:26Z",
+    "dataSourceID" : "9B88C104-3504-4A4A-98D2-A51AFE7056A8",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/Blank/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/Blank/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "9B88C104-3504-4A4A-98D2-A51AFE7056A8",
+  "modifiedDate" : "2026-11-03T15:20:26Z",
+  "pathType" : 0,
+  "preferredFilename" : "Blank",
+  "title" : "Blank",
+  "version" : "1.0"
+}

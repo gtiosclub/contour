@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:20:04Z",
+        "event" : "dataSourceCreated",
+        "id" : "0136D4B6-8C37-434A-BACF-D0B1FDACA6BB",
+        "subtitle" : "TouchOnly",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:20:04Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/TouchOnly/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:20:04Z",
+    "dataSourceID" : "C1B279A0-D21C-43EC-AC95-867483FE2AAC",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/TouchOnly/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/TouchOnly/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "C1B279A0-D21C-43EC-AC95-867483FE2AAC",
+  "modifiedDate" : "2026-11-03T15:20:04Z",
+  "pathType" : 0,
+  "preferredFilename" : "TouchOnly",
+  "title" : "TouchOnly",
+  "version" : "1.0"
+}

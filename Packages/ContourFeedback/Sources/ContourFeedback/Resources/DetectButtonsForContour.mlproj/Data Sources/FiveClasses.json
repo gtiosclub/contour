@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:18:31Z",
+        "event" : "dataSourceCreated",
+        "id" : "B819F8C1-BC80-46E7-ADC6-C7FF6B04F67D",
+        "subtitle" : "FiveClasses",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:18:31Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/FiveClasses/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:18:31Z",
+    "dataSourceID" : "FC728D26-DAD5-4F37-96FD-E145F90D264A",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/FiveClasses/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/FiveClasses/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "FC728D26-DAD5-4F37-96FD-E145F90D264A",
+  "modifiedDate" : "2026-11-03T15:18:31Z",
+  "pathType" : 0,
+  "preferredFilename" : "FiveClasses",
+  "title" : "FiveClasses",
+  "version" : "1.0"
+}

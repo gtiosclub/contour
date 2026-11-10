@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:17:09Z",
+        "event" : "dataSourceCreated",
+        "id" : "E3F054BF-8D26-4723-B1A4-2AB3EE9C81A9",
+        "subtitle" : "OneImage",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:17:09Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/OneImage/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:17:09Z",
+    "dataSourceID" : "6552FFA9-9A0E-4DB6-B9E4-15EC247BAD19",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/OneImage/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/OneImage/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "6552FFA9-9A0E-4DB6-B9E4-15EC247BAD19",
+  "modifiedDate" : "2026-11-03T15:17:09Z",
+  "pathType" : 0,
+  "preferredFilename" : "OneImage",
+  "title" : "OneImage",
+  "version" : "1.0"
+}
