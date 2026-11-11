@@ -11,6 +11,7 @@
 //
 
 import ContourCore
+import CoreImage
 import Foundation
 import Vision
 
@@ -36,58 +37,57 @@ public struct ButtonDetector: Sendable {
         in photo: PanelPhoto,
         panel: PanelQuad
     ) async throws -> [(bounds: PanelRect, confidence: Double)] {
-        let image = try photo.cgImage()
+        let sourceImage = try photo.cgImage()
 
-        let request = VNDetectRectanglesRequest()
-        request.maximumObservations = 30
-        request.minimumSize = 0.03
-        request.minimumConfidence = 0.5
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
+        // A quad that covers only the display straightens into big digit
+        // shapes that look like keys. Digits are small in the whole photo, so
+        // if a search of the whole photo finds nothing key-sized inside the
+        // quad, return nothing and let the caller fall back to the whole photo.
+        if panel != .fullFrame, try !hasBox(in: sourceImage, inside: panel) {
+            return []
+        }
 
-        try VNImageRequestHandler(
-            cgImage: image,
-            options: [:]
-        ).perform([request])
+        let image = try panel == .fullFrame
+            ? sourceImage
+            : straighten(sourceImage, panel: panel)
 
-        let observations = request.results ?? []
-        let detector = PanelDetector()
+        let observations = try rectangles(in: image)
 
         var results: [(bounds: PanelRect, confidence: Double)] = []
 
         for observation in observations {
-            let corners = [
-                observation.topLeft,
-                observation.topRight,
-                observation.bottomRight,
-                observation.bottomLeft
-            ].map {
-                return detector.rectify(
-                    ImagePoint(
-                        x: Double($0.x),
-                        y: 1.0 - Double($0.y)
-                    ),
-                    within: panel
+            let bounds: PanelRect
+            if panel == .fullFrame {
+                let corners = [
+                    observation.topLeft,
+                    observation.topRight,
+                    observation.bottomRight,
+                    observation.bottomLeft
+                ]
+                let minX = corners.map(\.x).min()!
+                let maxX = corners.map(\.x).max()!
+                let minY = corners.map { 1.0 - $0.y }.min()!
+                let maxY = corners.map { 1.0 - $0.y }.max()!
+                bounds = PanelRect(
+                    x: Double(minX),
+                    y: Double(minY),
+                    width: Double(maxX - minX),
+                    height: Double(maxY - minY)
+                )
+            } else {
+                bounds = PanelRect(
+                    x: Double(observation.boundingBox.minX),
+                    y: 1.0 - Double(observation.boundingBox.maxY),
+                    width: Double(observation.boundingBox.width),
+                    height: Double(observation.boundingBox.height)
                 )
             }
-
-            let minX = corners.map(\.x).min()!
-            let maxX = corners.map(\.x).max()!
-            let minY = corners.map(\.y).min()!
-            let maxY = corners.map(\.y).max()!
-
-            let bounds = PanelRect(
-                x: minX,
-                y: minY,
-                width: maxX - minX,
-                height: maxY - minY
-            )
 
             // ignore if rectangles are too large (more than half of panel)
             if bounds.width > 0.5 || bounds.height > 0.5 {
                 continue
             }
-            
+
             // ignore if centers are outside the panel
             if !bounds.center.isOnPanel {
                 continue
@@ -102,6 +102,69 @@ public struct ButtonDetector: Sendable {
         }
         return removeOverlappingBoxes(results)
     }
+}
+
+private func rectangles(in image: CGImage) throws -> [VNRectangleObservation] {
+    let request = VNDetectRectanglesRequest()
+    request.maximumObservations = 30
+    request.minimumSize = 0.03
+    request.minimumConfidence = 0.5
+    request.minimumAspectRatio = 0.3
+    request.maximumAspectRatio = 1.0
+
+    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+
+    return request.results ?? []
+}
+
+/// Whether a whole-photo search finds a box centred on `panel` and no bigger
+/// than half of it.
+private func hasBox(in image: CGImage, inside panel: PanelQuad) throws -> Bool {
+    let detector = PanelDetector()
+    return try rectangles(in: image).contains { observation in
+        let corners = [
+            observation.topLeft,
+            observation.topRight,
+            observation.bottomRight,
+            observation.bottomLeft
+        ].map {
+            detector.rectify(ImagePoint(x: Double($0.x), y: 1.0 - Double($0.y)), within: panel)
+        }
+        let minX = corners.map(\.x).min()!
+        let maxX = corners.map(\.x).max()!
+        let minY = corners.map(\.y).min()!
+        let maxY = corners.map(\.y).max()!
+        let bounds = PanelRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+        return bounds.width <= 0.5 && bounds.height <= 0.5 && bounds.center.isOnPanel
+    }
+}
+
+private func straighten(_ image: CGImage, panel: PanelQuad) throws -> CGImage {
+    let input = CIImage(cgImage: image)
+    guard let filter = CIFilter(name: "CIPerspectiveCorrection") else {
+        throw SurfaceUnderstandingError.underlying("Perspective correction is unavailable")
+    }
+
+    let width = CGFloat(image.width)
+    let height = CGFloat(image.height)
+    func vector(_ point: ImagePoint) -> CIVector {
+        CIVector(x: CGFloat(point.x) * width, y: (1 - CGFloat(point.y)) * height)
+    }
+
+    filter.setValue(input, forKey: kCIInputImageKey)
+    filter.setValue(vector(panel.topLeft), forKey: "inputTopLeft")
+    filter.setValue(vector(panel.topRight), forKey: "inputTopRight")
+    filter.setValue(vector(panel.bottomRight), forKey: "inputBottomRight")
+    filter.setValue(vector(panel.bottomLeft), forKey: "inputBottomLeft")
+
+    guard
+        let output = filter.outputImage,
+        let corrected = CIContext(options: [.useSoftwareRenderer: true])
+            .createCGImage(output, from: output.extent)
+    else {
+        throw SurfaceUnderstandingError.underlying("Perspective correction failed")
+    }
+    return corrected
 }
 
 /// Removes nested boxes and trims remaining overlaps so each button is reported once.
@@ -341,110 +404,3 @@ private func overlapRatio(
     }
     return intersectionArea / smallerArea
 }
-
-
-// Plan (B) - Foundation Models, still in progress
-
-//import FoundationModels
-//import CoreGraphics
-//import ImageIO
-//
-//@Generable
-//struct ButtonResult {
-//    @Guide(description: "Text written on the button, or nil if there is no readable text.")
-//    var label: String?
-//
-//    @Guide(description: "Four normalized numbers [minX, minY, maxX, maxY]. 0,0 is top-left and 1,1 is bottom-right.")
-//    var bounds: [Double]
-//
-//    @Guide(description: "Confidence from 0 to 1 that this is actually a button.")
-//    var confidence: Double
-//}
-//
-//@Generable
-//struct ButtonResults {
-//    @Guide(description: "Every physical button visible on the appliance control panel.")
-//    var buttons: [ButtonResult]
-//}
-//
-///// Stage 2 — find the controls.
-//public struct ButtonDetector: Sendable {
-//
-//    public init() {}
-//
-//    /// Find control-shaped regions on the rectified panel.
-//    ///
-//    /// Returns bounds and per-region confidence only — labels come later, from
-//    /// `LabelReader`. A region you are unsure about should be returned with low
-//    /// confidence rather than dropped; the caller decides the threshold.
-//    ///
-//    /// Bounds must not overlap. `ContourMocks` asserts that about its canned
-//    /// map and the app assumes it when hit-testing.
-//    public func detectButtons(
-//        in photo: PanelPhoto,
-//        panel: PanelQuad
-//    ) async throws -> [(bounds: PanelRect, confidence: Double)] {
-//        guard
-//            let source = CGImageSourceCreateWithData(
-//                photo.data as CFData,
-//                nil
-//            ),
-//            let image = CGImageSourceCreateImageAtIndex(
-//                source,
-//                0,
-//                nil
-//            )
-//        else {
-//            throw NSError(
-//                domain: "ButtonDetector",
-//                code: 1,
-//                userInfo: [
-//                    NSLocalizedDescriptionKey: "Could not decode panel image"
-//                ]
-//            )
-//        }
-//
-//        let session = LanguageModelSession()
-//
-//        let response = try await session.respond(
-//            generating: ButtonResults.self
-//        ) {
-//            "List every physical button in this appliance panel."
-//            "For each button, return its readable label if there is one."
-//            "Bounds: [minX, minY, maxX, maxY], normalized 0 to 1."
-//            "(0,0) is top-left; (1,1) is bottom-right."
-//
-//            Attachment(image)
-//        }
-//        
-//        // validate model response + convert to what we want to return
-//        return response.content.buttons.compactMap { button in
-//            guard button.bounds.count == 4 else {
-//                return nil
-//            }
-//
-//            // make sure btwn [0,1]
-//            let minX = min(max(button.bounds[0], 0), 1)
-//            let minY = min(max(button.bounds[1], 0), 1)
-//            let maxX = min(max(button.bounds[2], 0), 1)
-//            let maxY = min(max(button.bounds[3], 0), 1)
-//
-//            // make sure is valid rectangle
-//            guard minX < maxX, minY < maxY else {
-//                return nil
-//            }
-//
-//            let rect = PanelRect(
-//                x: minX,
-//                y: minY,
-//                width: maxX - minX,
-//                height: maxY - minY
-//            )
-//
-//            return (
-//                bounds: rect,
-//                confidence: button.confidence
-//            )
-//        }
-//    }
-//}
