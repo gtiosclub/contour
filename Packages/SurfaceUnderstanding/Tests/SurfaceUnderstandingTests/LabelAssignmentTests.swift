@@ -77,6 +77,20 @@ func stackedWordBoxesBecomeOneTextLabel() {
     #expect(LabelReader.textButtons(from: result.unused).map(\.label) == ["Time Cook"])
 }
 
+@Test("stacked Popcorn and Beverage boxes stay separate")
+func stackedUnrelatedWordBoxesStaySeparate() {
+    let popcornBox = PanelRect(x: 0.10, y: 0.50, width: 0.08, height: 0.03)
+    let beverageBox = PanelRect(x: 0.11, y: 0.535, width: 0.06, height: 0.03)
+    let popcorn = word("Popcorn", x: 0.10, y: 0.50, width: 0.08)
+    let beverage = word("Beverage", x: 0.11, y: 0.535, width: 0.06)
+
+    let result = LabelReader.assign([popcorn, beverage], to: [popcornBox, beverageBox])
+
+    #expect(result.labels == ["Popcorn", "Beverage"])
+    #expect(result.frames.isEmpty)
+    #expect(result.unused.isEmpty)
+}
+
 @Test("words on one line with small gaps are one label")
 func oneLineIsOneLabel() {
     let words = [word("Add", x: 0.10, y: 0.5, width: 0.04), word("30", x: 0.15, y: 0.5, width: 0.03),

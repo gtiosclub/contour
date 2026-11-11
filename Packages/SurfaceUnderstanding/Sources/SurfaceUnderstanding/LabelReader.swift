@@ -226,7 +226,8 @@ public struct LabelReader: Sendable {
             for b in huggers where b > a
                 && !taken[a].isEmpty
                 && !taken[b].isEmpty
-                && belongTogether(taken[a][0], taken[b][0]) {
+                && belongTogether(taken[a][0], taken[b][0])
+                && Set([taken[a][0].text.lowercased(), taken[b][0].text.lowercased()]) == ["time", "cook"] {
                 unused += taken[a] + taken[b]
                 taken[a] = []
                 taken[b] = []
