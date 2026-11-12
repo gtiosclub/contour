@@ -130,7 +130,10 @@ final class TrackingDebugModel {
                 let pair = AsyncStream<LiveTrackingSample>.makeStream(bufferingPolicy: .bufferingNewest(1))
                 let source = try sessionFactory(camera, method, options, { pair.continuation.yield($0) })
                 await source.use(reference)
-                guard !Task.isCancelled, referenceGeneration == session else { return }
+                guard !Task.isCancelled, referenceGeneration == session else {
+                    await source.stop()
+                    return
+                }
                 let drive = Task {
                     for await _ in source.frames() {
                         if Task.isCancelled { break }
@@ -182,6 +185,7 @@ final class TrackingDebugModel {
                 } onCancel: { drive.cancel() }
                 drive.cancel()
                 await drive.value
+                await source.stop()
             } else {
                 var lastDisplay: ContinuousClock.Instant?
                 for await frame in await camera.cameraFrames() {

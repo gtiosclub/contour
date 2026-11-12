@@ -11,6 +11,23 @@ public struct HybridTrackingDiagnostics: Hashable, Sendable {
         case visual = "2D only", calibrating = "Calibrating", corrected = "2D + 3D"
         case predicted = "3D prediction", reacquiring = "Reacquiring"
     }
+    /// This frame's plane evidence. Nil fitting count means selection was not
+    /// attempted (for example, weak visual evidence or retained calibration).
+    public struct SurfaceSelection: Hashable, Sendable {
+        public var detectedPlaneCount: Int
+        public var fittingPlaneCount: Int?
+        /// Each rejected plane contributes its first failing geometry check.
+        public var rejections: [WorldGeometryError: Int]
+
+        public init(detectedPlaneCount: Int, fittingPlaneCount: Int? = nil,
+                    rejections: [WorldGeometryError: Int] = [:]) {
+            self.detectedPlaneCount = detectedPlaneCount
+            self.fittingPlaneCount = fittingPlaneCount
+            self.rejections = rejections
+        }
+    }
+
+    public var surfaceSelection: SurfaceSelection? = nil
     public let mode: Mode
     public let message: String
     public let calibrationFrames: Int
@@ -38,8 +55,10 @@ public struct HybridTrackingDiagnostics: Hashable, Sendable {
         alignmentError: Double? = nil,
         cornerError: Double? = nil,
         baselineCentimeters: Double = 0,
-        visualVerificationAge: TimeInterval? = nil
+        visualVerificationAge: TimeInterval? = nil,
+        surfaceSelection: SurfaceSelection? = nil
     ) {
+        self.surfaceSelection = surfaceSelection
         self.mode = mode
         self.message = message
         self.calibrationFrames = calibrationFrames

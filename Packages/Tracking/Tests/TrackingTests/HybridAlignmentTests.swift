@@ -421,3 +421,106 @@ func briefCandidateDisagreementHoldsProgress() throws {
     }
     #expect(alignment.isCalibrated)
 }
+
+
+@Test("Diverging rays cannot verify an intersection behind the cameras")
+func divergingRaysDoNotVerifyDepth() {
+    let left = WorldRay(origin: SIMD3(-0.1, 0, 0), direction: simd_normalize(SIMD3(-0.1, 0, -1)))
+    let right = WorldRay(origin: SIMD3(0.1, 0, 0), direction: simd_normalize(SIMD3(0.1, 0, -1)))
+    #expect(HybridAlignment.closestApproach(left, right) == nil)
+}
+
+@Test("A wrong-depth view is discarded rather than counted for feature persistence")
+func rejectedDepthIsNotAnAcceptedView() throws {
+    var alignment = HybridAlignment()
+    var rejected = false
+    for i in 0..<10 {
+        let snapshot = camera(at: sideways * Float(i), planes: [surface(at: 0.65)])
+        _ = alignment.update(visual: try seen(from: snapshot, at: Double(i) * 0.15), world: snapshot)
+        if alignment.didReset {
+            rejected = true
+            #expect(!alignment.acceptedCalibrationView)
+        }
+    }
+    #expect(rejected)
+}
+
+
+@Test("Missing AR planes and incomplete plane coverage report different next steps")
+func surfaceSelectionExplainsMissingCoverage() throws {
+    var alignment = HybridAlignment()
+    let missing = camera(at: .zero, planes: [])
+    let waiting = alignment.update(visual: try seen(from: missing, at: 0), world: missing)
+    #expect(waiting.hybridDiagnostics?.message.contains("detected") == true)
+    #expect(waiting.hybridDiagnostics?.calibrationFrames == 0)
+    let small = camera(at: .zero, planes: [surface(at: 0.5, extent: SIMD2(0.05, 0.05))])
+    let incomplete = alignment.update(visual: try seen(from: small, at: 1), world: small)
+    #expect(incomplete.hybridDiagnostics?.message.contains("cover") == true)
+    #expect(incomplete.hybridDiagnostics?.calibrationFrames == 0)
+    #expect(!alignment.isCalibrated)
+}
+
+
+@Test("Surface diagnostics count each rejected plane and clear when world data disappears")
+func surfaceSelectionCountsAndClears() throws {
+    var alignment = HybridAlignment()
+    let snapshot = camera(at: .zero, planes: [
+        surface(at: 0.5, extent: SIMD2(0.05, 0.05)), surface(at: 4), surface(at: 0.5)
+    ])
+    let visual = try seen(from: snapshot, at: 0)
+    let result = alignment.update(visual: visual, world: snapshot)
+    let evidence = try #require(result.hybridDiagnostics?.surfaceSelection)
+    #expect(evidence.detectedPlaneCount == 3)
+    #expect(evidence.fittingPlaneCount == 1)
+    #expect(evidence.rejections[.outsidePlaneExtent] == 1)
+    #expect(evidence.rejections[.distanceOutOfRange] == 1)
+    #expect(alignment.acceptedCalibrationView)
+    let withoutWorld = alignment.update(visual: visual, world: nil)
+    #expect(withoutWorld.hybridDiagnostics?.surfaceSelection == nil)
+    let weak = camera(at: .zero, planes: [])
+    let held = alignment.update(visual: try seen(from: weak, at: 1, confidence: 0.4), world: weak)
+    #expect(held.hybridDiagnostics?.surfaceSelection?.detectedPlaneCount == 0)
+    #expect(held.hybridDiagnostics?.surfaceSelection?.fittingPlaneCount == nil)
+}
+
+
+@Test("New plane coverage unblocks calibration after repeated zero-view frames")
+func growingPlaneCoverageUnblocksCalibration() throws {
+    var alignment = HybridAlignment()
+    for i in 0..<5 {
+        let snapshot = camera(at: sideways * Float(i), planes: i == 0 ? [] : [surface(at: 0.5, extent: SIMD2(0.05, 0.05))])
+        let result = alignment.update(visual: try seen(from: snapshot, at: Double(i) * 0.15), world: snapshot)
+        #expect(result.hybridDiagnostics?.calibrationFrames == 0)
+        #expect(!alignment.acceptedCalibrationView)
+    }
+    for i in 5..<17 {
+        let snapshot = camera(at: sideways * Float(i), planes: [surface(at: 0.5)])
+        _ = alignment.update(visual: try seen(from: snapshot, at: Double(i) * 0.15), world: snapshot)
+    }
+    #expect(alignment.isCalibrated)
+    #expect(alignment.model?.acceptedViews ?? 0 >= 8)
+}
+
+@Test("Forward converging rays still triangulate the observed surface")
+func forwardRaysVerifyDepth() throws {
+    let left = WorldRay(origin: SIMD3(-0.1, 0, 0), direction: simd_normalize(SIMD3(0.1, 0, -1)))
+    let right = WorldRay(origin: SIMD3(0.1, 0, 0), direction: simd_normalize(SIMD3(-0.1, 0, -1)))
+    let meeting = try #require(HybridAlignment.closestApproach(left, right))
+    #expect(simd_distance(meeting.point, SIMD3(0, 0, -1)) < 1e-10)
+    #expect(meeting.separation < 1e-10)
+}
+
+
+@Test("Frames without a new visual comparison cannot display an older alignment error")
+func alignmentErrorsBelongToCurrentFrame() throws {
+    var alignment = HybridAlignment()
+    let views = try walk(&alignment, steps: 4, step: sideways, planes: [surface(at: 0.5)])
+    #expect(views.last?.hybridDiagnostics?.alignmentError != nil)
+    let snapshot = camera(at: sideways * 4, planes: [surface(at: 0.5)])
+    let held = alignment.update(visual: try seen(from: snapshot, at: 1, confidence: 0.4), world: snapshot)
+    #expect(held.hybridDiagnostics?.alignmentError == nil)
+    #expect(held.hybridDiagnostics?.cornerError == nil)
+    let reset = alignment.update(visual: try seen(from: snapshot, at: 2), world: nil)
+    #expect(reset.hybridDiagnostics?.alignmentError == nil)
+    #expect(reset.hybridDiagnostics?.cornerError == nil)
+}
