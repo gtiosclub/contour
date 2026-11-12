@@ -9,6 +9,7 @@ import UniformTypeIdentifiers
 /// step through each tracker's result on the exact input image.
 struct PhotoReplayView: View {
     @State private var controller = PhotoReplayController()
+    @State private var imports = ReplayImports()
     @State private var unmarkedReference: PanelPhoto?
     @State private var referenceItem: PhotosPickerItem?
     @State private var photoItems: [PhotosPickerItem] = []
@@ -39,6 +40,10 @@ struct PhotoReplayView: View {
                 Button("Replay from the first photo") { controller.replay() }
                     .disabled(controller.reference == nil || controller.photos.isEmpty)
                 Button("Reset everything", role: .destructive) {
+                    // A slow Photos import mustn't land after the reset.
+                    imports.cancelAll()
+                    referenceItem = nil
+                    photoItems = []
                     controller.reset()
                     unmarkedReference = nil
                     importError = nil
@@ -51,8 +56,14 @@ struct PhotoReplayView: View {
         .navigationTitle("Tracking photo replay")
         .onChange(of: excludeHighlights) { applyOptions() }
         .onChange(of: normalizeContrast) { applyOptions() }
-        .onChange(of: referenceItem) { _, item in Task { await loadReference(item) } }
-        .onChange(of: photoItems) { _, items in Task { await loadPhotos(items) } }
+        .onChange(of: referenceItem) { _, item in
+            guard let item else { return }
+            imports.start(.reference) { token in await loadReference(item, token) }
+        }
+        .onChange(of: photoItems) { _, items in
+            guard !items.isEmpty else { return }
+            imports.start(.photos) { token in await loadPhotos(items, token) }
+        }
         .fileImporter(isPresented: $importingReference, allowedContentTypes: [.image]) { result in
             if case .success(let url) = result { importReference(url) }
             if case .failure(let error) = result { importError = error.localizedDescription }
@@ -72,7 +83,10 @@ struct PhotoReplayView: View {
                 }
             }
         }
-        .onDisappear { controller.retire() }
+        .onDisappear {
+            imports.cancelAll()
+            controller.retire()
+        }
     }
 
     private var referenceSection: some View {
@@ -93,7 +107,8 @@ struct PhotoReplayView: View {
             ForEach(Array(controller.photos.enumerated()), id: \.element.id) { index, photo in
                 Text("\(index + 1). \(photo.name)")
             }
-            PhotosPicker("Choose from Photos", selection: $photoItems, matching: .images)
+            PhotosPicker("Choose from Photos", selection: $photoItems, selectionBehavior: .ordered,
+                         matching: .images)
             Button("Choose from Files") { importingPhotos = true }
             Text("Photos picker keeps your selection order. Files are replayed in name order.")
                 .font(.caption).foregroundStyle(.secondary)
@@ -108,6 +123,8 @@ struct PhotoReplayView: View {
     }
 
     private func loadExample() {
+        imports.begin(.reference)
+        imports.begin(.photos)
         importError = nil
         do {
             let reference = ReplayExample.reference()
@@ -123,21 +140,25 @@ struct PhotoReplayView: View {
         }
     }
 
-    private func loadReference(_ item: PhotosPickerItem?) async {
-        guard let item else { return }
+    /// Applies its result only if no newer reference was chosen and nothing
+    /// was reset meanwhile, so a slow import can't reopen the marking sheet.
+    private func loadReference(_ item: PhotosPickerItem, _ token: ReplayImports.Token) async {
         importError = nil
         do {
             guard let data = try await item.loadTransferable(type: Data.self) else {
                 throw ReplayImageLoader.LoadError.unreadable("The selected photo")
             }
-            unmarkedReference = try ReplayImageLoader.referencePhoto(from: data, name: "The selected photo")
+            let photo = try ReplayImageLoader.referencePhoto(from: data, name: "The selected photo")
+            guard imports.isCurrent(token) else { return }
+            unmarkedReference = photo
         } catch {
+            guard imports.isCurrent(token) else { return }
             importError = error.localizedDescription
         }
     }
 
-    private func loadPhotos(_ items: [PhotosPickerItem]) async {
-        guard !items.isEmpty else { return }
+    /// Applies its photos only if they're still the newest choice.
+    private func loadPhotos(_ items: [PhotosPickerItem], _ token: ReplayImports.Token) async {
         importError = nil
         var photos: [PhotoReplayController.Photo] = []
         do {
@@ -147,14 +168,18 @@ struct PhotoReplayView: View {
                     throw ReplayImageLoader.LoadError.unreadable(name)
                 }
                 photos.append(.init(name: name, frame: try ReplayImageLoader.frame(from: data, name: name, index: index)))
+                guard imports.isCurrent(token) else { return }
             }
+            guard imports.isCurrent(token) else { return }
             controller.setPhotos(photos)
         } catch {
+            guard imports.isCurrent(token) else { return }
             importError = error.localizedDescription
         }
     }
 
     private func importReference(_ url: URL) {
+        imports.begin(.reference)
         importError = nil
         do {
             unmarkedReference = try ReplayImageLoader.referencePhoto(from: try read(url), name: url.lastPathComponent)
@@ -164,6 +189,7 @@ struct PhotoReplayView: View {
     }
 
     private func importPhotos(_ urls: [URL]) {
+        imports.begin(.photos)
         importError = nil
         do {
             let ordered = urls.sorted { $0.lastPathComponent.localizedStandardCompare($1.lastPathComponent) == .orderedAscending }

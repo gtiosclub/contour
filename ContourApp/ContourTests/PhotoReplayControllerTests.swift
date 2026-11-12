@@ -149,6 +149,41 @@ struct PhotoReplayControllerTests {
         #expect(controller.laneStates == [.vision: .idle, .features: .idle])
     }
 
+    // MARK: Pending imports
+
+    @Test("A newer import supersedes a pending one, which is cancelled and can't apply its result")
+    func newerImportWins() async throws {
+        let imports = ReplayImports()
+        let applied = Applied()
+        let gate = Gate()
+        imports.start(.photos) { token in
+            await gate.wait()
+            if imports.isCurrent(token) { applied.values.append("old") }
+            applied.cancelled = Task.isCancelled
+        }
+        let newer = imports.begin(.photos)
+        #expect(imports.isCurrent(newer))
+        await gate.open()
+        try await waitUntil { applied.cancelled != nil }
+        #expect(applied.values.isEmpty)
+        #expect(applied.cancelled == true)
+    }
+
+    @Test("Reset invalidates every pending import; kinds are independent")
+    func resetInvalidates() {
+        let imports = ReplayImports()
+        let reference = imports.begin(.reference)
+        let photos = imports.begin(.photos)
+        let laterReference = imports.begin(.reference)
+        #expect(!imports.isCurrent(reference))
+        #expect(imports.isCurrent(photos))
+        #expect(imports.isCurrent(laterReference))
+
+        imports.cancelAll()
+        #expect(!imports.isCurrent(photos))
+        #expect(!imports.isCurrent(laterReference))
+    }
+
     // MARK: Loading
 
     @Test("Import failures are reported, not replayed")
@@ -374,5 +409,25 @@ private func waitUntil(timeout: Duration = .seconds(30), _ condition: @MainActor
 extension PhotoReplayController {
     func waitUntilIdle(timeout: Duration = .seconds(30)) async throws {
         try await waitUntil(timeout: timeout) { !self.isRunning }
+    }
+}
+
+@MainActor
+private final class Applied {
+    var values: [String] = []
+    var cancelled: Bool?
+}
+
+private actor Gate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isOpen = false
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+    func open() {
+        isOpen = true
+        for waiter in waiters { waiter.resume() }
+        waiters = []
     }
 }
