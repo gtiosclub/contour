@@ -15,7 +15,6 @@ import Testing
 struct FingerToButtonAssessmentTests {
 
     private let assessor = FingerToButtonAssessor()
-
     private let timestamp = Date(timeIntervalSince1970: 100)
 
     // MARK: - Fixtures
@@ -86,6 +85,20 @@ struct FingerToButtonAssessmentTests {
         )
     }
 
+    private func quad(
+        topLeft: ImagePoint = ImagePoint(x: 0, y: 0),
+        topRight: ImagePoint = ImagePoint(x: 1, y: 0),
+        bottomRight: ImagePoint = ImagePoint(x: 1, y: 1),
+        bottomLeft: ImagePoint = ImagePoint(x: 0, y: 1)
+    ) -> PanelQuad {
+        PanelQuad(
+            topLeft: topLeft,
+            topRight: topRight,
+            bottomRight: bottomRight,
+            bottomLeft: bottomLeft
+        )
+    }
+
     // MARK: - Valid spatial results
 
     @Test("Fingertip at button center produces zero distance")
@@ -105,12 +118,6 @@ struct FingerToButtonAssessmentTests {
 
     @Test("Known positions produce correct offset and distance")
     func knownPosition() {
-        // Fingertip: (0.2, 0.3)
-        // Button bounds: (0.5, 0.5) to (0.7, 0.7)
-        // Button center: (0.6, 0.6)
-        // Offset: (0.4, 0.3)
-        // Distance: sqrt(0.16 + 0.09) = 0.5
-
         let target = button(
             x: 0.5,
             y: 0.5,
@@ -120,9 +127,9 @@ struct FingerToButtonAssessmentTests {
 
         let result = assess(point(0.2, 0.3), target)
 
-        #expect(abs((result.offset?.dx ?? .nan) - 0.4) < 1e-9)
-        #expect(abs((result.offset?.dy ?? .nan) - 0.3) < 1e-9)
-        #expect(abs((result.distance ?? .nan) - 0.5) < 1e-9)
+        #expect(abs(result.offset!.dx - 0.4) < 0.000001)
+        #expect(abs(result.offset!.dy - 0.3) < 0.000001)
+        #expect(abs(result.distance! - 0.5) < 0.000001)
         #expect(result.containsFingertip == false)
     }
 
@@ -144,7 +151,6 @@ struct FingerToButtonAssessmentTests {
     @Test("Off-panel coordinates are preserved without clamping")
     func offPanelCoordinates() {
         let fingertip = point(1.2, -0.2)
-
         let result = assess(fingertip)
 
         #expect(result.fingertip == fingertip)
@@ -360,6 +366,50 @@ struct FingerToButtonAssessmentTests {
         #expect(result.unavailableReason == .nonFiniteButtonGeometry)
     }
 
+    @Test("Every panel corner rejects non-finite coordinates")
+    func nonFinitePanelCorners() {
+        let invalidQuads = [
+            quad(topLeft: ImagePoint(x: .nan, y: 0)),
+            quad(topRight: ImagePoint(x: 1, y: .infinity)),
+            quad(bottomRight: ImagePoint(x: -.infinity, y: 1)),
+            quad(bottomLeft: ImagePoint(x: 0, y: .nan))
+        ]
+
+        for invalidQuad in invalidQuads {
+            let result = assess(
+                point(),
+                button(),
+                observation: observation(quad: invalidQuad)
+            )
+
+            #expect(result.fingertip == nil)
+            #expect(result.buttonID == nil)
+            #expect(result.offset == nil)
+            #expect(result.distance == nil)
+            #expect(result.containsFingertip == nil)
+            #expect(
+                result.unavailableReason == .nonFinitePanelGeometry
+            )
+        }
+    }
+
+    @Test("Negative infinity in panel corner is rejected")
+    func negativeInfinityPanelCorner() {
+        let invalidQuad = quad(
+            bottomLeft: ImagePoint(x: 0, y: -.infinity)
+        )
+
+        let result = assess(
+            point(),
+            button(),
+            observation: observation(quad: invalidQuad)
+        )
+
+        #expect(result.fingertip == nil)
+        #expect(result.distance == nil)
+        #expect(result.unavailableReason == .nonFinitePanelGeometry)
+    }
+
     // MARK: - Staleness and panel jumps
 
     @Test("Stale observations withhold all spatial values")
@@ -382,6 +432,28 @@ struct FingerToButtonAssessmentTests {
 
     @Test("Degraded stale observations withhold spatial values")
     func degradedStaleObservation() {
+        let result = assess(
+            point(),
+            button(),
+            observation: observation(panelConfidence: 0.45),
+            now: timestamp.addingTimeInterval(0.2)
+        )
+
+        #expect(result.quality == .degraded)
+        #expect(result.qualityReason == .panelConfidenceLow)
+        #expect(result.fingertip == nil)
+        #expect(result.buttonID == nil)
+        #expect(result.offset == nil)
+        #expect(result.distance == nil)
+        #expect(result.containsFingertip == nil)
+        #expect(
+            result.unavailableReason ==
+            .trackingUnavailable(.stale)
+        )
+    }
+
+    @Test("Degraded stale observations withhold spatial values")
+    func degradedStaleObservationFromEvaluator() {
         let result = assess(
             point(),
             button(),
@@ -447,8 +519,8 @@ struct FingerToButtonAssessmentTests {
             height: 0.2
         )
 
-        let fingertip = point(0.2, 0.2)
-
+        let fingertip = point(0.2, 0.1)
+        
         let first = assess(fingertip, left)
         let second = assess(fingertip, right)
 
@@ -456,7 +528,6 @@ struct FingerToButtonAssessmentTests {
         #expect(second.buttonID == rightID)
         #expect(first.offset != second.offset)
         #expect(first.distance != second.distance)
-        #expect(first.offset != second.offset)
     }
 
     @Test("Valid invalid valid never reuses previous spatial values")

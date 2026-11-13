@@ -1,3 +1,4 @@
+
 //
 //  FingerToButtonAssessment.swift
 //  Tracking — Tracking / Spatial Output
@@ -14,6 +15,7 @@ public enum FingerToButtonUnavailableReason: Hashable, Sendable {
     case missingPanel
     case missingFingertip
     case nonFiniteFingertip
+    case nonFinitePanelGeometry
     case nonFiniteConfidence
     case invalidConfidence
     case trackingUnavailable(TrackingQualityReason)
@@ -26,46 +28,27 @@ public enum FingerToButtonUnavailableReason: Hashable, Sendable {
 /// Distance and offset are expressed in normalized panel units.
 /// No spatial values are retained from previous assessments.
 public struct FingerToButtonResult: Hashable, Sendable {
-    /// Original observation capture timestamp.
     public let timestamp: Date
-
-    /// Quality assessment produced by TrackingQualityEvaluator.
     public let assessment: TrackingAssessment
-
-    /// Usable fingertip position in normalized panel space.
     public let fingertip: PanelPoint?
-
-    /// Identity of the selected button, when spatial values are available.
     public let buttonID: UUID?
-
-    /// Vector from fingertip to button center.
     public let offset: PanelVector?
-
-    /// Euclidean distance to button center, in normalized panel units.
     public let distance: Double?
-
-    /// Whether the fingertip is inside the button bounds.
     public let containsFingertip: Bool?
-
-    /// Explicit reason why spatial output is unavailable.
     public let unavailableReason: FingerToButtonUnavailableReason?
 
-    /// Convenience access to tracking quality.
     public var quality: TrackingQuality {
         assessment.quality
     }
 
-    /// Convenience access to the tracking quality reason.
     public var qualityReason: TrackingQualityReason {
         assessment.reason
     }
 
-    /// Whether the fingertip itself is usable.
     public var hasUsableFingertip: Bool {
         fingertip != nil
     }
 
-    /// Whether all button-relative values are available.
     public var hasButtonPosition: Bool {
         buttonID != nil &&
         offset != nil &&
@@ -76,8 +59,16 @@ public struct FingerToButtonResult: Hashable, Sendable {
 
 /// Assesses a panel-space fingertip relative to a selected button.
 ///
-/// This component does not perform detection, coordinate mapping,
-/// reacquisition, smoothing, or target selection.
+/// Spatial output policy:
+/// - Lost tracking never supplies spatial values.
+/// - Missing panel or fingertip never supplies spatial values.
+/// - Non-finite coordinates or confidence are rejected.
+/// - Low fingertip confidence never supplies spatial values.
+/// - Evidence at or beyond staleDegraded never supplies spatial values.
+/// - Degraded panel confidence may supply spatial values when the
+///   fingertip is reliable and the observation is fresh.
+/// - A valid fingertip without a button remains available.
+/// - Off-panel coordinates are preserved without clamping.
 public struct FingerToButtonAssessor: Sendable {
     private let evaluator: TrackingQualityEvaluator
 
@@ -87,25 +78,6 @@ public struct FingerToButtonAssessor: Sendable {
         self.evaluator = TrackingQualityEvaluator(thresholds: thresholds)
     }
 
-    /// Produces a fresh finger-to-button result for one observation.
-    ///
-    /// - Parameters:
-    ///   - fingertip: Current fingertip in normalized panel space.
-    ///   - button: Currently selected button, if any.
-    ///   - observation: Tracking observation for this frame.
-    ///   - previous: Previous observation, used for panel jump detection.
-    ///   - now: Explicit evaluation time used for staleness.
-    ///
-    /// Spatial output policy:
-    /// - Lost tracking never supplies spatial values.
-    /// - Missing panel or fingertip never supplies spatial values.
-    /// - Non-finite coordinates or confidence are rejected.
-    /// - Low fingertip confidence never supplies spatial values.
-    /// - Stale evidence never supplies spatial values.
-    /// - Degraded panel confidence may supply spatial values if the
-    ///   fingertip is reliable and the evaluator accepts the panel.
-    /// - A valid fingertip without a button remains available.
-    /// - Off-panel coordinates are preserved without clamping.
     public func assess(
         fingertip: PanelPoint?,
         button: SurfaceMap.Button?,
@@ -120,16 +92,28 @@ public struct FingerToButtonAssessor: Sendable {
             asOf: now
         )
 
-        // A located panel is mandatory for production panel-space output.
-        guard observation.panelQuad != nil else {
+        guard let quad = observation.panelQuad else {
+            return unavailable(observation, assessment, .missingPanel)
+        }
+
+        // Validate every image-space panel corner.
+        let corners = [
+            quad.topLeft,
+            quad.topRight,
+            quad.bottomRight,
+            quad.bottomLeft
+        ]
+
+        guard corners.allSatisfy({
+            $0.x.isFinite && $0.y.isFinite
+        }) else {
             return unavailable(
                 observation,
                 assessment,
-                .missingPanel
+                .nonFinitePanelGeometry
             )
         }
 
-        // Reject invalid confidence values explicitly.
         if let confidence = observation.fingertipConfidence {
             guard confidence.isFinite else {
                 return unavailable(
@@ -164,7 +148,6 @@ public struct FingerToButtonAssessor: Sendable {
             )
         }
 
-        // Require a current fingertip position.
         guard let fingertip else {
             return unavailable(
                 observation,
@@ -181,9 +164,19 @@ public struct FingerToButtonAssessor: Sendable {
             )
         }
 
-        // The evaluator's good assessment is usable.
-        // Degraded panel confidence is also usable, provided the
-        // fingertip is reliable.
+        // Enforce freshness independently of the evaluator's first
+        // matching quality reason. A degraded panel-confidence result
+        // must not bypass the stale threshold.
+        let age = now.timeIntervalSince(observation.timestamp)
+
+        guard age < evaluator.thresholds.staleDegraded else {
+            return unavailable(
+                observation,
+                assessment,
+                .trackingUnavailable(.stale)
+            )
+        }
+
         let assessmentAllowsSpatialOutput =
             assessment.quality == .good ||
             (
@@ -199,7 +192,6 @@ public struct FingerToButtonAssessor: Sendable {
             )
         }
 
-        // The actual fingertip must meet the evaluator's existing threshold.
         guard let confidence = observation.fingertipConfidence else {
             return unavailable(
                 observation,
@@ -216,7 +208,7 @@ public struct FingerToButtonAssessor: Sendable {
             )
         }
 
-        // A valid fingertip is useful even without a selected button.
+        // A valid fingertip remains useful without a selected button.
         guard let button else {
             return FingerToButtonResult(
                 timestamp: observation.timestamp,
@@ -232,7 +224,6 @@ public struct FingerToButtonAssessor: Sendable {
 
         let bounds = button.bounds
 
-        // Reject malformed or non-finite button geometry.
         guard bounds.origin.x.isFinite,
               bounds.origin.y.isFinite,
               bounds.width.isFinite,
@@ -299,7 +290,6 @@ public struct FingerToButtonAssessor: Sendable {
         )
     }
 
-    /// Creates an unavailable result without retaining spatial values.
     private func unavailable(
         _ observation: TrackingObservation,
         _ assessment: TrackingAssessment,
