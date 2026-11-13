@@ -47,11 +47,18 @@ public struct RequestRouter: Sendable {
         guard let timeCook = TargetMatcher().match("time cook", in: map)?.button else {
             return TaskPlan(steps: [], say: "I can't find Time Cook on this panel. Try scanning again.")
         }
-        // Exact labels, so "1" can't land on a key like Add 1 Min.
-        let digits = time.digits.compactMap { digit in map.buttons.first { $0.label == digit } }
-        guard digits.count == time.digits.count,
-              let start = TargetMatcher().match("start", in: map)?.button else {
-            return TaskPlan(steps: [], say: "I can't find the number keys on this panel. Try scanning again.")
+        // Exact labels, so "1" can't land on a key like Add 1 Min. A digit
+        // found twice is as unsafe as one that's missing.
+        var digits: [SurfaceMap.Button] = []
+        for digit in time.digits {
+            let keys = map.buttons.filter { $0.label == digit }
+            guard keys.count == 1 else {
+                return TaskPlan(steps: [], say: "I can't find the number keys on this panel. Try scanning again.")
+            }
+            digits.append(keys[0])
+        }
+        guard let start = TargetMatcher().match("start", in: map)?.button else {
+            return TaskPlan(steps: [], say: "I can't find Start on this panel. Try scanning again.")
         }
         return TaskPlan(steps: [timeCook] + digits + [start],
                         say: "Press \(timeCook.label ?? "Time Cook"), then \(time.digits.joined(separator: ", ")), then Start.")
@@ -74,9 +81,12 @@ public struct RequestRouter: Sendable {
                                              "list the buttons", "what are the buttons")
     private static let help = phrases("help", "what can i say", "what can i ask", "what do i say")
 
-    /// Words that mean another key, so the request goes to the planner.
-    private static let plannerWords: Set = ["add", "plus", "timer", "clock", "defrost", "popcorn", "power", "delay"]
-
+    private static let plannerWords: Set = [
+        "add", "plus", "timer", "clock", "defrost", "defrosting", "thaw", "popcorn", "power", "delay",
+        "stop", "cancel", "pause", "don't", "dont", "not", "wait", "hold", "hang",
+        "more", "extra", "another", "minus", "off", "am", "pm",
+    ]
+    
     private static let helpSentence =
         "You can ask me to press a button, set a cook time like 2 minutes, read the display, or list the buttons."
 }

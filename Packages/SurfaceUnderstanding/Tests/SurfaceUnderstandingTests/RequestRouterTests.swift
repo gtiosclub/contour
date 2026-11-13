@@ -85,6 +85,23 @@ struct RequestRouterTests {
         #expect(plan.steps.isEmpty)
         #expect(plan.say.contains("number keys"))
     }
+    
+    @Test("a digit on the panel twice gives no steps")
+    func duplicateDigit() async throws {
+        var twice = microwave
+        twice.buttons.append(SurfaceMap.Button(label: "3", bounds: PanelRect(x: 0.9, y: 0.9, width: 0.05, height: 0.05), confidence: 1))
+        let plan = try #require(planOf(await offline.route("a minute and a half", in: twice)))
+        #expect(plan.steps.isEmpty)
+        #expect(plan.say.contains("number keys"))
+    }
+
+    @Test("a missing Start key says Start, not number keys")
+    func missingStart() async throws {
+        let plan = try #require(planOf(await offline.route("2 minutes", in: microwave(without: "Start/Pause"))))
+        #expect(plan.steps.isEmpty)
+        #expect(plan.say.contains("Start"))
+        #expect(!plan.say.contains("number keys"))
+    }
 
     @Test("over 60 minutes gives no steps", arguments: ["cook for 90 minutes", "an hour and a half"])
     func tooLong(said: String) async throws {
@@ -93,13 +110,22 @@ struct RequestRouterTests {
         #expect(plan.say.contains("too long"))
     }
 
-    @Test("add, timer and the rest go to the planner")
-    func plannerWords() async throws {
-        let add = try #require(planOf(await offline.route("add 30 seconds", in: microwave)))
-        #expect(add.steps.compactMap(\.label) == ["Add 30 Sec"])
+    @Test("requests about another key, or about not cooking, go to the planner", arguments: [
+        "set a timer for 5 minutes", "set the clock to 1:30", "defrost for 5 minutes", "popcorn for 2 minutes",
+        "power level 5 for 2 minutes", "delay start by 10 minutes",
+        "don't cook for 2 minutes", "stop after 30 seconds", "wait a minute", "1:30 pm",
+        "cook for 5",
+    ])
+    func plannerWords(said: String) async throws {
+        // Same answer as the planner alone, so it wasn't turned into a cook plan.
+        let routed = try #require(planOf(await offline.route(said, in: microwave)))
+        #expect(routed == (await TaskPlanner(service: nil).plan(said, in: microwave)))
+    }
 
-        let timer = try #require(planOf(await offline.route("set a timer for 5 minutes", in: microwave)))
-        #expect(!timer.steps.contains { $0.label == "Time Cook" })
+    @Test("add 30 seconds still means the Add 30 Sec key")
+    func addThirty() async throws {
+        let plan = try #require(planOf(await offline.route("add 30 seconds", in: microwave)))
+        #expect(plan.steps.compactMap(\.label) == ["Add 30 Sec"])
     }
 
     // MARK: Planner path
