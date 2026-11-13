@@ -115,8 +115,14 @@ public struct TaskPlanner: Sendable {
         )
 
         if let service,
-           let response = await ask(service, body),
-           let plan = checked(response, sent: sent) {
+            let response = await ask(service, body),
+            let plan = checked(response, sent: sent) {
+            // No steps: the matcher may still find the key. If not, keep the
+            // server's sentence; it's better than "I couldn't find that".
+            if plan.steps.isEmpty {
+                let local = fallback(request, in: map)
+                return local.steps.isEmpty ? plan : local
+            }
             return plan
         }
         return fallback(request, in: map)
@@ -164,7 +170,7 @@ public struct TaskPlanner: Sendable {
     }
 
     /// Copied from ButtonLookup.swift lines 28-31. Keep the two in sync.
-    private static let fillers: Set<String> = [
+    static let fillers: Set<String> = [
         "the", "a", "an", "please", "press", "push", "hit", "tap", "button", "to", "i", "want",
         "need", "can", "you", "find", "where", "is", "it", "me", "take", "guide",
     ]
