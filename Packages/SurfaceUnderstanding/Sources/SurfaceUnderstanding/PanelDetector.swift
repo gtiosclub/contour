@@ -125,9 +125,7 @@ public struct PanelDetector: Sendable {
         }
 
         let rectangles = request.results ?? []
-        guard let largest = rectangles.max(by: { area($0) < area($1) }) else {
-            throw SurfaceUnderstandingError.noPanelFound
-        }
+        let largest = rectangles.max(by: { area($0) < area($1) })
 
         // Vision uses bottom-left origin; Contour uses top-left.
         func imagePoint(_ point: CGPoint) -> ImagePoint {
@@ -160,10 +158,22 @@ public struct PanelDetector: Sendable {
             rectangle = candidates.filter { $0.count >= 3 && Double($0.count) >= Double(mostKeys) * 0.9 }
                 .min(by: { $0.area < $1.area })!.rectangle
         } else if keyBoxes.count >= 3 {
-            // The keypad is visible, but its enclosing border may be off-camera.
+            // A wide control strip may have no visible outer border. A display
+            // with smaller controls on both sides still provides a reference.
+            let frame: PixelSize
+            switch photo.orientation {
+            case .up, .down: frame = photo.pixelSize
+            case .left, .right:
+                frame = PixelSize(width: photo.pixelSize.height, height: photo.pixelSize.width)
+            }
+            if let strip = wideControlStrip(keys: keyBoxes.map(panelQuad), frame: frame) {
+                return (strip, 0.6, true, [])
+            }
+            guard largest != nil else { throw SurfaceUnderstandingError.noPanelFound }
             return (.fullFrame, 0.6, false, [])
         } else {
             // Sparse evidence still preserves lone rectangles and simple panels.
+            guard let largest else { throw SurfaceUnderstandingError.noPanelFound }
             rectangle = largest
         }
         let seed = panelQuad(rectangle)
@@ -187,6 +197,127 @@ public struct PanelDetector: Sendable {
         }
         guard isInsidePhoto(refined.quad) else { return (quad, confidence, expanded, refined.warnings) }
         return (refined.quad, refined.confidence, expanded || refined.estimatedAlignment, refined.warnings)
+    }
+
+    /// Recover a control bank around a display: either flanking controls on a
+    /// wide strip or a compact, fully visible bank below it. A lone display or
+    /// loose boxes elsewhere in the photo are insufficient. Normal detected
+    /// panel candidates always take precedence over this fallback.
+    func wideControlStrip(keys: [PanelQuad], frame: PixelSize) -> PanelQuad? {
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        struct Box {
+            let left, top, right, bottom: Double
+            var width: Double { right - left }
+            var height: Double { bottom - top }
+            var area: Double { width * height }
+            var x: Double { (left + right) / 2 }
+            var y: Double { (top + bottom) / 2 }
+        }
+        let boxes = keys.compactMap { quad -> Box? in
+            let p = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+            guard p.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return nil }
+            let box = Box(left: p.map(\.x).min()!, top: p.map(\.y).min()!,
+                          right: p.map(\.x).max()!, bottom: p.map(\.y).max()!)
+            return box.width > 0 && box.height > 0 ? box : nil
+        }
+        // A display or preset key can sit above a tall keypad. Do not infer a
+        // short strip from it when a repeated column continues down the photo.
+        // Require comparable sizes, separate rows and bounded gaps: scattered
+        // logos/handle detections below an oven are not a continuing key bank.
+        func hasContinuingColumn(below anchor: Box) -> Bool {
+            let below = boxes.filter {
+                $0.y > anchor.bottom && $0.x >= anchor.left - anchor.width * 0.25 &&
+                $0.x <= anchor.right + anchor.width * 0.25 &&
+                (0.025...anchor.width * 0.75).contains($0.width) &&
+                (0.008...anchor.height * 0.75).contains($0.height)
+            }
+            for seed in below {
+                let column = below.filter {
+                    abs($0.x - seed.x) <= max($0.width, seed.width) * 0.6 &&
+                    (0.5...2).contains($0.width / seed.width) &&
+                    (0.5...2).contains($0.height / seed.height)
+                }.sorted { $0.y < $1.y }
+                var rows: [Box] = []
+                for box in column {
+                    if let last = rows.last, box.y - last.y > anchor.height * 1.5 {
+                        rows.removeAll(keepingCapacity: true)
+                    }
+                    if let last = rows.last, box.top < last.bottom { continue }
+                    rows.append(box)
+                    if rows.count >= 4, box.y - rows[0].y >= anchor.height * 2,
+                       box.y > anchor.bottom + anchor.height * 2.5 { return true }
+                }
+            }
+            return false
+        }
+        for anchor in boxes.sorted(by: { $0.area > $1.area }) {
+            // Pixel aspect matters for portrait camera frames. Reject large
+            // enclosing doors and tiny text fragments as display anchors.
+            guard anchor.width >= 0.2, (0.025...0.18).contains(anchor.height),
+                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height),
+                  !hasContinuingColumn(below: anchor) else { continue }
+            let nearby = boxes.filter { box in
+                box.area < anchor.area * 0.5 && box.width >= 0.025 && box.height >= 0.008 &&
+                box.x >= anchor.left - anchor.width * 1.2 &&
+                box.x <= anchor.right + anchor.width * 1.2 &&
+                box.y >= anchor.top - anchor.height * 0.4 &&
+                box.y <= anchor.bottom + anchor.height * 0.75
+            }
+            // Do not count nested detections of the same key as separate support.
+            let controls = nearby.filter { box in
+                !nearby.contains { other in
+                    other.area > box.area && other.left <= box.left && other.right >= box.right &&
+                    other.top <= box.top && other.bottom >= box.bottom
+                }
+            }
+            guard controls.count >= 3,
+                  controls.contains(where: { $0.x < anchor.left }),
+                  controls.contains(where: { $0.x > anchor.right }) else { continue }
+            let group = controls + [anchor]
+            // Small padding includes the surrounding printed captions. Clamp
+            // even the padding strictly to the photo for rectangle tracking.
+            let padding = 0.015
+            let left = max(0, group.map(\.left).min()! - padding)
+            let top = max(0, group.map(\.top).min()! - padding)
+            let right = min(1, group.map(\.right).max()! + padding)
+            let bottom = min(1, group.map(\.bottom).max()! + padding)
+            guard right > left, bottom > top,
+                  (right - left) * Double(frame.width) >= 1.4 * (bottom - top) * Double(frame.height) else { continue }
+            return PanelQuad(topLeft: ImagePoint(x: left, y: top), topRight: ImagePoint(x: right, y: top),
+                             bottomRight: ImagePoint(x: right, y: bottom), bottomLeft: ImagePoint(x: left, y: bottom))
+        }
+        // Some laundry panels put the whole key bank below a smaller display.
+        // Require a compact, fully visible bank with at least five independent
+        // controls spread in both axes. Do not extrapolate a cropped keypad.
+        for anchor in boxes.sorted(by: { $0.area > $1.area }) {
+            guard (0.15...0.35).contains(anchor.width), (0.025...0.12).contains(anchor.height),
+                  anchor.width * Double(frame.width) >= 1.4 * anchor.height * Double(frame.height),
+                  !hasContinuingColumn(below: anchor) else { continue }
+            let nearby = boxes.filter { box in
+                box.area < anchor.area * 0.5 && box.width >= 0.025 && box.height >= 0.008 &&
+                box.x >= anchor.left - anchor.width * 0.65 && box.x <= anchor.right + anchor.width * 0.65 &&
+                box.y >= anchor.bottom && box.y <= anchor.bottom + anchor.height * 3
+            }
+            let controls = nearby.filter { box in
+                !nearby.contains { other in
+                    other.area > box.area && other.left <= box.left && other.right >= box.right &&
+                    other.top <= box.top && other.bottom >= box.bottom
+                }
+            }
+            guard controls.count >= 5,
+                  controls.map(\.x).max()! - controls.map(\.x).min()! > anchor.width * 0.7,
+                  controls.map(\.y).max()! - controls.map(\.y).min()! > anchor.height else { continue }
+            let group = controls + [anchor]
+            let left = group.map(\.left).min()! - 0.015
+            let top = group.map(\.top).min()! - 0.015
+            let right = group.map(\.right).max()! + 0.015
+            let bottom = group.map(\.bottom).max()! + 0.015
+            guard left >= 0.02, top >= 0.02, right <= 0.98, bottom <= 0.98,
+                  right - left <= 0.65, bottom - top <= 0.3 else { continue }
+            return PanelQuad(topLeft: ImagePoint(x: left, y: top), topRight: ImagePoint(x: right, y: top),
+                             bottomRight: ImagePoint(x: right, y: bottom), bottomLeft: ImagePoint(x: left, y: bottom))
+        }
+        return nil
     }
 
     /// How far a corner may sit outside the photo. Vision's rectangle tracker
