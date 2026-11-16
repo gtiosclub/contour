@@ -39,7 +39,7 @@ struct GuidancePhaseTests {
     private func expectAgreement(_ pipeline: ContourPipeline, _ feedback: PhaseFeedback,
                                  sourceLocation: SourceLocation = #_sourceLocation) async {
         let last = await feedback.received.last
-        #expect(last.map(GuidancePhase.init) == pipeline.guidancePhase, sourceLocation: sourceLocation)
+        #expect(last.map { GuidancePhase($0) } == pipeline.guidancePhase, sourceLocation: sourceLocation)
     }
 
     @Test("No session has run, then a frame away from the target is guiding")
@@ -98,6 +98,65 @@ struct GuidancePhaseTests {
         await expectAgreement(pipeline, feedback)
     }
 
+    @Test("Slipping off the target mid-hold returns to guiding and the hold starts over")
+    func holdCancellation() async {
+        let source = PhaseFrames()
+        let feedback = PhaseFeedback()
+        let clock = PhaseTestClock()
+        let pipeline = makePipeline(source, feedback, clock: clock)
+        let guiding = Task { await pipeline.guide(to: target) }
+        await source.waitForSubscriptions(1)
+        var presented = 0
+        func step(_ ms: Int, _ frame: TrackingFrame) async {
+            clock.offset = .milliseconds(ms)
+            presented += 1
+            await send(frame, to: source, feedback: feedback, expecting: presented)
+        }
+        for ms in stride(from: 0, through: 1000, by: 100) { await step(ms, targetFrame) }
+        #expect(pipeline.guidancePhase == .holding)
+        await step(1100, awayFrame)
+        #expect(pipeline.guidancePhase == .guiding, "Leaving the target cancels the pending hold")
+        // 1.2 s back on target is not enough: the earlier second does not count.
+        for ms in stride(from: 1200, through: 2400, by: 100) {
+            await step(ms, targetFrame)
+            #expect(pipeline.guidancePhase == .holding)
+        }
+        #expect(!pipeline.guidanceArrived)
+        await step(2500, targetFrame)
+        await guiding.value
+        #expect(pipeline.guidancePhase == .arrived)
+        #expect(await feedback.received.filter { $0.outcome == .arrived }.count == 1)
+    }
+
+    @Test("Try again after an ended session guides to the same button")
+    func retryAfterStopped() async throws {
+        var tick = 0
+        let epoch = ContinuousClock.now
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: RetryFrames(arrival: (0..<14).map { _ in targetFrame }),
+            feedback: PhaseFeedback(), liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+        let start = try #require(model.map?.button(labelled: "Start"))
+        model.choose(start)
+        await model.waitForWork()
+        #expect(pipeline.guidancePhase == .stopped)
+        let phase = try #require(pipeline.guidancePhase)
+        #expect(GuidanceScreenContent(phase: phase, targetLabel: "Start").actions.first == .retry)
+        // What the card's Try again button does.
+        let retryTarget = try #require(model.guidanceTarget)
+        #expect(retryTarget.id == start.id)
+        model.choose(retryTarget)
+        await model.waitForWork()
+        #expect(pipeline.guidanceArrived)
+        #expect(pipeline.guidancePhase == .arrived)
+    }
+
     @Test("Loss is searching, then lost once announced, then guiding again on recovery")
     func lossAndRecovery() async {
         let source = PhaseFrames()
@@ -130,6 +189,42 @@ struct GuidancePhaseTests {
         source.finish()
         await guiding.value
         #expect(pipeline.guidancePhase == .stopped)
+    }
+
+    @Test("A tracked panel with no fingertip is finding the finger, not searching")
+    func missingFinger() async {
+        let source = PhaseFrames()
+        let feedback = PhaseFeedback()
+        let clock = PhaseTestClock()
+        let pipeline = makePipeline(source, feedback, clock: clock)
+        let guiding = Task { await pipeline.guide(to: target) }
+        await source.waitForSubscriptions(1)
+        await send(awayFrame, to: source, feedback: feedback, expecting: 1)
+        clock.offset = .milliseconds(100)
+        let noFinger = TrackingFrame(timestamp: Date(), fingertip: nil, panel: awayFrame.panel, trackingQuality: .good)
+        await send(noFinger, to: source, feedback: feedback, expecting: 2)
+        #expect(pipeline.guidancePhase == .findingFinger)
+        #expect(await feedback.received.last?.vector == nil, "Feedback still gets the same empty state")
+        clock.offset = .milliseconds(200)
+        await send(awayFrame, to: source, feedback: feedback, expecting: 3)
+        #expect(pipeline.guidancePhase == .guiding)
+        clock.offset = .milliseconds(300)
+        await send(.lost(at: Date()), to: source, feedback: feedback, expecting: 4)
+        #expect(pipeline.guidancePhase == .searching, "A lost panel is still searching")
+        source.finish()
+        await guiding.value
+    }
+
+    @Test("Only brief gaps and slipping off the target wait before showing")
+    func settleRule() {
+        typealias Settle = SettledGuidanceStateView
+        #expect(Settle.settleDelay(from: .guiding, to: .findingFinger) != nil)
+        #expect(Settle.settleDelay(from: .guiding, to: .searching) != nil)
+        #expect(Settle.settleDelay(from: .holding, to: .guiding) != nil)
+        #expect(Settle.settleDelay(from: .findingFinger, to: .guiding) == nil)
+        #expect(Settle.settleDelay(from: .guiding, to: .holding) == nil)
+        #expect(Settle.settleDelay(from: .guiding, to: .lostTracking) == nil)
+        #expect(Settle.settleDelay(from: .holding, to: .arrived) == nil)
     }
 
     @Test("Stopping mid-session clears the phase and later frames cannot restore it")
@@ -178,8 +273,8 @@ struct GuidancePhaseTests {
         await second.value
     }
 
-    @Test("A registration failure shows why guidance cannot start")
-    func registrationFailure() async throws {
+    @Test("A registration failure ends guidance with a plain next step")
+    func registrationFailure() async {
         let session = FailingRegistrationSession()
         let feedback = PhaseFeedback()
         let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
@@ -187,12 +282,26 @@ struct GuidancePhaseTests {
         let guiding = Task { await pipeline.guide(to: target) }
         await session.waitForSubscription()
         session.send(awayFrame)
-        await feedback.waitForCount(1)
-        let message = try #require(pipeline.trackingError)
-        #expect(pipeline.guidancePhase == .cannotStart(message))
-        session.finish()
+        // The session ends by itself; the stream is never finished.
         await guiding.value
-        #expect(pipeline.guidancePhase == .stopped)
+        #expect(pipeline.guidancePhase == .cannotLockOn, "Not replaced by stopped")
+        let content = GuidanceScreenContent(phase: .cannotLockOn, targetLabel: "Start")
+        #expect(!content.message.contains("Vision"), "No developer wording on screen")
+        #expect(content.actions.first == .scanAgain)
+        // No guidance reached feedback; only the closing silence did.
+        let received = await feedback.received
+        #expect(received.count == 1 && received[0].vector == nil && received[0].outcome == nil)
+        #expect(pipeline.trackingError != nil, "The developer reason stays for diagnostics")
+    }
+
+    @Test("VoiceOver stays quiet for the moments the feedback voice speaks")
+    func speechOwnership() {
+        for phase: GuidancePhase in [.guiding, .arrived, .lostTracking, .cannotLockOn] {
+            #expect(LiveCameraView.feedbackVoiceSpeaks(phase))
+        }
+        for phase: GuidancePhase in [.stopped, .notFound, .lowConfidence, .holding, .searching, .findingFinger] {
+            #expect(!LiveCameraView.feedbackVoiceSpeaks(phase))
+        }
     }
 }
 
@@ -229,6 +338,22 @@ private final class PhaseFrames: TrackingSource, @unchecked Sendable {
     }
     func send(_ frame: TrackingFrame) { _ = lock.withLock { continuations.last }?.yield(frame) }
     func finish() { lock.withLock { continuations }.forEach { $0.finish() } }
+}
+
+/// Ends the first session at once; later sessions play `arrival`.
+private final class RetryFrames: TrackingSource, @unchecked Sendable {
+    private let lock = NSLock()
+    private var subscriptions = 0
+    let arrival: [TrackingFrame]
+    init(arrival: [TrackingFrame]) { self.arrival = arrival }
+    func frames() -> AsyncStream<TrackingFrame> {
+        let first = lock.withLock { subscriptions += 1; return subscriptions == 1 }
+        let script = first ? [] : arrival
+        return AsyncStream { continuation in
+            script.forEach { continuation.yield($0) }
+            continuation.finish()
+        }
+    }
 }
 
 private final class FailingRegistrationSession: GuidanceTrackingSession, @unchecked Sendable {

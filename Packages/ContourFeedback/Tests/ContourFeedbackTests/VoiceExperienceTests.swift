@@ -105,3 +105,22 @@ func stopBeforeHold() {
     #expect(policy.update(.holding, distance: 0, at: 2.1, isSpeaking: true) == [.stop])
     #expect(policy.update(.paused, distance: .nan, at: 2.2, isSpeaking: true) == [.paused])
 }
+
+@Test("The missing-finger prompt plays once and any new guidance interrupts it")
+func fingerMissingPrompt() {
+    var policy = ExperienceVoicePolicy()
+    _ = policy.update(.direction(.left, near: false), distance: 0.5, at: 0, isSpeaking: false)
+    #expect(policy.update(.fingerMissing, distance: 0, at: 4, isSpeaking: false) == [.fingerMissing])
+    #expect(policy.update(.fingerMissing, distance: 0, at: 5, isSpeaking: true) == nil)
+    #expect(policy.update(.direction(.left, near: false), distance: 0.5, at: 5.5, isSpeaking: true) == [.moveLeft])
+    _ = policy.update(.fingerMissing, distance: 0, at: 9, isSpeaking: false)
+    #expect(policy.update(.holding, distance: 0, at: 9.5, isSpeaking: true) == [.stop])
+}
+
+@Test("Couldn't-start interrupts any direction and is spoken once")
+func cannotStartPrompt() {
+    var policy = ExperienceVoicePolicy()
+    _ = policy.update(.direction(.up, near: false), distance: 0.5, at: 0, isSpeaking: true)
+    #expect(policy.update(.cannotStart, distance: 0, at: 0.5, isSpeaking: true) == [.cannotStart])
+    #expect(policy.update(.cannotStart, distance: 0, at: 1, isSpeaking: true) == nil)
+}

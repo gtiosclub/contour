@@ -1,5 +1,6 @@
 import ContourCore
 import ContourFeedback
+import ContourUI
 import Foundation
 import Observation
 
@@ -15,6 +16,8 @@ final class CameraLaunchModel {
     private(set) var listening = false
     private(set) var guiding = false
     private(set) var scanning = false
+    /// The button most recently chosen for guidance, by voice or by touch.
+    private(set) var guidanceTarget: SurfaceMap.Button?
     private let listen: @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard
     private var knownReferenceID: UUID?
     private var active = false
@@ -175,13 +178,19 @@ final class CameraLaunchModel {
     private func guide(_ button: SurfaceMap.Button, referenceID: UUID?) async {
         guard pipeline.panelReference?.photo.id == referenceID, !Task.isCancelled else { return }
         guiding = true
+        guidanceTarget = button
         status = "Guiding to \(button.label ?? "selected button"). Keep the panel in view and move your finger toward the target."
         await pipeline.guide(to: button)
         guard !Task.isCancelled, pipeline.panelReference?.photo.id == referenceID else { return }
         guiding = false
         status = pipeline.guidanceArrived ? "Reached \(button.label ?? "the selected button")."
             : "Guidance ended. Choose the button to retry, or scan again."
-        error = pipeline.trackingError
+        // The guidance card shows and speaks a plain line for this instead.
+        error = pipeline.guidancePhase == .cannotLockOn ? nil : pipeline.trackingError
+        // Spoken only now, after guidance has silenced its own feedback.
+        if pipeline.guidancePhase == .cannotLockOn {
+            (pipeline.feedback as? LiveFeedbackEngine)?.announce(.trackingCannotStart)
+        }
     }
 
     private func replaceWork(_ operation: @escaping @MainActor () async throws -> Void) {

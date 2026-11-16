@@ -8,6 +8,7 @@
 import AVFoundation
 import ContourCore
 import ContourFeedback
+import ContourUI
 import SwiftUI
 import UIKit
 
@@ -22,6 +23,7 @@ struct LiveCameraView: View {
     @Namespace private var headerActionsNamespace
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var didLaunch = false
+    @State private var missingFinger = MissingFingerEpisode()
     @State private var cameraLaunchUnavailable = false
     @State private var launchProgress: CGFloat = 0
     @State private var primaryDetached = false
@@ -379,7 +381,8 @@ struct LiveCameraView: View {
                         .frame(width: primarySize, height: primarySize)
                         .glassEffectID("primary", in: glassNamespace)
                         .glassEffectTransition(.identity)
-                        .opacity(headerBounds.isEmpty ? 0 : 1)
+                        // The guidance card owns Stop while it is showing.
+                        .opacity(headerBounds.isEmpty || pipeline.guidancePhase != nil ? 0 : 1)
                         .contentShape(Circle())
                         .accessibilityLabel(primaryTitle)
                         .accessibilityHint(experience.busy ? "Cancels the current scan, microphone, or guidance."
@@ -387,8 +390,8 @@ struct LiveCameraView: View {
                                            : !hasSelectionContent ? "Photographs and identifies the panel's buttons."
                                            : "Listens for a button name for up to eight seconds.")
                         .accessibilitySortPriority(2)
-                        .allowsHitTesting(primaryDetached)
-                        .accessibilityHidden(!primaryDetached)
+                        .allowsHitTesting(primaryDetached && pipeline.guidancePhase == nil)
+                        .accessibilityHidden(!primaryDetached || pipeline.guidancePhase != nil)
                         .position(x: primaryX, y: primaryY)
                         .zIndex(1)
 
@@ -481,6 +484,18 @@ struct LiveCameraView: View {
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                         .transition(.identity)
+                }
+
+                if let phase = pipeline.guidancePhase {
+                    // A card over the lower camera preview; the header stays reachable.
+                    SettledGuidanceStateView(phase: phase, targetLabel: experience.guidanceTarget?.label,
+                                             instruction: liveFeedback?.instructionText ?? "",
+                                             perform: performGuidanceAction)
+                        .frame(maxHeight: max(0, geo.size.height - statusHeight - 24), alignment: .bottom)
+                        .padding(.horizontal, PanelLayout.edgeInset)
+                        .padding(.bottom, PanelLayout.edgeInset)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+                        .accessibilitySortPriority(2)
                 }
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -613,9 +628,34 @@ struct LiveCameraView: View {
         .onChange(of: experience.status) { _, message in
             // State transitions only; tracking's per-frame output stays in the feedback engine.
             // VoiceRequest announces listening before it opens the microphone.
-            if !experience.listening && !(pipeline.guidanceArrived
-                && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
+            // The guidance phase announces a session's start and end.
+            let sessionEnded = pipeline.guidancePhase.map { !$0.isActive } ?? false
+            if !experience.listening && !experience.guiding && !sessionEnded {
                 UIAccessibility.post(notification: .announcement, argument: message)
+            }
+        }
+        .onChange(of: pipeline.guidancePhase) { old, new in
+            guard let new, let message = GuidanceScreenContent.announcement(
+                from: old, to: new, targetLabel: experience.guidanceTarget?.label) else { return }
+            // One voice at a time: with guidance speech on, the feedback engine
+            // owns these moments (directions, arrival, loss, couldn't start).
+            if liveFeedback?.voiceEnabled == true, Self.feedbackVoiceSpeaks(new) { return }
+            UIAccessibility.post(notification: .announcement, argument: message)
+        }
+        .onChange(of: pipeline.guidancePhase, initial: true) { _, phase in
+            missingFinger.phaseChanged(to: phase, at: .now)
+        }
+        .task(id: missingFinger.nextCheck) {
+            // A missing finger is too frequent to announce at once; see MissingFingerEpisode.
+            guard let due = missingFinger.nextCheck else { return }
+            try? await Task.sleep(until: due, clock: .continuous)
+            guard !Task.isCancelled, missingFinger.check(at: .now) else { return }
+            // Spoken by the guidance voice when it is on, so it is never said twice.
+            if let liveFeedback, liveFeedback.voiceEnabled {
+                liveFeedback.announce(.fingerMissing)
+            } else {
+                UIAccessibility.post(notification: .announcement, argument: GuidanceScreenContent(
+                    phase: .findingFinger, targetLabel: experience.guidanceTarget?.label).message)
             }
         }
         .onChange(of: experience.error) { _, error in
@@ -623,6 +663,32 @@ struct LiveCameraView: View {
         }
         .onChange(of: pipeline.panelReference?.photo.id) {
             experience.referenceChanged()
+        }
+    }
+
+    private var liveFeedback: LiveFeedbackEngine? { pipeline.feedback as? LiveFeedbackEngine }
+
+    /// Phases the feedback voice already speaks, so VoiceOver stays quiet for
+    /// them while that voice is on. The rest are announced by VoiceOver only.
+    static func feedbackVoiceSpeaks(_ phase: GuidancePhase) -> Bool {
+        switch phase {
+        case .guiding, .arrived, .lostTracking, .cannotStart: true
+        default: false
+        }
+    }
+
+    private func performGuidanceAction(_ action: GuidanceAction) {
+        switch action {
+        case .stop:
+            experience.stop()
+        case .retry:
+            if let target = experience.guidanceTarget { experience.choose(target) }
+        case .chooseAnother:
+            // Ending the session clears the phase, which reveals the button list.
+            experience.stopWork()
+            if hasSelectionContent { animateSelection { panelDetent = defaultExpandedDetent } }
+        case .scanAgain:
+            scanPanel()
         }
     }
 

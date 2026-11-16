@@ -20,6 +20,9 @@ struct GuidanceStateView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var titleSize: CGFloat = 44
     @ScaledMetric(relativeTo: .largeTitle) private var symbolSize: CGFloat = 40
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Past this, single words such as "Guidance" no longer fit a phone's width.
+    private static let maximumTitleSize: CGFloat = 64
 
     private var content: GuidanceScreenContent {
         GuidanceScreenContent(phase: phase, targetLabel: targetLabel)
@@ -53,13 +56,18 @@ struct GuidanceStateView: View {
 
     private func card(_ style: PhaseStyle) -> some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
+            // At accessibility sizes the symbol sits above the title so long
+            // words are not broken to fit beside it.
+            let heading = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+            heading {
                 Image(systemName: style.symbol)
                     .font(.system(size: symbolSize, weight: .bold))
                     .foregroundStyle(style.accent)
                     .accessibilityHidden(true)
                 Text(content.title)
-                    .font(.system(size: titleSize, weight: .heavy))
+                    .font(.system(size: min(titleSize, Self.maximumTitleSize), weight: .heavy))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
@@ -99,7 +107,8 @@ struct SettledGuidanceStateView: View {
     /// slipping off the edge of the target. Outcomes always show immediately.
     static func settleDelay(from old: GuidancePhase, to new: GuidancePhase) -> Duration? {
         switch (old, new) {
-        case (.guiding, .searching), (.holding, .searching): .milliseconds(600)
+        case (.guiding, .searching), (.holding, .searching),
+             (.guiding, .findingFinger), (.holding, .findingFinger): .milliseconds(600)
         case (.holding, .guiding): .milliseconds(400)
         default: nil
         }
@@ -138,6 +147,9 @@ private struct PhaseStyle {
         case .searching:
             accent = Color(white: 0.75)
             symbol = "viewfinder"
+        case .findingFinger:
+            accent = Color(red: 0.8, green: 0.6, blue: 1)
+            symbol = "hand.raised.slash.fill"
         case .holding:
             accent = .yellow
             symbol = "hand.raised.fill"
@@ -199,4 +211,30 @@ private struct GuidanceActionStyle: ButtonStyle {
             .padding(8)
     }
     .dynamicTypeSize(.accessibility5)
+}
+
+#Preview("Finding finger") {
+    ZStack(alignment: .bottom) {
+        Color.gray
+        GuidanceStateView(phase: .findingFinger, targetLabel: "Start",
+                          instruction: "Guidance paused.", perform: { _ in })
+            .padding(8)
+    }
+}
+
+#Preview("All phases") {
+    let phases: [GuidancePhase] = [.guiding, .holding, .findingFinger, .searching, .lostTracking,
+                                   .arrived, .notFound, .lowConfidence, .cannotStart("The panel corners are invalid."), .stopped]
+    ScrollView {
+        LazyVGrid(columns: [GridItem(.flexible(), alignment: .bottom), GridItem(.flexible(), alignment: .bottom)],
+                  spacing: 8) {
+            ForEach(phases, id: \.self) { phase in
+                GuidanceStateView(phase: phase, targetLabel: "Start",
+                                  instruction: "Move up and to the left.", perform: { _ in })
+            }
+        }
+        .padding(8)
+    }
+    .background(Color.gray)
+    .dynamicTypeSize(.xSmall)
 }

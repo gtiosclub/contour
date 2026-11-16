@@ -27,6 +27,11 @@ public enum GuidancePhase: Hashable, Sendable {
     /// is announced.
     case searching
 
+    /// The panel is tracked but no fingertip is detected, so there is no
+    /// direction to give. Kept apart from `.searching` so the screen does not
+    /// claim the panel is missing when only the finger is.
+    case findingFinger
+
     /// The guidance system reported that tracking was lost. The session is
     /// still running and resumes if the panel comes back.
     case lostTracking
@@ -50,7 +55,11 @@ public enum GuidancePhase: Hashable, Sendable {
     case stopped
 
     /// The phase a single guidance state represents.
-    public init(_ state: GuidanceState) {
+    ///
+    /// - Parameter fingerMissing: whether the frame behind `state` tracked the
+    ///   panel but detected no fingertip. A state alone cannot tell this apart
+    ///   from any other gap.
+    public init(_ state: GuidanceState, fingerMissing: Bool = false) {
         if let outcome = state.outcome {
             switch outcome {
             case .arrived: self = .arrived
@@ -63,16 +72,22 @@ public enum GuidancePhase: Hashable, Sendable {
         guard let vector = state.vector,
               vector.normalizedDistance.isFinite, vector.normalizedDistance >= 0,
               vector.direction.dx.isFinite, vector.direction.dy.isFinite else {
-            self = .searching
+            self = fingerMissing && state.vector == nil ? .findingFinger : .searching
             return
         }
         self = vector.normalizedDistance == 0 ? .holding : .guiding
     }
 
+    /// Tracking could not lock onto the panel. The pipeline's own error is
+    /// worded for developers; the user only needs to know that waiting won't
+    /// help and a new scan might. Spoken with the same words.
+    public static let cannotLockOn = GuidancePhase.cannotStart(
+        "Couldn't lock onto the panel. Scan again with the whole panel in view.")
+
     /// Whether a guidance session is still running in this phase.
     public var isActive: Bool {
         switch self {
-        case .guiding, .searching, .lostTracking, .holding: true
+        case .guiding, .searching, .findingFinger, .lostTracking, .holding: true
         case .arrived, .notFound, .lowConfidence, .cannotStart, .stopped: false
         }
     }
@@ -131,6 +146,10 @@ public struct GuidanceScreenContent: Hashable, Sendable {
             title = heading
             message = "Looking for the panel."
             actions = [.stop]
+        case .findingFinger:
+            title = heading
+            message = "Can't see your finger. Move it in front of the panel."
+            actions = [.stop]
         case .lostTracking:
             title = "Lost the panel"
             message = "Point the camera at the panel again."
@@ -176,10 +195,10 @@ public struct GuidanceScreenContent: Hashable, Sendable {
     ) -> String? {
         guard old != new else { return nil }
         switch new {
-        case .searching, .holding:
+        case .searching, .findingFinger, .holding:
             return nil
         case .guiding:
-            if let old, old == .holding || old == .searching { return nil }
+            if let old, old == .holding || old == .searching || old == .findingFinger { return nil }
         case .lostTracking, .arrived, .notFound, .lowConfidence, .cannotStart, .stopped:
             break
         }

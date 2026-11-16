@@ -21,7 +21,7 @@ private func moving(distance: Double) -> GuidanceState {
 }
 
 private let allPhases: [GuidancePhase] = [
-    .guiding, .searching, .lostTracking, .holding, .arrived,
+    .guiding, .searching, .findingFinger, .lostTracking, .holding, .arrived,
     .notFound, .lowConfidence, .cannotStart("The panel corners are invalid."), .stopped,
 ]
 
@@ -54,6 +54,18 @@ func unusableFramesAreSearching() {
     #expect(GuidancePhase(GuidanceState(timestamp: now, vector: nil)) == .searching)
     #expect(GuidancePhase(moving(distance: .nan)) == .searching)
     #expect(GuidancePhase(moving(distance: -1)) == .searching)
+}
+
+@Test("a missing finger is told apart from other gaps only when the frame says so")
+func missingFingerIsItsOwnPhase() {
+    let gap = GuidanceState(timestamp: now, vector: nil)
+    #expect(GuidancePhase(gap, fingerMissing: true) == .findingFinger)
+    #expect(GuidancePhase(gap) == .searching)
+    #expect(GuidancePhase(moving(distance: .nan), fingerMissing: true) == .searching)
+    #expect(GuidancePhase(moving(distance: 0.4), fingerMissing: true) == .guiding)
+    #expect(GuidancePhase(.outcome(.lostTracking, at: now), fingerMissing: true) == .lostTracking)
+    let finger = GuidanceScreenContent(phase: .findingFinger, targetLabel: "Start")
+    #expect(finger.message != GuidanceScreenContent(phase: .searching, targetLabel: "Start").message)
 }
 
 @Test("every phase has words and at least one action")
@@ -132,6 +144,8 @@ func recoveryIsAnnounced() {
 func gapsAndHoldsAreSilent() {
     #expect(GuidanceScreenContent.announcement(from: .guiding, to: .searching, targetLabel: "Start") == nil)
     #expect(GuidanceScreenContent.announcement(from: .searching, to: .guiding, targetLabel: "Start") == nil)
+    #expect(GuidanceScreenContent.announcement(from: .guiding, to: .findingFinger, targetLabel: "Start") == nil)
+    #expect(GuidanceScreenContent.announcement(from: .findingFinger, to: .guiding, targetLabel: "Start") == nil)
     #expect(GuidanceScreenContent.announcement(from: .guiding, to: .holding, targetLabel: "Start") == nil)
     #expect(GuidanceScreenContent.announcement(from: .holding, to: .guiding, targetLabel: "Start") == nil)
 }

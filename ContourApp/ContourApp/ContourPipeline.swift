@@ -388,6 +388,7 @@ final class ContourPipeline {
         var loss = GuidanceLossEpisode()
         var arrivalHold = GuidanceArrivalHold()
         var arrived = false
+        var cannotStart = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
             if let live = source as? any GuidanceTrackingSession {
@@ -405,9 +406,15 @@ final class ContourPipeline {
                 default:
                     trackingError = nil
                 }
-                if let trackingError { guidancePhase = .cannotStart(trackingError) }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
+            if trackingError != nil {
+                // Waiting won't help once tracking can't lock on: end the
+                // session so no stale directions keep playing (#134).
+                guidancePhase = .cannotLockOn
+                cannotStart = true
+                break
+            }
             // MockGuidance's immediate arrival is only a geometric candidate.
             // This policy is the sole authority that can confirm the dwell.
             let now = guidanceNow()
@@ -427,7 +434,8 @@ final class ContourPipeline {
 
             if let outcome = state.outcome, outcome == announced { continue }
             announced = state.outcome
-            showPhase(for: state, session: session)
+            showPhase(for: state, session: session,
+                      fingerMissing: frame.fingertip == nil && frame.trackingQuality != .lost)
             await feedback.present(state)
             if state.outcome == .arrived {
                 guard generation == session, !Task.isCancelled else { break }
@@ -436,7 +444,9 @@ final class ContourPipeline {
                 break
             }
         }
-        if generation == session {
+        // A registration failure keeps its developer reason and tracker status
+        // for diagnostics until the next session, Stop or replacement clears them.
+        if generation == session, !cannotStart {
             hybridStatus = nil
             trackingError = nil
             guidanceStatus.reset(to: .stopped)
@@ -450,17 +460,9 @@ final class ContourPipeline {
     }
 
     /// Show the phase for `state`, the value about to be given to feedback.
-    /// A registration failure outranks every phase but confirmed arrival: the
-    /// screen keeps saying why guidance cannot start instead of flickering to
-    /// a frame-level phase.
-    private func showPhase(for state: GuidanceState, session: UInt64) {
+    private func showPhase(for state: GuidanceState, session: UInt64, fingerMissing: Bool = false) {
         guard generation == session else { return }
-        let phase = GuidancePhase(state)
-        if phase != .arrived, let trackingError {
-            guidancePhase = .cannotStart(trackingError)
-        } else {
-            guidancePhase = phase
-        }
+        guidancePhase = GuidancePhase(state, fingerMissing: fingerMissing)
     }
 }
 

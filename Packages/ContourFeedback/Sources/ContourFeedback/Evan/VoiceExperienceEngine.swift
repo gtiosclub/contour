@@ -15,6 +15,11 @@ public enum ExperienceVoiceGuidance: Equatable, Sendable {
 
     case direction(Direction, near: Bool)
     case slowly, holding, arrived, paused
+    /// The panel is tracked but no fingertip is detected. Requested by the app
+    /// once the finger has been missing long enough to mention.
+    case fingerMissing
+    /// Tracking could not lock onto the panel, so the session has ended.
+    case cannotStart
 }
 
 enum ExperienceVoiceCue: String, CaseIterable, Sendable {
@@ -26,6 +31,8 @@ enum ExperienceVoiceCue: String, CaseIterable, Sendable {
     case nearUp = "near_up", nearDown = "near_down"
     case further = "a_little_further", slowly = "move_slowly"
     case stop, reached = "target_reached", paused = "guidance_paused"
+    case fingerMissing = "finger_not_visible"
+    case cannotStart = "tracking_cannot_start"
 
     static func direction(_ direction: ExperienceVoiceGuidance.Direction,
                           near: Bool, changed: Bool = false) -> Self {
@@ -85,6 +92,8 @@ struct ExperienceVoicePolicy {
             case .holding: cues = [.stop]
             case .arrived: cues = [.reached]
             case .paused: cues = [.paused]
+            case .fingerMissing: cues = [.fingerMissing]
+            case .cannotStart: cues = [.cannotStart]
             }
         } else if !isSpeaking, case let .direction(direction, near) = current {
             let elapsed = time - lastCueTime
