@@ -211,3 +211,75 @@ func printedButtonsStayOnPanel() {
     }
     #expect(LiveSurfaceUnderstanding.printedButtons(from: outside).isEmpty)
 }
+
+// MARK: - 2x crop for LabelReader
+
+@Test("a 720x1280 photo with no panel quad is doubled whole")
+func smallPhotoIsDoubled() throws {
+    let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: small, panel: .fullFrame))
+    #expect(input.image.width == 1440 && input.image.height == 2560)
+    #expect(input.panel == .fullFrame)
+}
+
+@Test("a 1080x1920 photo is read as it is")
+func largePhotoIsUnchanged() throws {
+    let large = photo(try pngData(width: 1080, height: 1920) { _ in }, width: 1080, height: 1920)
+    #expect(LiveSurfaceUnderstanding.labelInput(for: large, panel: .fullFrame) == nil)
+}
+
+@Test("a small photo's panel is cropped out and doubled")
+func panelIsCroppedAndDoubled() throws {
+    let small = photo(try pngData(width: 720, height: 1280) { _ in }, width: 720, height: 1280)
+    let middle = PanelQuad(topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
+                           bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: small, panel: middle))
+    // Middle half plus a 5% margin, doubled: about 792x1408.
+    #expect(abs(input.image.width - 792) <= 4 && abs(input.image.height - 1408) <= 4)
+    #expect(input.panel.topLeft.x > 0 && input.panel.topLeft.x < 0.1)
+}
+
+@Test("a mark on a .right photo lands on the same panel point after the 2x crop")
+func rotatedMarkStaysInPlace() throws {
+    // Stored sideways (1280x720, top on the right): white with one black square.
+    let data = try pngData(width: 1280, height: 720) { ctx in
+        ctx.setFillColor(gray: 1, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: 1280, height: 720))
+        ctx.setFillColor(gray: 0, alpha: 1)
+        ctx.fill(CGRect(x: 400, y: 200, width: 30, height: 30))
+    }
+    let sideways = PanelPhoto(data: data, pixelSize: PixelSize(width: 1280, height: 720),
+                              orientation: .right, timestamp: Date(timeIntervalSince1970: 0))
+    // A skewed outline, so x and y both get tested.
+    let panel = PanelQuad(topLeft: ImagePoint(x: 0.1, y: 0.2), topRight: ImagePoint(x: 0.9, y: 0.15),
+                          bottomRight: ImagePoint(x: 0.85, y: 0.8), bottomLeft: ImagePoint(x: 0.15, y: 0.85))
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: sideways, panel: panel))
+
+    let detector = PanelDetector()
+    let before = detector.rectify(try darkCenter(sideways.cgImage()), within: panel)
+    let after = detector.rectify(try darkCenter(input.image), within: input.panel)
+    #expect(abs(before.x - after.x) < 0.01)
+    #expect(abs(before.y - after.y) < 0.01)
+}
+
+/// Centre of the dark pixels in `image`, normalized, y down.
+private func darkCenter(_ image: CGImage) throws -> ImagePoint {
+    let w = image.width, h = image.height
+    var pixels = [UInt8](repeating: 255, count: w * h * 4)
+    let drawn = pixels.withUnsafeMutableBytes { buffer -> Bool in
+        guard let ctx = CGContext(data: buffer.baseAddress, width: w, height: h, bitsPerComponent: 8,
+                                  bytesPerRow: w * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return true
+    }
+    try #require(drawn)
+    var sx = 0.0, sy = 0.0, n = 0.0
+    for y in 0..<h {
+        for x in 0..<w where pixels[(y * w + x) * 4] < 128 {
+            sx += Double(x); sy += Double(y); n += 1
+        }
+    }
+    try #require(n > 0)
+    return ImagePoint(x: (sx / n + 0.5) / Double(w), y: (sy / n + 0.5) / Double(h))
+}
