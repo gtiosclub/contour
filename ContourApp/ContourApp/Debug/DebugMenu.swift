@@ -18,6 +18,7 @@ struct DebugMenu: View {
         List {
             Section("Diagnostics") {
                 NavigationLink("Tracking Diagnostics") { TrackingDebugView(camera: camera, pipeline: pipeline) }
+                NavigationLink("Tracking photo replay") { PhotoReplayView() }
                 NavigationLink("Model image spike (Surface)") { ModelImageSpikeView() }
                 NavigationLink("Haptics") { HapticsDebugView() }
                 NavigationLink("Test Experience") { TestExperienceView() }
