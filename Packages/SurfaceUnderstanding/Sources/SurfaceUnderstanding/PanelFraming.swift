@@ -77,11 +77,14 @@ public struct PanelFraming: Sendable {
     }
 
     /// Pure geometry. The quad and frame dimensions both describe the upright image.
-    func advice(for quad: PanelQuad?, frame: PixelSize) -> Advice {
+    /// Pass the scan's button bounds in panel coordinates. They are image coordinates
+    /// when the quad is full frame; outlined panels ignore them. Without boxes a
+    /// full-frame fallback cannot establish which way the phone should move.
+    func advice(for quad: PanelQuad?, frame: PixelSize, buttonBounds: [PanelRect] = []) -> Advice {
         guard let quad, frame.width > 0, frame.height > 0 else { return .noPanel }
         let corners = [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
         guard corners.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else { return .noPanel }
-        if quad == .fullFrame { return .moveBack }
+        if quad == .fullFrame { return fullFrameAdvice(buttonBounds: buttonBounds) }
 
         let left = corners.map(\.x).min()!, right = corners.map(\.x).max()!
         let top = corners.map(\.y).min()!, bottom = corners.map(\.y).max()!
@@ -120,6 +123,40 @@ public struct PanelFraming: Sendable {
         }
         if right - left < 0.6 && bottom - top < 0.65 { return .moveCloser }
         return .ready
+    }
+
+    private func fullFrameAdvice(buttonBounds: [PanelRect]) -> Advice {
+        guard buttonBounds.allSatisfy({
+            [$0.minX, $0.minY, $0.maxX, $0.maxY, $0.width, $0.height].allSatisfy(\.isFinite)
+                && $0.width > 0 && $0.height > 0
+        }) else { return .noPanel }
+        // Duplicate detections must not supply multiple votes. Large enclosing
+        // rectangles and boxes outside the photo are not evidence about key size.
+        let boxes = Array(Set(buttonBounds)).filter {
+            $0.width <= 0.5 && $0.height <= 0.5 && $0.minX >= -0.05 && $0.minY >= -0.05
+                && $0.maxX <= 1.05 && $0.maxY <= 1.05
+        }
+        guard boxes.count >= 3 else { return .noPanel }
+
+        // Require two substantial controls touching an edge, not a lone speck
+        // or a background rectangle merely near the edge of the image.
+        let clipped = boxes.filter {
+            $0.width >= 0.06 && $0.height >= 0.015 &&
+                ($0.minX <= 0.005 || $0.minY <= 0.005 || $0.maxX >= 0.995 || $0.maxY >= 0.995)
+        }
+        if clipped.count >= 2 { return .moveBack }
+
+        // A majority of small controls must form a compact central group.
+        // Scattered background detections or just a few readable labels are
+        // insufficient. Axis-aligned boxes cannot reliably diagnose glare/angle.
+        let small = boxes.filter {
+            $0.width <= 0.12 && $0.height <= 0.06 &&
+                (0.25...0.75).contains($0.center.x) && (0.2...0.8).contains($0.center.y)
+        }
+        guard small.count >= 6, Double(small.count) >= 0.6 * Double(boxes.count) else { return .noPanel }
+        let width = small.map(\.maxX).max()! - small.map(\.minX).min()!
+        let height = small.map(\.maxY).max()! - small.map(\.minY).min()!
+        return width <= 0.35 && height <= 0.45 ? .moveCloser : .noPanel
     }
 
     /// Retained by the app between frames. Uses capture timestamps, never sleeps.
