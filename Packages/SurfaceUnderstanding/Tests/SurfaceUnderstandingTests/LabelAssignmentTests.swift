@@ -63,6 +63,34 @@ func frameGivesItsLabelsBack() {
     #expect(Set(result.unused.map(\.text)) == ["Popcorn", "Pizza"])
 }
 
+@Test("stacked word boxes become one text label")
+func stackedWordBoxesBecomeOneTextLabel() {
+    let timeBox = PanelRect(x: 0.10, y: 0.50, width: 0.08, height: 0.03)
+    let cookBox = PanelRect(x: 0.11, y: 0.535, width: 0.06, height: 0.03)
+    let time = word("Time", x: 0.10, y: 0.50, width: 0.08)
+    let cook = word("Cook", x: 0.11, y: 0.535, width: 0.06)
+
+    let result = LabelReader.assign([time, cook], to: [timeBox, cookBox])
+
+    #expect(result.labels == [nil, nil])
+    #expect(result.frames == [0, 1])
+    #expect(LabelReader.textButtons(from: result.unused).map(\.label) == ["Time Cook"])
+}
+
+@Test("stacked Popcorn and Beverage boxes stay separate")
+func stackedUnrelatedWordBoxesStaySeparate() {
+    let popcornBox = PanelRect(x: 0.10, y: 0.50, width: 0.08, height: 0.03)
+    let beverageBox = PanelRect(x: 0.11, y: 0.535, width: 0.06, height: 0.03)
+    let popcorn = word("Popcorn", x: 0.10, y: 0.50, width: 0.08)
+    let beverage = word("Beverage", x: 0.11, y: 0.535, width: 0.06)
+
+    let result = LabelReader.assign([popcorn, beverage], to: [popcornBox, beverageBox])
+
+    #expect(result.labels == ["Popcorn", "Beverage"])
+    #expect(result.frames.isEmpty)
+    #expect(result.unused.isEmpty)
+}
+
 @Test("words on one line with small gaps are one label")
 func oneLineIsOneLabel() {
     let words = [word("Add", x: 0.10, y: 0.5, width: 0.04), word("30", x: 0.15, y: 0.5, width: 0.03),
@@ -291,4 +319,66 @@ func oven1GlarePreservesKeysAboveClock() {
     #expect(labels.contains("WARM"))
     #expect(labels.contains("COOK TIME"))
     #expect(labels.contains("TIMER SET OFF"))
+}
+
+@Test("microwave-08 at 960x1280: Start goes to the key, not to a digit on the display")
+func microwave08DisplayDigitDoesNotTakeStart() throws {
+    let digits = [
+        PanelRect(x: 0.435, y: 0.036, width: 0.101, height: 0.079),
+        PanelRect(x: 0.557, y: 0.035, width: 0.103, height: 0.080),
+        PanelRect(x: 0.673, y: 0.035, width: 0.105, height: 0.079)
+    ]
+    let startKey = PanelRect(x: 0.417, y: 0.783, width: 0.232, height: 0.086)
+    let popcornKey = PanelRect(x: 0.057, y: 0.205, width: 0.302, height: 0.083)
+    let regions = digits + [startKey, popcornKey]
+    let words = [
+        word("3:00", x: 0.422, y: 0.025, width: 0.383, height: 0.107),
+        word("Start", x: 0.684, y: 0.121, width: 0.085, height: 0.020),
+        word("Popcorn", x: 0.088, y: 0.229, width: 0.240, height: 0.038),
+        word("Start", x: 0.457, y: 0.787, width: 0.159, height: 0.036),
+        word("Pause", x: 0.444, y: 0.824, width: 0.182, height: 0.040)
+    ]
+
+    let reading = LabelReader.reading(words, regions: regions)
+
+    #expect(reading.frames == [0, 1, 2])
+    #expect(reading.labels == [nil, nil, nil, "Start Pause", "Popcorn"])
+    #expect(!reading.textButtons.contains { $0.label.localizedCaseInsensitiveContains("start") })
+
+    let keys = regions.indices.filter { !reading.frames.contains($0) }.map {
+        SurfaceMap.Button(label: reading.labels[$0], bounds: regions[$0], confidence: 1)
+    }
+    let pick = try #require(TargetMatcher().match("start", in: SurfaceMap(buttons: keys, confidence: 1)))
+    #expect(pick.button.label == "Start Pause")
+}
+
+@Test("a box on the clock does not take the row of labels below it")
+func displayBoxDoesNotTakeTheRowBelow() {
+    let display = PanelRect(x: 0.378, y: 0.069, width: 0.263, height: 0.129)
+    let words = [
+        word("12:05", x: 0.443, y: 0.115, width: 0.152, height: 0.054),
+        word("Popcorn", x: 0.364, y: 0.276, width: 0.080, height: 0.017),
+        word("Potato", x: 0.483, y: 0.275, width: 0.057, height: 0.013),
+        word("Pizza", x: 0.590, y: 0.275, width: 0.041, height: 0.012)
+    ]
+
+    let reading = LabelReader.reading(words, regions: [display])
+
+    #expect(reading.frames == [0])
+    #expect(reading.labels == [nil])
+    #expect(Set(reading.textButtons.map(\.label)) == ["Popcorn", "Potato", "Pizza"])
+}
+
+@Test("labels just under the clock stay on the panel")
+func labelsJustUnderTheClockStay() {
+    let words = [
+        word("0:00", x: 0.303, y: 0.032, width: 0.592, height: 0.162),
+        word("Dinner", x: 0.626, y: 0.201, width: 0.186, height: 0.043),
+        word("Popcorn", x: 0.180, y: 0.206, width: 0.237, height: 0.058),
+        word("Plate", x: 0.641, y: 0.221, width: 0.167, height: 0.041)
+    ]
+
+    let reading = LabelReader.reading(words, regions: [])
+
+    #expect(Set(reading.textButtons.map(\.label)) == ["Popcorn", "Dinner Plate"])
 }

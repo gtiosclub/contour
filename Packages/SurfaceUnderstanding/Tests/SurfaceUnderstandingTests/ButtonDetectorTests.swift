@@ -81,3 +81,21 @@ func buttonDetectorRejectsDisplayOnlyQuad() async throws {
     #expect(displayResults.isEmpty)
     #expect(fullFrameResults.count >= 6)
 }
+
+@Test("Button Detector: ignores digits shaped like real ones when quad covers only the display")
+func buttonDetectorRejectsDisplayOnlyQuadWithShortDigits() async throws {
+    let (photo, displayQuad) = try SyntheticPanel.displayQuadPhoto(digitHeight: 36)
+
+    let found = try await ButtonDetector().detectButtons(in: photo, panel: displayQuad)
+
+    #expect(found.isEmpty)
+}
+
+@Test("Button Detector: keeps square keys on a wide panel")
+func buttonDetectorKeepsKeysOnWidePanel() async throws {
+    let (photo, quad) = try SyntheticPanel.widePanelPhoto()
+
+    let found = try await ButtonDetector().detectButtons(in: photo, panel: quad)
+
+    #expect(found.count == 4)
+}
