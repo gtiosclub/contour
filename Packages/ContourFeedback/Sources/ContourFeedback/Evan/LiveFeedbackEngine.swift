@@ -7,6 +7,15 @@ import AVFoundation
 import UIKit
 #endif
 
+/// A phrase the app asks for directly, because only it knows when the moment
+/// has come. Guidance directions and outcomes are spoken from `present`.
+public enum GuidancePrompt: Sendable {
+    /// The finger has been out of view long enough to mention.
+    case fingerMissing
+    /// Tracking could not lock onto the panel and guidance has ended.
+    case trackingCannotStart
+}
+
 /// Shared playback coordinator for live guidance and the experience test pad.
 /// Owns the beat clock; present only updates playback and never waits for an effect.
 @MainActor
@@ -20,6 +29,9 @@ public final class LiveFeedbackEngine: FeedbackEngine {
     @ObservationIgnored private var observers: Set<AnyCancellable> = []
     @ObservationIgnored private var freshnessTask: Task<Void, Never>?
     @ObservationIgnored private var receivedAt: ContinuousClock.Instant?
+    /// Set while a requested prompt is the current speech, so the empty
+    /// frames that follow it do not cut it off.
+    @ObservationIgnored private var promptRequested = false
     private var direction = ExperienceDirectionInstruction()
     private var current: GuidanceState?
     public private(set) var audioEnabled = true
@@ -70,7 +82,7 @@ public final class LiveFeedbackEngine: FeedbackEngine {
         guard let vector = state.vector, vector.normalizedDistance.isFinite,
               vector.normalizedDistance >= 0, vector.direction.dx.isFinite,
               vector.direction.dy.isFinite else {
-            stop()
+            stop(keepingPrompt: promptRequested && voiceOutput.isSpeaking)
             instructionText = "Guidance paused."
             return
         }
@@ -99,28 +111,48 @@ public final class LiveFeedbackEngine: FeedbackEngine {
         if !audio && !voice && !haptics { beatTask?.cancel(); beatTask = nil }
     }
 
+    /// Speaks `prompt` if the voice channel is on. Any new guidance, outcome
+    /// or stop interrupts it.
+    public func announce(_ prompt: GuidancePrompt) {
+        guard voiceEnabled else { return }
+        do { try voiceOutput.start() } catch { return }
+        let guidance: ExperienceVoiceGuidance = switch prompt {
+        case .fingerMissing: .fingerMissing
+        case .trackingCannotStart: .cannotStart
+        }
+        voiceOutput.update(guidance, distance: 0, at: ProcessInfo.processInfo.systemUptime)
+        promptRequested = true
+    }
+
     /// Idempotent session cleanup. A later present must supply fresh guidance.
-    public func stop() {
-        stopPlayback()
+    public func stop() { stop(keepingPrompt: false) }
+
+    private func stop(keepingPrompt: Bool) {
+        stopPlayback(keepingVoice: keepingPrompt)
         current = nil
         direction = ExperienceDirectionInstruction()
         didReachTarget = false
         instructionText = "Press Start to begin."
     }
 
-    private func stopPlayback() {
+    private func stopPlayback(keepingVoice: Bool = false) {
+        if !keepingVoice {
+            voiceOutput.stop()
+            promptRequested = false
+        }
         beatTask?.cancel()
         beatTask = nil
         freshnessTask?.cancel()
         freshnessTask = nil
         receivedAt = nil
         audioOutput.stop()
-        voiceOutput.stop()
         hapticOutput.stop()
         outcomePlayer.stop()
     }
 
     private func render(_ vector: GuidanceVector) {
+        // New guidance replaces the prompt; the voice policy interrupts it.
+        promptRequested = false
         if vector.normalizedDistance == 0 {
             beatTask?.cancel()
             beatTask = nil

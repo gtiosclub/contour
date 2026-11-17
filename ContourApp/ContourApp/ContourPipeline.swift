@@ -54,6 +54,10 @@ final class ContourPipeline {
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     let guidanceStatus = GuidanceStatusDisplay()
     private(set) var guidanceArrived = false
+    /// What the guidance screen shows. `nil` until a session for the current
+    /// panel has produced something, and cleared whenever that session is
+    /// cancelled or replaced.
+    private(set) var guidancePhase: GuidancePhase?
     @ObservationIgnored private var lifecycleObservers: Set<AnyCancellable> = []
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
@@ -165,6 +169,7 @@ final class ContourPipeline {
     /// Detect the panel in `photo`.
     func detectPanel(in photo: PanelPhoto) async throws -> SurfaceMap {
         guidanceArrived = false
+        guidancePhase = nil
         generation &+= 1
         let scan = generation
         panelReference = nil
@@ -217,6 +222,7 @@ final class ContourPipeline {
         // without a factory camera are handed the new reference in place.
         let retiring = sessionCamera == nil ? nil : tracking as? any GuidanceTrackingSession
         guidanceArrived = false
+        guidancePhase = nil
         (feedback as? LiveFeedbackEngine)?.stop()
         generation &+= 1
         let replacement = generation
@@ -269,6 +275,7 @@ final class ContourPipeline {
     /// Stop guidance without discarding the reference, so it can be retried.
     func stopGuidance() async {
         guidanceArrived = false
+        guidancePhase = nil
         generation &+= 1
         let request = generation
         let retiring = tracking as? any GuidanceTrackingSession
@@ -316,6 +323,7 @@ final class ContourPipeline {
     /// Invalidate synchronously so an in-flight frame cannot finish an old hold.
     func interruptGuidance() {
         guidanceArrived = false
+        guidancePhase = nil
         generation &+= 1
         let request = generation
         let retiring = tracking as? any GuidanceTrackingSession
@@ -345,6 +353,7 @@ final class ContourPipeline {
     /// ending stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
         guidanceArrived = false
+        guidancePhase = nil
         guard trackingReady else { return }
         generation &+= 1
         let session = generation
@@ -379,6 +388,7 @@ final class ContourPipeline {
         var loss = GuidanceLossEpisode()
         var arrivalHold = GuidanceArrivalHold()
         var arrived = false
+        var cannotStart = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
             if let live = source as? any GuidanceTrackingSession {
@@ -398,6 +408,13 @@ final class ContourPipeline {
                 }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
+            if trackingError != nil {
+                // Waiting won't help once tracking can't lock on: end the
+                // session so no stale directions keep playing (#134).
+                guidancePhase = .cannotLockOn
+                cannotStart = true
+                break
+            }
             // MockGuidance's immediate arrival is only a geometric candidate.
             // This policy is the sole authority that can confirm the dwell.
             let now = guidanceNow()
@@ -405,7 +422,9 @@ final class ContourPipeline {
 
             switch loss.update(isUsable: state.outcome != .lostTracking, at: now) {
             case .quiet:
-                await feedback.present(GuidanceState(timestamp: frame.timestamp, vector: nil))
+                let quiet = GuidanceState(timestamp: frame.timestamp, vector: nil)
+                showPhase(for: quiet, session: session)
+                await feedback.present(quiet)
                 continue
             case .holdingLoss:
                 continue
@@ -415,6 +434,8 @@ final class ContourPipeline {
 
             if let outcome = state.outcome, outcome == announced { continue }
             announced = state.outcome
+            showPhase(for: state, session: session,
+                      fingerMissing: frame.fingertip == nil && frame.trackingQuality != .lost)
             await feedback.present(state)
             if state.outcome == .arrived {
                 guard generation == session, !Task.isCancelled else { break }
@@ -423,16 +444,25 @@ final class ContourPipeline {
                 break
             }
         }
-        if generation == session {
+        // A registration failure keeps its developer reason and tracker status
+        // for diagnostics until the next session, Stop or replacement clears them.
+        if generation == session, !cannotStart {
             hybridStatus = nil
             trackingError = nil
             guidanceStatus.reset(to: .stopped)
+            if !arrived { guidancePhase = .stopped }
         }
         if !arrived {
             // Stopping, or the camera going away, must not leave the vibration
             // running.
             await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
+    }
+
+    /// Show the phase for `state`, the value about to be given to feedback.
+    private func showPhase(for state: GuidanceState, session: UInt64, fingerMissing: Bool = false) {
+        guard generation == session else { return }
+        guidancePhase = GuidancePhase(state, fingerMissing: fingerMissing)
     }
 }
 

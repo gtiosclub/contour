@@ -88,6 +88,16 @@
       "id": "guidance_paused",
       "text": "Guidance paused.",
       "wordsPerMinute": 165
+    },
+    {
+      "id": "finger_not_visible",
+      "text": "Can't see your finger. Move it in front of the panel.",
+      "wordsPerMinute": 165
+    },
+    {
+      "id": "tracking_cannot_start",
+      "text": "Couldn't lock onto the panel. Scan again with the whole panel in view.",
+      "wordsPerMinute": 190
     }
   ]
 }

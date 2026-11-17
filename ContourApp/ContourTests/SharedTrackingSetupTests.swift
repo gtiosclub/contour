@@ -34,10 +34,15 @@ struct SharedTrackingSetupTests {
         #expect(await session.referenceID == reference.photo.id)
         #expect(pipeline.trackingError != nil)
         #expect(pipeline.hybridStatus?.source == .unavailable)
-        await session.finish()
+        // A registration failure ends guidance by itself (#151) and keeps the
+        // evidence for diagnostics until the next session or Stop.
         await guidance.value
+        #expect(pipeline.trackingError != nil)
+        #expect(pipeline.hybridStatus?.source == .unavailable)
+        await pipeline.stopGuidance()
         #expect(pipeline.trackingError == nil)
         #expect(pipeline.hybridStatus == nil)
+        await session.finish()
     }
 
     @Test("The baseline factory rejects methods whose algorithms have not been implemented")
