@@ -19,22 +19,14 @@ public struct CookTime: Hashable, Sendable {
     }
 
     /// The time in `request`, or nil if there's none or it can't be trusted.
+    /// Only plain cook times are read here: every word must be part of the time
+    /// or one of `cookWords`, so anything else goes to the planner.
     /// A number needs a unit, so "cook for 5" isn't a time.
     public init?(_ request: String) {
-        let text = request.lowercased()
-        // "1:30". "0:00" isn't a time.
-        if let match = text.firstMatch(of: /(\d+):(\d\d)/) {
-            guard let m = Int(match.1), let s = Int(match.2), m * 60 + s > 0 else { return nil }
-            self.init(totalSeconds: m * 60 + s)
-            return
-        }
-        let words = text.replacingOccurrences(of: "½", with: " ½ ")
-            .split { !$0.isLetter && !$0.isNumber && !"./'".contains($0) }
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".")) }
+        let words = request.lowercased().replacingOccurrences(of: "½", with: " ½ ")
+            .split { !$0.isLetter && !$0.isNumber && !"./':+".contains($0) }
+            .map { $0.hasSuffix(".") ? String($0.dropLast()) : String($0) }   // end of a sentence
             .filter { !$0.isEmpty }
-        // Quarters aren't handled: nil beats a wrong time.
-        if words.contains(where: { $0.hasPrefix("quarter") }) { return nil }
-
         var total = 0.0
         var number: Double?               // a number waiting for its unit
         var numberIsTens = false          // "forty" can still take "five"
@@ -59,7 +51,14 @@ public struct CookTime: Hashable, Sendable {
         while i < words.count {
             let word = words[i]
             let next = i + 1 < words.count ? words[i + 1] : ""
-            if Self.halves.contains(word) || (["a", "an", "one"].contains(word) && Self.halves.contains(next)) {
+            if let clock = word.wholeMatch(of: /(\d{1,2}):([0-5]\d)/) {
+                // "1:30" is the whole time: nothing can come before or after it.
+                guard total == 0, number == nil, !half, let m = Int(clock.1), let s = Int(clock.2) else { return nil }
+                total = Double(m * 60 + s)
+                smallest = 1
+                lastUnit = nil
+                afterMinutes = false
+            } else if Self.halves.contains(word) || (["a", "an", "one"].contains(word) && Self.halves.contains(next)) {
                 if !Self.halves.contains(word) { i += 1 }                         // "a half", "one half"
                 if let n = number { number = n + 0.5; numberIsTens = false }      // two and a half
                 else if let unit = lastUnit { total += unit / 2; lastUnit = nil } // a minute and a half
@@ -94,13 +93,15 @@ public struct CookTime: Hashable, Sendable {
                 afterMinutes = unit == 60 && count != nil
                 number = nil
                 half = false
-            } else if !["and", "a", "an"].contains(word) {
-                // Any other word ends the time: "and a half" can't follow it now.
+            }   else if Self.cookWords.contains(word) {
+                // "for", "please" and the like end a time: "and a half" can't follow now.
                 guard settle() else { return nil }
                 number = nil
                 half = false
                 lastUnit = nil
                 afterMinutes = false
+            } else if !["and", "a", "an"].contains(word) {
+                return nil   // any other word: leave it for the planner
             }
             i += 1
         }
@@ -132,10 +133,16 @@ public struct CookTime: Hashable, Sendable {
     private static let singular: Set = ["second", "sec", "minute", "min", "hour"]
 
     private static let halves: Set = ["half", "1/2", "½"]
+    
+    /// The only other words a local cook time may have. Anything else goes to the planner.
+    private static let cookWords: Set = ["cook", "heat", "warm", "reheat", "microwave", "for", "it", "please"]
 
     /// "1.5", "forty" or "one.5" as a number.
     private static func value(_ word: String) -> Double? {
-        if word.first?.isNumber == true { return Double(word) }
+        if word.first?.isNumber == true {
+            guard let n = Double(word), n <= 9999 else { return nil }   // never overflows later
+            return n
+        }
         if let n = numbers[word] { return n }
         let parts = word.split(separator: ".", omittingEmptySubsequences: false)
         if parts.count == 2, let whole = numbers[String(parts[0])],

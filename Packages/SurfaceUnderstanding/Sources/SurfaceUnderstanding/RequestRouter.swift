@@ -30,10 +30,8 @@ public struct RequestRouter: Sendable {
         if Self.listButtons.contains(said) { return .listButtons }
         if Self.help.contains(said) { return .help(Self.helpSentence) }
 
-        // A cook time, unless it's about another key, like Add 30 Sec or a timer.
-        let words = Set(said.split(separator: " ").map(String.init))
-        if words.isDisjoint(with: Self.plannerWords), !request.contains("+"),
-           let time = CookTime(request) {
+        // A plain cook time is worked out here. Anything else goes to the planner.
+        if let time = CookTime(request) {
             return .plan(cookPlan(time, in: map))
         }
         return .plan(await planner.plan(request, in: map))
@@ -81,12 +79,6 @@ public struct RequestRouter: Sendable {
                                              "list the buttons", "what are the buttons")
     private static let help = phrases("help", "what can i say", "what can i ask", "what do i say")
 
-    private static let plannerWords: Set = [
-        "add", "plus", "timer", "clock", "defrost", "defrosting", "thaw", "popcorn", "power", "delay",
-        "stop", "cancel", "pause", "don't", "dont", "not", "wait", "hold", "hang",
-        "more", "extra", "another", "minus", "off", "am", "pm",
-    ]
-    
     private static let helpSentence =
         "You can ask me to press a button, set a cook time like 2 minutes, read the display, or list the buttons."
 }

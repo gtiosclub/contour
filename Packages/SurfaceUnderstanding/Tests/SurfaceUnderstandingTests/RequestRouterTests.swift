@@ -65,6 +65,9 @@ struct RequestRouterTests {
         ("45 sec", ["4", "5"]),
         ("half a minute", ["3", "0"]),
         ("ten minutes", ["1", "0", "0", "0"]),
+        ("cook for 2 minutes", ["2", "0", "0"]),
+        ("heat it for 30 seconds", ["3", "0"]),
+        ("cook it for a minute and a half, please", ["1", "3", "0"]),
     ])
     func cookTimes(said: String, digits: [String]) async throws {
         let plan = try #require(planOf(await offline.route(said, in: microwave)))
@@ -110,11 +113,22 @@ struct RequestRouterTests {
         #expect(plan.say.contains("too long"))
     }
 
-    @Test("requests about another key, or about not cooking, go to the planner", arguments: [
+    @Test("anything that isn't a plain cook time goes to the planner", arguments: [
         "set a timer for 5 minutes", "set the clock to 1:30", "defrost for 5 minutes", "popcorn for 2 minutes",
         "power level 5 for 2 minutes", "delay start by 10 minutes",
         "don't cook for 2 minutes", "stop after 30 seconds", "wait a minute", "1:30 pm",
-        "cook for 5",
+        "cook for 5", "+30 sec",
+        // Corrections and second times
+        "2 minutes, no, 30 seconds", "cook for 2 minutes then let it sit for 30 seconds", "1:30, actually 2:00",
+        // A trailing number that isn't seconds
+        "cook for 1 minute, 3 times", "cook 5 minutes, 2 potatoes",
+        // A unit word that isn't a time
+        "2 minutes for the second bowl", "what hour is it",
+        // Clock times
+        "cook for 2 minutes at 6:00", "1:30pm", "at 1:30",
+        // Not a cook request
+        "give me a minute", "start in 5 minutes", "let it stand for 1 minute", "30 seconds less",
+        "set an alarm for 5 minutes",
     ])
     func plannerWords(said: String) async throws {
         // Same answer as the planner alone, so it wasn't turned into a cook plan.
