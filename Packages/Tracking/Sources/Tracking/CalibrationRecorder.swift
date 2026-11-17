@@ -19,9 +19,9 @@ public actor CalibrationRecorder {
     public struct Configuration: Sendable {
         /// Frames kept. When full, the oldest is evicted, so the buffer holds
         /// the moments just before recording stopped. 1800 is 60 s at 30 Hz.
-        public var capacity: Int
+        public let capacity: Int
         /// Keep one frame in this many; 1 keeps every frame the tracker handles.
-        public var everyNthFrame: Int
+        public let everyNthFrame: Int
 
         public init(capacity: Int = 1800, everyNthFrame: Int = 1) {
             self.capacity = max(1, capacity)
@@ -91,6 +91,8 @@ struct TraceBuffer {
     private(set) var dropped = 0
 
     init(capacity: Int, everyNthFrame: Int) {
+        precondition(capacity >= 1, "TraceBuffer capacity must be at least 1")
+        precondition(everyNthFrame >= 1, "TraceBuffer everyNthFrame must be at least 1")
         self.capacity = capacity
         self.everyNthFrame = everyNthFrame
         frames.reserveCapacity(capacity)
