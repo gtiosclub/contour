@@ -85,7 +85,7 @@ public struct LabelReader: Sendable {
         let assigned = Self.assign(words, to: regions)
         return Reading(
             labels: assigned.labels,
-            textButtons: Self.textButtons(from: assigned.unused,regions: regions),
+            textButtons: Self.textButtons(from: assigned.unused, regions: regions.indices.filter { !assigned.frames.contains($0) }.map { regions[$0] }),
             frames: assigned.frames
         )
     }
