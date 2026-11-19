@@ -11,6 +11,7 @@ import ContourCore
 import ContourFeedback
 import ContourMocks
 import Foundation
+import Observation
 import Testing
 import Tracking
 @testable import ContourApp
@@ -78,16 +79,33 @@ private final class FakeSpeaker: PlanSpeaking {
     var stops = 0
     /// Sentences starting with this take long enough to tap Next during.
     var slow: String?
+    /// A sentence starting with this isn't finished until `finish()`, or until
+    /// it's cut off by `stop()` like the real one.
+    var held: String?
+    private var holding: CheckedContinuation<Void, Never>?
+    var isHolding: Bool { holding != nil }
     var spoken: [String] { log.filter { !$0.hasPrefix("[") } }
 
     func speak(_ text: String) async {
         log.append(text)
-        // A real sentence takes a while. The model must wait for all of it.
-        try? await Task.sleep(for: .milliseconds(slow.map { text.hasPrefix($0) } == true ? 300 : 5))
+        if let held, text.hasPrefix(held) {
+            await withCheckedContinuation { holding = $0 }
+        } else {
+            // A real sentence takes a while. The model must wait for all of it.
+            try? await Task.sleep(for: .milliseconds(slow.map { text.hasPrefix($0) } == true ? 300 : 5))
+        }
         log.append("[finished]")
     }
 
-    func stop() { stops += 1 }
+    func finish() {
+        holding?.resume()
+        holding = nil
+    }
+
+    func stop() {
+        stops += 1
+        finish()
+    }
 }
 
 @MainActor
@@ -262,6 +280,7 @@ struct PlanWalkTests {
         let (model, _) = await scanned(map: panel(timeCook: timeCook), tracking: NoFingertipEver(), speaker: speaker)
         model.sayAButton()
         await until { model.status.hasPrefix("Cook for") }
+        #expect(!model.canMoveOn, "The Next button is off")
         model.next()
         await until { model.guiding }
         #expect(model.planProgress == (timeCook ? "Step 1 of 5: Time Cook" : "Step 1 of 4: 1"))
@@ -284,11 +303,110 @@ struct PlanWalkTests {
             await until { model.guiding && model.planIndex == step }
         }
         #expect(model.planProgress == "Step 4 of 4: Start")
+        #expect(model.canMoveOn, "The Next button is on while the last key is guided")
         model.next()
         #expect(model.plan == nil)
         await model.waitForWork()
         #expect(model.status == "That was the last key.")
         #expect(!model.busy && !model.guiding)
+    }
+
+    @Test("Next as soon as a key is reached, before anything is said, guides the following key")
+    func nextOnceReached() async {
+        let speaker = FakeSpeaker()
+        let (model, finger) = await scanned(speaker: speaker, next: Self.hangs)
+        nextWhenGuidanceEnds(model)
+        model.sayAButton()
+        await until { model.listening && model.planIndex == 1 }
+        #expect(!speaker.spoken.contains("Press Time Cook. Say next to move on."))
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        #expect(speaker.spoken.contains("Press 1. Say next to move on."))
+        #expect(finger.streamCount == 2)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Next while the key is being named cuts it off and guides the following key")
+    func nextWhileNamingTheKey() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Press Time Cook"
+        let (model, finger) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { speaker.isHolding }
+        #expect(model.status == "Press Time Cook. Listening to move on.")
+        #expect(model.canMoveOn, "The Next button is on")
+        let stops = speaker.stops
+        model.next()
+        #expect(!model.canMoveOn, "A second tap waits for the following key")
+        #expect(speaker.stops > stops)
+        await until { model.listening && model.planIndex == 1 }
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        #expect(speaker.spoken.contains("Press 1. Say next to move on."))
+        #expect(finger.streamCount == 2)
+        #expect(model.canMoveOn)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("While the following key is announced, Next is off and a tap skips nothing")
+    func nextWhileAnnouncingTheStep() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Step 2 of 5"
+        // "next" is heard once, after the first key.
+        var answers = [true]
+        let (model, finger) = await scanned(speaker: speaker, next: {
+            answers.isEmpty ? try await Self.hangs() : answers.removeFirst()
+        })
+        model.sayAButton()
+        await until { speaker.isHolding }
+        #expect(model.status == "Step 2 of 5: 1")
+        #expect(!model.canMoveOn, "The Next button is off")
+        model.next()
+        #expect(model.plan != nil && model.planIndex == 1)
+        speaker.finish()
+        await until { model.listening && model.planIndex == 1 }
+        #expect(model.canMoveOn)
+        #expect(speaker.spoken.contains("Press 1. Say next to move on."))
+        #expect(!speaker.spoken.contains("Step 3 of 5: 3"))
+        #expect(finger.streamCount == 2)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Once the last key is reached, Next is off and doesn't cut off what to do")
+    func nextAfterTheLastKey() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Press Start"
+        let (model, _) = await scanned(say: "30 seconds", speaker: speaker)
+        model.sayAButton()
+        await until { speaker.isHolding }
+        #expect(model.status == "Press Start. That's the last key.")
+        #expect(!model.canMoveOn, "The Next button is off")
+        let stops = speaker.stops
+        model.next()
+        #expect(speaker.stops == stops && model.plan != nil)
+        speaker.finish()
+        await model.waitForWork()
+        #expect(model.status == "Press Start. That's the last key.")
+        #expect(!speaker.spoken.contains("That was the last key."))
+        #expect(model.plan == nil && !model.canMoveOn)
+    }
+
+    @Test("Stop and choosing a button turn the Next button off", arguments: [false, true])
+    func stopTurnsNextOff(choosing: Bool) async throws {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening }
+        #expect(model.canMoveOn)
+        if choosing {
+            model.choose(try #require(model.map?.button(labelled: "Add 30 Sec")))
+        } else {
+            model.stop()
+        }
+        #expect(!model.canMoveOn)
+        await model.waitForWork()
+        #expect(!model.canMoveOn && model.plan == nil)
     }
 
     @Test("Stop ends the whole plan", arguments: [true, false])
@@ -484,4 +602,22 @@ struct PlanWalkTests {
 
 private struct LaunchEmptyFrames: TrackingSource {
     func frames() -> AsyncStream<TrackingFrame> { AsyncStream { $0.finish() } }
+}
+
+/// Taps Next the moment guidance to a key ends, before anything is said about it.
+/// On a phone that moment lasts while "Target reached" finishes. With these fakes
+/// it takes no time, so this catches the status as it changes away from "Guiding
+/// to", which happens just after `guiding` goes false.
+@MainActor
+private func nextWhenGuidanceEnds(_ model: CameraLaunchModel) {
+    withObservationTracking { _ = model.status } onChange: {
+        MainActor.assumeIsolated {
+            // Called just before the change, so the status still says "Guiding to".
+            if !model.guiding && model.status.hasPrefix("Guiding to") {
+                model.next()
+            } else {
+                nextWhenGuidanceEnds(model)
+            }
+        }
+    }
 }

@@ -20,6 +20,10 @@ final class CameraLaunchModel {
     /// every scan, so anything that stops the current work ends the plan with it.
     private(set) var plan: CookTimePlan?
     private(set) var planIndex = 0
+    /// Whether a tap on Next does anything: from the start of a key's guidance until
+    /// the following key is announced, or on the last key until its guidance ends.
+    /// `next` checks this and the button is off without it, so they always agree.
+    private(set) var canMoveOn = false
     private var planReferenceID: UUID?
     /// Goes in front of the status, so the demo can't be fooled by a silent failure:
     /// "Plan from OpenAI" or "Plan from phone". `nil` with no OpenAI set up.
@@ -146,6 +150,7 @@ final class CameraLaunchModel {
         scanning = false
         plan = nil
         planNote = nil
+        canMoveOn = false
         speaking = false
         let cleanup = Task {
             await previous?.value
@@ -320,11 +325,12 @@ final class CameraLaunchModel {
         error = pipeline.trackingError
     }
 
-    /// Moves on from the current key once its guidance or listening has started.
-    /// Nothing detects a press, and arrival may never trigger, so this works then.
-    /// Before that, a tap would skip a key nobody has heard about yet.
+    /// Moves on from the current key once its guidance has started, and through
+    /// everything said about it after. Nothing detects a press, and arrival may
+    /// never trigger, so this works then. Before that, a tap would skip a key
+    /// nobody has heard about yet.
     func next() {
-        guard let plan, guiding || listening else { return }
+        guard let plan, canMoveOn else { return }
         let referenceID = planReferenceID
         let note = planNote
         let following = planIndex + 1
@@ -334,7 +340,8 @@ final class CameraLaunchModel {
             return
         }
         replaceWork(endingGuidance: false) { await self.walk(plan, from: following, referenceID: referenceID) }
-        // Replacing the work ended the plan. This is the same plan, one key on.
+        // Replacing the work ended the plan. This is the same plan, one key on, and
+        // `canMoveOn` stays off until that key is guided, so a second tap does nothing.
         self.plan = plan
         planIndex = following
         planNote = note
@@ -344,6 +351,8 @@ final class CameraLaunchModel {
     /// cancelled step just returns.
     private func walk(_ plan: CookTimePlan, from first: Int, referenceID: UUID?) async {
         for index in first..<plan.steps.count {
+            // Until this key is guided, a tap would skip it.
+            canMoveOn = false
             guard pipeline.panelReference?.photo.id == referenceID else {
                 self.plan = nil
                 return
@@ -351,6 +360,7 @@ final class CameraLaunchModel {
             planIndex = index
             let step = plan.steps[index]
             await announce(plan.progress(at: index))
+            if !Task.isCancelled { canMoveOn = true }
             await guide(step.button, referenceID: referenceID)
             guard !Task.isCancelled else { return }
             guard pipeline.panelReference?.photo.id == referenceID else {
@@ -359,6 +369,9 @@ final class CameraLaunchModel {
             }
             let reached = pipeline.guidanceArrived
             let lead = reached ? "Press \(step.name)" : "Guidance ended before \(step.name)"
+            // After the last key there's nowhere to move on to, and a tap mustn't
+            // cut off the instruction to press it.
+            if index == plan.steps.count - 1 { canMoveOn = false }
             await quietFeedback()
             guard index < plan.steps.count - 1 else {
                 await announce("\(lead). That's the last key.")
@@ -422,7 +435,7 @@ final class CameraLaunchModel {
             await cleanup.value
             guard requestID == id, !Task.isCancelled, active else { return }
             defer {
-                if requestID == id { busy = false; listening = false; guiding = false }
+                if requestID == id { busy = false; listening = false; guiding = false; canMoveOn = false }
             }
             do { try await operation() }
             catch is CancellationError { }

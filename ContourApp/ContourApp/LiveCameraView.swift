@@ -653,6 +653,9 @@ struct LiveCameraView: View {
                     .frame(minWidth: 120, minHeight: 44)
             }
             .buttonStyle(.glass(headerGlass))
+            .modifier(SelectionButtonAvailability())
+            // Off whenever a tap would be ignored, like before a key is guided.
+            .disabled(!experience.canMoveOn)
             // VoiceOver reads this label out loud, and the microphone may be open.
             .accessibilityLabel("Continue to the following key")
         }
