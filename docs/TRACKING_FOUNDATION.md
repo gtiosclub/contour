@@ -1,4 +1,37 @@
-# Shared tracking foundation (S0)
+# Shared tracking foundation
+
+## Production integration (#95–96)
+
+The phone app now constructs real Vision, feature, and hybrid sessions through
+`GuidanceSessionFactories.production`. Hybrid is the phone default. The shared
+camera requests AR world tracking on supported hardware and falls back to AV
+capture otherwise; hybrid can still return visually verified geometry without
+world calibration. The simulator app launch remains mocked. Standalone
+`LiveTrackingSource` construction retains its Vision default.
+
+`HybridPanelTracker` serializes visual hooks and feeds each observation and that
+frame's world snapshot into `HybridAlignment`. Accepted views drive feature
+calibration; readiness selects the stable subset. Reference replacement and Stop
+invalidate old work before it can publish or mutate new session state.
+
+`LiveTrackingSource.frames()` replaces the previous consumer after draining its
+pending work. Consumer cancellation retains reference registration/calibration,
+while the next consumer resets smoothing/hold state and requires fresh input.
+Explicit `stop()` and natural camera termination retire the backend. Stop retains
+the requested reference so the next run can register again. Reference or settings
+replacement creates independent production sources; diagnostics retire their own
+source on exit. A successful retry clears an earlier registration failure.
+
+Physical-device acceptance remains #97, including AR calibration/prediction,
+background recovery, and real Vision tracking. The iOS 27 simulator crashes inside
+Apple's Vision `TrackRectangleRequest.perform`; production factory tests construct
+Vision there but exercise its frame processing only on device. Feature and hybrid
+frame processing are exercised on the simulator.
+
+## Historical S0 baseline
+
+The following records the original contracts and ownership split; statements
+about future implementations describe S0, before the integration above.
 
 This is the buildable starting point for the independently owned tracking tasks.
 Vision remains the working default. OpenCV, ARKit capture, projection helpers,

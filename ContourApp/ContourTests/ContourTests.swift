@@ -169,7 +169,9 @@ struct PipelineWiringTests {
 
         #expect(await engine.outcomes == [.lostTracking])
         let received = await engine.received
-        try #require(received.count == 9)
+        // One-shot loss playback must not be cancelled by the next lost frame.
+        // The final empty state belongs to session cleanup after the stream ends.
+        try #require(received.count == 8)
         for index in [1, 2, 4, 5, 7] {
             #expect(received[index].vector == nil && received[index].outcome == nil)
         }
@@ -200,24 +202,28 @@ struct PipelineWiringTests {
         #expect(await engine.outcomes.isEmpty)
     }
 
-    @Test("Stop and reference replacement end an active loss episode", arguments: [false, true])
-    func lossCannotOutliveSession(replace: Bool) async throws {
+    @Test("Stop and reference replacement end an active loss episode", arguments: [false, true], [false, true])
+    func lossCannotOutliveSession(replace: Bool, announceBeforeStop: Bool) async throws {
         let source = ControlledFrames()
         let engine = LossFeedback()
-        let epoch = ContinuousClock.now
-        var offset = Duration.zero
+        let clock = LossTestClock()
         let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
             tracking: source, feedback: engine, liveComponents: [],
-            guidanceNow: { epoch.advanced(by: offset) })
+            guidanceNow: { clock.now })
         let guiding = Task { await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton) }
         await source.waitForSubscription()
         source.send(TrackingFrame(timestamp: Date(), fingertip: PanelPoint(x: 0.1, y: 0.1),
             panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
                 column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .good))
         await engine.waitForCount(1)
-        offset = .milliseconds(100)
+        clock.offset = .milliseconds(100)
         source.send(.lost(at: Date()))
         await engine.waitForCount(2)
+        if announceBeforeStop {
+            clock.offset = .milliseconds(500)
+            source.send(.lost(at: Date()))
+            await engine.waitForCount(3)
+        }
         if replace {
             let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
             let reference = try PanelReference(photo: photo, detection: PanelDetection(
@@ -227,12 +233,13 @@ struct PipelineWiringTests {
             await pipeline.stopGuidance()
         }
         await guiding.value
-        offset = .seconds(2)
+        clock.offset = .seconds(2)
         source.send(.lost(at: Date()))
         source.finish()
         let received = await engine.received
-        #expect(received.count == 3)
-        #expect(received.dropFirst().allSatisfy { $0.vector == nil && $0.outcome == nil })
+        #expect(received.count == (announceBeforeStop ? 4 : 3))
+        #expect(received.compactMap(\.outcome) == (announceBeforeStop ? [.lostTracking] : []))
+        #expect(received.last?.vector == nil && received.last?.outcome == nil)
     }
     private func targetFrame(fingertip: PanelPoint? = MockSurfaceMaps.microwaveStartButton.bounds.center,
                              confidence: Double = 1) -> TrackingFrame {
@@ -405,4 +412,17 @@ private actor LossFeedback: FeedbackEngine {
         if received.count >= target { return }
         await withCheckedContinuation { waiters.append((target, $0)) }
     }
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension ScriptedPrediction {
+    func stop() async {}
+}
+
+
+@MainActor
+private final class LossTestClock {
+    private let epoch = ContinuousClock.now
+    var offset = Duration.zero
+    var now: ContinuousClock.Instant { epoch.advanced(by: offset) }
 }

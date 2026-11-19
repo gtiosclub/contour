@@ -60,6 +60,23 @@ struct TrackingEvidenceTests {
         #expect(evidence.explanations.contains("Weak texture"))
     }
 
+    @Test("Surface rejection evidence distinguishes missing planes from incomplete coverage")
+    func surfaceEvidence() throws {
+        let hybrid = HybridTrackingDiagnostics(mode: .visual, message: "Show surrounding surface",
+            calibrationFrames: 0, surfaceSelection: .init(detectedPlaneCount: 2,
+                fittingPlaneCount: 0, rejections: [.outsidePlaneExtent: 2]))
+        let evidence = TrackingEvidence(sample: try sample(hybrid: hybrid))
+        #expect(evidence.calibration.first { $0.label == "AR planes" }?.value == "2")
+        #expect(evidence.calibration.first { $0.label == "Fitting planes" }?.value == "0")
+        #expect(evidence.calibration.first { $0.label == "Surface rejections" }?.value.contains("cover") == true)
+        let waiting = HybridTrackingDiagnostics(mode: .calibrating, message: "Hold",
+            calibrationFrames: 2, surfaceSelection: .init(detectedPlaneCount: 0))
+        let held = TrackingEvidence(sample: try sample(hybrid: waiting))
+        #expect(held.calibration.first { $0.label == "AR planes" }?.value == "0")
+        #expect(held.calibration.first { $0.label == "Fitting planes" }?.value == "Unavailable")
+        #expect(held.calibration.first { $0.label == "Surface rejections" }?.value == "Unavailable")
+    }
+
     private func sample(hybrid: HybridTrackingDiagnostics? = nil,
                         feature: FeatureTrackingDiagnostics? = nil,
                         quad: PanelQuad? = .fullFrame) throws -> LiveTrackingSample {

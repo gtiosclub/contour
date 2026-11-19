@@ -68,6 +68,9 @@ final class CameraLaunchModel {
     var speaksOwnStatus: Bool { speaking || plan != nil }
 
     var map: SurfaceMap? { pipeline.panelReference?.detection.map }
+    /// Current reference/readiness owns selection availability, including manual
+    /// setup after a failed scan. A past scan failure cannot hide a new target.
+    var hasSelectionContent: Bool { pipeline.canGuide && !(map?.buttons.isEmpty ?? true) }
     var usesCamera: Bool {
         pipeline.liveComponents.contains(.surfaceUnderstanding) || pipeline.liveComponents.contains(.tracking)
     }

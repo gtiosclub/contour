@@ -13,6 +13,8 @@ struct GuidanceLossEpisodeTests {
         #expect(episode.update(isUsable: false, at: start.advanced(by: .milliseconds(200))) == .quiet)
         #expect(episode.update(isUsable: true, at: start.advanced(by: .milliseconds(250))) == .resume)
         #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(1))) == .quiet)
+        #expect(episode.update(isUsable: true, at: start.advanced(by: .seconds(1.1))) == .resume)
+        #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(1.2))) == .quiet)
     }
 
     @Test("Sustained loss announces once after 400 ms and reset discards the old episode")
@@ -22,7 +24,9 @@ struct GuidanceLossEpisodeTests {
         #expect(episode.update(isUsable: false, at: start) == .quiet)
         #expect(episode.update(isUsable: false, at: start.advanced(by: .milliseconds(399))) == .quiet)
         #expect(episode.update(isUsable: false, at: start.advanced(by: .milliseconds(400))) == .announceLoss)
-        #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(1))) == .quiet)
+        #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(1))) == .holdingLoss)
+        #expect(episode.update(isUsable: true, at: start.advanced(by: .seconds(1.1))) == .resume)
+        #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(1.2))) == .quiet)
         episode.reset()
         #expect(episode.update(isUsable: false, at: start.advanced(by: .seconds(2))) == .quiet)
     }

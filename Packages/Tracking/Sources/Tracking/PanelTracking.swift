@@ -6,12 +6,6 @@ public protocol PanelTracking: Sendable {
     func startTracking(_ reference: PanelReference) async throws
     func track(_ frame: CameraFrame) async throws -> PanelObservation
     func stopTracking() async
-    /// Frames stopped for a while and are starting again, on the same panel.
-    func resumeAfterGap() async
-}
-
-public extension PanelTracking {
-    func resumeAfterGap() async {}
 }
 
 extension PanelTracker: PanelTracking {}
@@ -23,8 +17,8 @@ public protocol CalibratablePanelTracking: PanelTracking {
     func resetCalibration() async
 }
 
-/// Names only. Feature/hybrid implementations and their factory belong to later
-/// tasks; S0 never silently substitutes Vision for an unimplemented method.
+/// Available alignment engines. The app creates independent instances for
+/// guidance and diagnostics, using the same selected method and options.
 public enum PanelTrackingMethod: String, CaseIterable, Hashable, Sendable {
     case vision = "Vision rectangle (comparison)"
     case features = "OpenCV surface features"

@@ -66,6 +66,17 @@ struct SharedTrackingSetupTests {
         #expect(model.framesProcessed == 1)
     }
 
+    @Test("A live camera without AR uses real features and supports every comparison method")
+    func liveAssemblySupportsComparisonMethods() throws {
+        let camera = CameraService(worldTracking: false)
+        let pipeline = ContourPipeline.live(camera: camera)
+        #expect(pipeline.trackingMethod == .features)
+        for method in PanelTrackingMethod.allCases {
+            _ = try pipeline.sessionFactory(camera, method,
+                FeatureTrackingOptions(excludeHighlights: false, normalizeContrast: true), nil)
+        }
+    }
+
     private func reference() throws -> PanelReference {
         let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 32, height: 24), timestamp: Date())
         let quad = PanelQuad(topLeft: ImagePoint(x: 0.2, y: 0.2), topRight: ImagePoint(x: 0.8, y: 0.2),
@@ -130,4 +141,14 @@ private struct SetupFinger: TrackingFrameProcessor {
     func process(_ frame: CameraFrame) async -> TrackingDiagnostics {
         TrackingDiagnostics(timestamp: frame.timestamp, status: .notDetected)
     }
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSession {
+    func stop() async {}
+}
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension SetupSampleSession {
+    func stop() async {}
 }

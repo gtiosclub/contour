@@ -219,3 +219,8 @@ private final class SettingsCamera: CameraControl {
     func setExposureBias(_ value: Float) async throws -> Float? { nil }
     func cameraFrames() async -> AsyncStream<CameraFrame> { AsyncStream { $0.finish() } }
 }
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension ScriptedSettingsSession {
+    func stop() async {}
+}

@@ -205,3 +205,8 @@ private actor DiagnosticSession: GuidanceTrackingSession {
     }
     func release() { pending?.resume(); pending = nil }
 }
+
+// Scripted sessions own no hardware; the app still exercises retirement.
+private extension DiagnosticSession {
+    func stop() async {}
+}

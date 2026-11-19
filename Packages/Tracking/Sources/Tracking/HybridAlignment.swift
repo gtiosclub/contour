@@ -201,6 +201,7 @@ public struct HybridAlignment: PanelAlignmentPolicy {
     private var requestedRestore = false
     private var lastRMS: Double?
     private var lastCornerError: Double?
+    private var surfaceSelection: HybridTrackingDiagnostics.SurfaceSelection?
 
     public init(thresholds: Thresholds = Thresholds(), limits: WorldGeometryLimits = WorldGeometryLimits()) {
         self.thresholds = thresholds
@@ -221,6 +222,11 @@ public struct HybridAlignment: PanelAlignmentPolicy {
         didReset = false
         needsFeatureRestore = false
         frameTimestamp = visual.timestamp
+        // Error metrics describe this frame's comparison, never an earlier
+        // reference or a view whose geometry is no longer available.
+        lastRMS = nil
+        lastCornerError = nil
+        surfaceSelection = world.map { .init(detectedPlaneCount: $0.planes.count) }
 
         guard let world else {
             // No world frame at all: 2D is all we have, and corners in a frame
@@ -447,7 +453,15 @@ public struct HybridAlignment: PanelAlignmentPolicy {
             return report(visual, mode: .visual, message: "Waiting for a confident view to start from")
         }
         guard let (plane, corners, distance) = nearestCandidatePlane(for: quad, in: world, with: geometry) else {
-            return report(visual, mode: .visual, message: "No surface at the panel's position yet")
+            let message: String
+            if world.planes.isEmpty {
+                message = "No AR surfaces detected yet. Keep the panel and nearby surface in view."
+            } else if surfaceSelection?.rejections[.outsidePlaneExtent] != nil {
+                message = "Detected surfaces do not cover the whole panel yet. Show more of the surrounding surface."
+            } else {
+                message = "Detected surfaces do not fit the panel. Check surface rejection details."
+            }
+            return report(visual, mode: .visual, message: message)
         }
 
         let camera = cameraPosition(world)
@@ -472,20 +486,30 @@ public struct HybridAlignment: PanelAlignmentPolicy {
     /// Nearest by first-corner distance, as the issue suggests, and only planes
     /// where all four corners intersect — a plane that explains one corner and
     /// misses the rest is not the panel's surface.
-    private func nearestCandidatePlane(
+    private mutating func nearestCandidatePlane(
         for quad: PanelQuad, in world: WorldCameraSnapshot, with geometry: PanelWorldGeometry
     ) -> (WorldPlane, WorldPanelCorners, Double)? {
         guard let ray = try? geometry.ray(through: quad.topLeft) else { return nil }
 
         var best: (plane: WorldPlane, corners: WorldPanelCorners, distance: Double)?
+        var evidence = HybridTrackingDiagnostics.SurfaceSelection(
+            detectedPlaneCount: world.planes.count, fittingPlaneCount: 0)
         for plane in world.planes {
-            guard let topLeft = try? geometry.intersection(of: ray, with: plane),
-                  let corners = try? geometry.corners(of: quad, on: plane) else { continue }
-            let distance = simd_distance(ray.origin, topLeft)
-            if best == nil || distance < best!.distance {
-                best = (plane, corners, distance)
+            do {
+                let corners = try geometry.corners(of: quad, on: plane)
+                evidence.fittingPlaneCount = (evidence.fittingPlaneCount ?? 0) + 1
+                let distance = simd_distance(ray.origin, corners.topLeft)
+                if best == nil || distance < best!.distance {
+                    best = (plane, corners, distance)
+                }
+            } catch let error as WorldGeometryError {
+                evidence.rejections[error, default: 0] += 1
+            } catch {
+                // Geometry currently throws only WorldGeometryError.
+                evidence.rejections[.nonfiniteResult, default: 0] += 1
             }
         }
+        surfaceSelection = evidence
         guard let best else { return nil }
         return (best.plane, best.corners, best.distance)
     }
@@ -633,9 +657,8 @@ public struct HybridAlignment: PanelAlignmentPolicy {
 
                 let angle = acos(min(1, max(-1, simd_dot(firstRay.direction, nowRay.direction))))
                 guard angle >= thresholds.minimumParallax else { continue }
+                guard let meeting = Self.closestApproach(firstRay, nowRay) else { return .contradicted }
                 sawParallax = true
-
-                guard let meeting = Self.closestApproach(firstRay, nowRay) else { continue }
                 guard meeting.separation <= approachLimit else { return .contradicted }
                 let offPlane = abs(simd_dot(normal, meeting.point - planeOrigin))
                 guard offPlane <= planeLimit else { return .contradicted }
@@ -656,7 +679,7 @@ public struct HybridAlignment: PanelAlignmentPolicy {
         let alongB = simd_dot(b.direction, between)
         let ta = (cosine * alongB - alongA) / denominator
         let tb = (alongB - cosine * alongA) / denominator
-        guard ta.isFinite, tb.isFinite else { return nil }
+        guard ta.isFinite, tb.isFinite, ta > 0, tb > 0 else { return nil }
 
         let pa = a.point(at: ta)
         let pb = b.point(at: tb)
@@ -698,6 +721,7 @@ public struct HybridAlignment: PanelAlignmentPolicy {
 
     private mutating func discard(reason: String) {
         guard candidate != nil || isCalibrated else { return }
+        acceptedCalibrationView = false
         candidate = nil
         model = nil
         isCalibrated = false
@@ -798,7 +822,8 @@ public struct HybridAlignment: PanelAlignmentPolicy {
             alignmentError: lastRMS,
             cornerError: lastCornerError,
             baselineCentimeters: (candidate?.baseline ?? 0) * 100,
-            visualVerificationAge: verificationAge
+            visualVerificationAge: verificationAge,
+            surfaceSelection: surfaceSelection
         )
     }
 
