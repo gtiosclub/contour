@@ -25,6 +25,9 @@ public struct ButtonDetector: Sendable {
     /// Returns bounds and per-region confidence only — labels come later, from
     /// `LabelReader`. A region you are unsure about should be returned with low
     /// confidence rather than dropped; the caller decides the threshold.
+    /// A rectangle that is only a fragment of a printed word is not an unsure
+    /// key, however, so it may be dropped. If that loses a real key, grow it
+    /// to the surrounding text box instead.
     ///
     /// If the given panel quad is incorrect, such as covering only the clock
     /// display, returning no buttons is correct. `LiveSurfaceUnderstanding` can
@@ -100,7 +103,9 @@ public struct ButtonDetector: Sendable {
                 )
             )
         }
-        return removeOverlappingBoxes(results)
+        let boxes = removeOverlappingBoxes(results)
+        let textBoxes = try recognizedTextBoxes(in: image)
+        return removeBoxesInsideWords(boxes, textBoxes: textBoxes)
     }
 }
 
@@ -115,6 +120,32 @@ private func rectangles(in image: CGImage) throws -> [VNRectangleObservation] {
     try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
 
     return request.results ?? []
+}
+
+private func recognizedTextBoxes(in image: CGImage) throws -> [PanelRect] {
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = false
+    request.minimumTextHeight = 0
+
+    try VNImageRequestHandler(cgImage: image, options: [:]).perform([request])
+
+    return (request.results ?? []).compactMap { observation in
+        guard
+            let candidate = observation.topCandidates(1).first,
+            candidate.confidence >= 0.2,
+            !candidate.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+            return nil
+        }
+        let box = observation.boundingBox
+        return PanelRect(
+            x: Double(box.minX),
+            y: 1.0 - Double(box.maxY),
+            width: Double(box.width),
+            height: Double(box.height)
+        )
+    }
 }
 
 /// Whether a whole-photo search finds a box centred on `panel` and no bigger
@@ -165,6 +196,27 @@ private func straighten(_ image: CGImage, panel: PanelQuad) throws -> CGImage {
         throw SurfaceUnderstandingError.underlying("Perspective correction failed")
     }
     return corrected
+}
+
+/// Drops a detected box that is mostly inside a much wider printed word.
+///
+/// Vision can turn part of a printed label into a small rectangle. Keep the
+/// rule separate from rectangle overlap handling so it can be tuned and tested
+/// with normalized panel coordinates.
+func removeBoxesInsideWords(
+    _ results: [(bounds: PanelRect, confidence: Double)],
+    textBoxes: [PanelRect]
+) -> [(bounds: PanelRect, confidence: Double)] {
+    results.filter { result in
+        let box = result.bounds
+        guard box.width > 0, box.height > 0 else { return false }
+
+        return !textBoxes.contains { textBox in
+            guard textBox.width > 0, textBox.height > 0 else { return false }
+            guard box.width < textBox.width * (2.0 / 3.0) else { return false }
+            return overlapRatio(box, textBox) >= 0.8
+        }
+    }
 }
 
 /// Removes nested boxes and trims remaining overlaps so each button is reported once.
