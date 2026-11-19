@@ -12,6 +12,7 @@ import ContourFeedback
 import ContourMocks
 import Foundation
 import Testing
+import Tracking
 @testable import ContourApp
 
 /// A panel with every key a plan needs. Fresh ids on every call, like a real scan.
@@ -58,6 +59,17 @@ private struct NoFingertipEver: TrackingSource {
                     column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .degraded))
         }
     }
+}
+
+/// No fingertip ever, like `NoFingertipEver`, and counts each time tracking is
+/// told to stop, which makes the real tracker register the panel again.
+private actor StopCountingSession: GuidanceTrackingSession {
+    private(set) var stops = 0
+    func use(_ reference: PanelReference) {}
+    func stop() { stops += 1 }
+    func registrationError() -> PanelTrackingError? { nil }
+    func hybridStatus() -> HybridTrackingDiagnostics? { nil }
+    nonisolated func frames() -> AsyncStream<TrackingFrame> { NoFingertipEver().frames() }
 }
 
 /// Records what's said, and when it finished relative to the microphone.
@@ -198,6 +210,22 @@ struct PlanWalkTests {
         #expect(model.busy)
         model.stop()
         await model.waitForWork()
+    }
+
+    @Test("The Next button keeps tracking the panel, and Stop ends it")
+    func nextKeepsTracking() async {
+        let speaker = FakeSpeaker()
+        let session = StopCountingSession()
+        let (model, _) = await scanned(tracking: session, speaker: speaker)
+        model.sayAButton()
+        await until { model.guiding && model.planIndex == 0 }
+        let stops = await session.stops
+        model.next()
+        await until { model.guiding && model.planIndex == 1 }
+        #expect(await session.stops == stops)
+        model.stop()
+        await model.waitForWork()
+        #expect(await session.stops > stops)
     }
 
     @Test("The Next button works while listening for next")

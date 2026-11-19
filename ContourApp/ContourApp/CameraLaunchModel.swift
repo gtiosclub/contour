@@ -128,8 +128,12 @@ final class CameraLaunchModel {
     }
 
     /// Await this barrier before presenting diagnostics or starting replacement work.
+    ///
+    /// `endingGuidance: false` is for work that guides again straight away, like the
+    /// next key of a plan. Cancelling the work still ends its guidance, but tracking
+    /// keeps the panel instead of registering it again from the scan photo.
     @discardableResult
-    func stopWork() -> Task<Void, Never> {
+    func stopWork(endingGuidance: Bool = true) -> Task<Void, Never> {
         requestID = UUID()
         let previous = work
         previous?.cancel()
@@ -145,7 +149,7 @@ final class CameraLaunchModel {
         speaking = false
         let cleanup = Task {
             await previous?.value
-            await pipeline.stopGuidance()
+            if endingGuidance { await pipeline.stopGuidance() }
         }
         work = cleanup
         return cleanup
@@ -329,7 +333,7 @@ final class CameraLaunchModel {
             planNote = note
             return
         }
-        replaceWork { await self.walk(plan, from: following, referenceID: referenceID) }
+        replaceWork(endingGuidance: false) { await self.walk(plan, from: following, referenceID: referenceID) }
         // Replacing the work ended the plan. This is the same plan, one key on.
         self.plan = plan
         planIndex = following
@@ -408,8 +412,8 @@ final class CameraLaunchModel {
         if !Task.isCancelled { speaking = false }
     }
 
-    private func replaceWork(_ operation: @escaping @MainActor () async throws -> Void) {
-        let cleanup = stopWork()
+    private func replaceWork(endingGuidance: Bool = true, _ operation: @escaping @MainActor () async throws -> Void) {
+        let cleanup = stopWork(endingGuidance: endingGuidance)
         let id = UUID()
         requestID = id
         busy = true
