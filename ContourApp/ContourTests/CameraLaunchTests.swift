@@ -179,7 +179,7 @@ struct CameraLaunchTests {
         }
         #expect(CameraLaunchModel.readyStatus(for: map("Start", "5")) == ready)
         #expect(CameraLaunchModel.readyStatus(for: map("Start", nil))
-                == ready + " Number keys not found. If this panel has them, move closer and scan again.")
+                == ready + " Number keys not found. If this panel has them, hold the phone about a foot away and scan again.")
     }
 
     @Test("A scan with no number keys warns, and still does after leaving and coming back")

@@ -116,7 +116,7 @@ final class CameraLaunchModel {
     nonisolated static func readyStatus(for map: SurfaceMap) -> String {
         let ready = "Panel ready. Say a button name or choose one below."
         return map.hasNumberKeys ? ready
-            : ready + " Number keys not found. If this panel has them, move closer and scan again."
+            : ready + " Number keys not found. If this panel has them, hold the phone about a foot away and scan again."
     }
 
     func waitForWork() async { await work?.value }
