@@ -107,7 +107,7 @@ enum SyntheticPanel {
         return (try photo(image, size: canvas), quad)
     }
     
-    static func displayQuadPhoto() throws -> (photo: PanelPhoto, displayQuad: PanelQuad) {
+    static func displayQuadPhoto(digitHeight: CGFloat = 50) throws -> (photo: PanelPhoto, displayQuad: PanelQuad) {
         let canvas = PixelSize(width: 1500, height: 1100)
         let ctx = try context(canvas, background: CGColor(gray: 0.9, alpha: 1))
 
@@ -121,7 +121,7 @@ enum SyntheticPanel {
                 x: 590 + CGFloat(i) * 85,
                 y: 865,
                 width: 24,
-                height: 50
+                height: digitHeight
             ))
         }
 
@@ -154,6 +154,26 @@ enum SyntheticPanel {
         return (try photo(image, size: canvas), quad)
     }
 
+
+    /// Four square keys on a wide, short panel, like an oven's. In 0-1 panel
+    /// space each key is about four times taller than it is wide.
+    static func widePanelPhoto() throws -> (photo: PanelPhoto, quad: PanelQuad) {
+        let canvas = PixelSize(width: 1500, height: 600)
+        let panel = CGRect(x: 100, y: 150, width: 1300, height: 300)
+        let ctx = try context(canvas, background: CGColor(gray: 0.9, alpha: 1))
+        ctx.setFillColor(CGColor(gray: 0.2, alpha: 1))
+        for i in 0..<4 {
+            ctx.fill(CGRect(x: panel.minX + 150 + CGFloat(i) * 280, y: panel.minY + 90, width: 120, height: 120))
+        }
+        func corner(_ x: CGFloat, _ y: CGFloat) -> ImagePoint {
+            ImagePoint(x: Double(x) / Double(canvas.width), y: 1 - Double(y) / Double(canvas.height))
+        }
+        let quad = PanelQuad(topLeft: corner(panel.minX, panel.maxY),
+                             topRight: corner(panel.maxX, panel.maxY),
+                             bottomRight: corner(panel.maxX, panel.minY),
+                             bottomLeft: corner(panel.minX, panel.minY))
+        return (try photo(try makeImage(ctx), size: canvas), quad)
+    }
 
     /// Three labels on one continuous light strip, 20 px apart. Vision reads
     /// them as a single line ("Popcorn Beverage Defrost"), which is what a
@@ -320,50 +340,6 @@ enum SyntheticPanel {
         return (try photo(image, size: size), keyRect)
     }
 
-    static func halfOverlappingPhoto() throws -> (photo: PanelPhoto, key: PanelRect) {
-        let ctx = try context(
-            size,
-            background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1)
-        )
-
-        ctx.translateBy(x: 0, y: CGFloat(size.height))
-        ctx.scaleBy(x: 1, y: -1)
-
-        let key = CGRect(
-            x: 0.25 * CGFloat(size.width),
-            y: 0.30 * CGFloat(size.height),
-            width: 0.30 * CGFloat(size.width),
-            height: 0.30 * CGFloat(size.height)
-        )
-
-        ctx.setFillColor(CGColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1))
-        ctx.fill(key)
-
-        let overlapping = CGRect(
-            x: key.midX,
-            y: key.minY - 20,
-            width: key.width * 0.8,
-            height: key.height + 40
-        )
-
-        ctx.setStrokeColor(CGColor(red: 0.40, green: 0.40, blue: 0.40, alpha: 1))
-        ctx.setLineWidth(8)
-        ctx.stroke(overlapping)
-
-        let panelRect = PanelRect(
-            x: Double(key.minX / CGFloat(size.width)),
-            y: Double(key.minY / CGFloat(size.height)),
-            width: Double(key.width / CGFloat(size.width)),
-            height: Double(key.height / CGFloat(size.height))
-        )
-
-        return (
-            try photo(try makeImage(ctx), size: size),
-            panelRect
-        )
-    }
-    
-
     /// Three dark keys on a light panel with their labels printed UNDER them,
     /// not on them, like a ▷ key with "START" below it. Returns the keys and
     /// their labels in panel space; the panel fills the frame.
@@ -408,6 +384,42 @@ enum SyntheticPanel {
             draw(label, centeredIn: cell, in: ctx)
         }
         return (try photo(try makeImage(ctx), size: size), labels)
+    }
+
+    /// A dark control panel with an optional green clock display and six keys.
+    static func displayPhoto(time: String?) throws -> PanelPhoto {
+        let displaySize = PixelSize(width: 900, height: 1200)
+        let ctx = try context(displaySize, background: CGColor(red: 0.12, green: 0.12, blue: 0.13, alpha: 1))
+        ctx.translateBy(x: 0, y: CGFloat(displaySize.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let w = CGFloat(displaySize.width), h = CGFloat(displaySize.height)
+        let display = CGRect(x: 0.16 * w, y: 0.08 * h, width: 0.68 * w, height: 0.22 * h)
+        ctx.setFillColor(CGColor(red: 0.025, green: 0.035, blue: 0.03, alpha: 1))
+        ctx.fill(display)
+        if let time {
+            draw(
+                time,
+                centeredIn: display,
+                in: ctx,
+                size: 96,
+                color: CGColor(red: 0.25, green: 0.95, blue: 0.35, alpha: 1)
+            )
+        }
+
+        let labels = ["Popcorn", "Pizza", "Defrost", "Start", "Stop", "Clear"]
+        for (index, label) in labels.enumerated() {
+            let cell = CGRect(
+                x: (0.10 + 0.30 * CGFloat(index % 3)) * w,
+                y: (0.42 + 0.28 * CGFloat(index / 3)) * h,
+                width: 0.20 * w,
+                height: 0.13 * h
+            )
+            ctx.setFillColor(CGColor(gray: 0.88, alpha: 1))
+            ctx.fill(cell)
+            draw(label, centeredIn: cell, in: ctx)
+        }
+        return try photo(try makeImage(ctx), size: displaySize)
     }
 
     // MARK: - Drawing
@@ -481,18 +493,32 @@ enum SyntheticPanel {
         )
     }
 
-    private static func line(_ text: String) -> CTLine {
-        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, 26, nil)
-        let attrs: [NSAttributedString.Key: Any] = [
+    private static func line(
+        _ text: String,
+        size: CGFloat = 26,
+        color: CGColor = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+        kern: CGFloat = 0
+    ) -> CTLine {
+        let font = CTFontCreateWithName("Helvetica-Bold" as CFString, size, nil)
+        var attrs: [NSAttributedString.Key: Any] = [
             NSAttributedString.Key(kCTFontAttributeName as String): font,
-            NSAttributedString.Key(kCTForegroundColorAttributeName as String):
-                CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
         ]
+        if kern != 0 {
+            attrs[NSAttributedString.Key(kCTKernAttributeName as String)] = kern
+        }
         return CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attrs))
     }
 
-    private static func draw(_ text: String, centeredIn rect: CGRect, in ctx: CGContext) {
-        let line = line(text)
+    private static func draw(
+        _ text: String,
+        centeredIn rect: CGRect,
+        in ctx: CGContext,
+        size: CGFloat = 26,
+        color: CGColor = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1),
+        kern: CGFloat = 0
+    ) {
+        let line = line(text, size: size, color: color, kern: kern)
         let bounds = CTLineGetBoundsWithOptions(line, [])
 
         // Text is drawn y-up; undo the flip locally so glyphs are not mirrored.

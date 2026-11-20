@@ -20,7 +20,7 @@ struct ContourApp: App {
     @State private var pipeline: ContourPipeline
 
     init() {
-        let camera = CameraService()
+        let camera = CameraService(worldTracking: true)
         _camera = State(initialValue: camera)
         // On a phone everything runs for real on the camera. The simulator has
         // no camera, so it stays fully mocked.

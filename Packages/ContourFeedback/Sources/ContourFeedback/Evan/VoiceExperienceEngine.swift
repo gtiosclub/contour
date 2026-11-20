@@ -14,7 +14,7 @@ public enum ExperienceVoiceGuidance: Equatable, Sendable {
     }
 
     case direction(Direction, near: Bool)
-    case slowly, arrived, paused
+    case slowly, holding, arrived, paused
 }
 
 enum ExperienceVoiceCue: String, CaseIterable, Sendable {
@@ -82,7 +82,8 @@ struct ExperienceVoicePolicy {
                 if !changed, case .direction = old, isSpeaking { return nil }
                 cues = [.direction(direction, near: near, changed: changed)]
             case .slowly: cues = [.slowly]
-            case .arrived: cues = [.stop, .reached]
+            case .holding: cues = [.stop]
+            case .arrived: cues = [.reached]
             case .paused: cues = [.paused]
             }
         } else if !isSpeaking, case let .direction(direction, near) = current {
@@ -160,8 +161,8 @@ public final class VoiceExperienceEngine {
         let id = UUID()
         playbackID = id
         isSpeaking = true
-        // Only arrival has two clips: Stop, then Target reached. Any new state
-        // cancels the entire sequence, including its not-yet-played second clip.
+        // Hold entry says Stop; confirmed arrival says Target reached.
+        // Any new state cancels old instructions immediately.
         playbackTask = Task { @MainActor [weak self] in
             for cue in cues {
                 guard !Task.isCancelled, let player = self?.players[cue] else { return }

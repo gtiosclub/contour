@@ -20,7 +20,8 @@ pixels of the buffer passed in (x right, y down).
 | `cft_copy_inlier_points` / `cft_copy_inlier_feature_ids` | Evidence of the most recent attempt only (live points, stable reference IDs). |
 | `cft_set_active_features` / `cft_restore_all_features` | Hooks for #84: restrict matching to original feature IDs, or restore all. |
 | `cft_reset` | Drop the reference. |
-| `cft_observe_calibration_view` / `cft_finish_calibration` / `cft_reset_calibration` | Calibration hooks the Swift wrapper forwards. An observe only counts a frame that was actually tracked. |
+| `cft_observe_calibration_view` / `cft_finish_calibration` / `cft_reset_calibration` | Persistent-feature selection (#84), forwarded by the Swift wrapper. |
+| `cft_calibration_view_count` / `cft_copy_active_feature_ids` / `cft_copy_reference_feature_points` | Selection state, for tests and diagnostics overlays. |
 
 Lifecycle rules the wrapper can rely on:
 
@@ -138,4 +139,104 @@ orientations), rotated reference photos, camera-resolution inputs, corner and
 target coverage, loss and recovery, registration failures, stop or replacement
 during preparation, calibration forwarding, and injection into
 `LiveTrackingSource` with a plain 2D camera and no AR.
+
+## Glare and contrast (#83)
+
+Before ORB extraction, the reference and every frame go through the same
+preparation, controlled by `FeatureTrackingOptions` (defaults unchanged:
+highlight exclusion on, contrast normalization off). The Swift wrapper copies
+the options into `CFTConfig`.
+
+1. **Clipped pixels** are those ≥ 250 in the raw grayscale image. Their share of
+   the image is always reported (`saturatedFraction`), even when the frame is lost.
+2. **Glare regions** are 8-connected clipped regions of ≥ 256 px that fill
+   ≥ 70% of their bounding box and cover ≤ 25% of the image. Their share is
+   `excludedHighlightFraction`.
+3. **Contrast** (optional): CLAHE with an 8×8 grid and clip limit 2. It runs
+   after steps 1–2, so enhancement never changes what counts as clipped.
+4. **Features** whose descriptor support touches a glare pixel are dropped
+   (`excludedFeatures`). An ORB descriptor samples a rotated 31×31 patch at its
+   pyramid scale (`keypoint.size` = 31 × scale), so the check uses a disc of
+   radius 0.75 × size around each keypoint. That disc covers the patch at any
+   rotation plus ORB's smoothing margin. Matching and the geometry checks are
+   unchanged.
+
+**Changed from the issue's starting values:** the bounding-box fill threshold is
+0.7, not 0.8. A disc fills π/4 ≈ 78.5% of its box (an axis-aligned ellipse
+too), so at 0.8 round specular hotspots never qualified. Rectangles, discs and
+ellipses qualify at 0.7; hollow outlines and sparse shapes still don't.
+
+**What it does not do:**
+- It doesn't remove reflections. Darker reflections that aren't clipped aren't
+  detected at all.
+- White controls or white label areas that clip are excluded like glare. The
+  synthetic panel has a few, which drops about 10% of its reference features.
+- Camera exposure and asking the user to reposition belong outside this backend.
+
+Measured effect on the synthetic fixtures:
+
+| Case | Highlight exclusion on | Off |
+|---|---|---|
+| Clean view | tracked, 241 inliers (160 reference features excluded as white controls) | tracked, 266 inliers |
+| Rectangle and round hotspot on the panel | tracked, 565 frame features dropped, no inlier within 23 px of glare | tracked |
+| Hotspot in the reference, a different one in the frame | tracked | tracked |
+| Panel mostly washed out (43% of frame clipped) | lost (too few inliers), saturation reported, nothing excluded (region too large) | lost |
+
+In these synthetic cases flat clipped patches don't create false matches, so
+exclusion doesn't change whether tracking succeeds; it removes features at
+glare boundaries. The case it targets, glare features that shift between views
+on a real glossy panel, needs recorded fixtures to measure.
+
+With contrast squeezed into 20 grey levels across the whole scene, registration
+fails honestly (too few features) without CLAHE and tracks within 3 px with it.
+
+`FeatureImagePreparationTests` covers clipped patches (excluded area, reported
+fractions, inlier distance from glare), disabled filtering, which regions
+qualify (lettering, ring, white surface, 249-level patch), contrast leaving the
+glare mask unchanged, low contrast, washout, glare in the reference, and invalid
+settings. `FeaturePanelTrackerTests` checks the options and diagnostics through
+the Swift tracker.
+
+## Persistent features (#84)
+
+After calibration the matcher can prefer original reference features that kept
+matching across several accepted views. Printed labels and fixed controls tend
+to persist; a hand, or a reflection that moves with the camera, doesn't.
+Persistence alone doesn't prove a feature is reflection-free.
+
+- **Observe.** `cft_observe_calibration_view` / `observeCalibrationView()`
+  counts the inliers of the latest match as one accepted view. Each original
+  feature counts at most once per view. It counts nothing unless that match was
+  tracked, and repeating the call for the same match doesn't count twice.
+  Processing a frame never counts by itself: the hybrid coordinator decides,
+  from camera movement and geometry, which views are accepted.
+- **Finish.** `cft_finish_calibration` / `finishCalibration()` needs ≥ 8 accepted
+  views. It keeps originals that were inliers in ≥ 60% of them (rounded up:
+  5 of 8, exactly 6 of 10, 9 of 15) and at least 4 times. The stored float
+  is rounded back to its decimal first, since 0.6f is slightly above 0.6. The subset is activated only if it has ≥ 40
+  features whose convex hull covers ≥ 12% of the reference panel. Otherwise it
+  returns -1 / `nil` and every original feature is used.
+- **Matching** with a subset still uses the original descriptors and IDs.
+  Nothing is learned from live frames.
+- **Reset** clears the counts and restores every original feature, so
+  calibration can be tried again. Registering a new reference discards all
+  selection state (the Swift wrapper creates a fresh backend).
+
+Values are the issue's starting values, unchanged, and live in `CFTConfig`.
+
+**Tradeoff to watch:** the subset is small. On the synthetic panel each view
+has ~240 inliers out of ~1,340 reference features, and only 145–175 features
+are inliers in 5 of 8 slightly different views. With a small transient patch
+(like a moving reflection) hidden in 5 of 8 views, the subset excludes that
+patch and tracks clean and partly covered views within ~1.1 px (full set:
+~0.5 px). If a third of the panel is hidden in most calibration views, the
+subset covers only the rest, and extrapolated corners drift to 3–5 px. The
+coverage guard prevents worse cases but not this one. Real calibration sweeps
+should be checked for this before the subset is relied on.
+
+`FeatureSelectionTests` covers transient and persistent selection, subset
+tracking with unchanged descriptors and IDs, unaccepted, lost and repeated
+observations, too few views, count and coverage rejection (including a
+naturally persistent small cluster), reset, and replacement.
+`FeaturePanelTrackerTests` repeats the end-to-end flow through the Swift actor.
 

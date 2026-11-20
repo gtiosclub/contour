@@ -54,7 +54,8 @@ public struct LabelReader: Sendable {
         /// key, so these are buttons too.
         var textButtons: [(label: String, bounds: PanelRect)]
         /// Regions holding several separate labels: a frame around a group of
-        /// keys, not a key. Their words went to `textButtons` instead.
+        /// keys, not a key. Their words went to `textButtons` instead. Also
+        /// boxes on the clock display, which are digits, not keys.
         var frames: Set<Int> = []
     }
 
@@ -62,8 +63,12 @@ public struct LabelReader: Sendable {
     /// buttons.
     func read(in photo: PanelPhoto, panel: PanelQuad, regions: [PanelRect]) async throws -> Reading {
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
+        return try await read(in: try photo.cgImage(), panel: panel, regions: regions)
+        }
 
-        let image = try photo.cgImage()
+    /// Same, for an image that's already decoded and upright.
+    func read(in image: CGImage, panel: PanelQuad, regions: [PanelRect]) async throws -> Reading {
+        guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
         // On macOS/iOS 27 the neural model behind `.accurate` sometimes
         // fails to load (e5rtError, "precompiled compute operation"), and
         // once it fails it keeps failing for the rest of the process.
@@ -81,11 +86,38 @@ public struct LabelReader: Sendable {
         }
 
         guard !Task.isCancelled else { throw SurfaceUnderstandingError.cancelled }
-        let words = locateWords(in: observations, panel: panel)
-        let assigned = Self.assign(words, to: regions)
+        return Self.reading(locateWords(in: observations, panel: panel), regions: regions)
+    }
+
+    /// Hands the words to the regions and collects the leftovers.
+    ///
+    /// The clock and the status text printed inside the display never label a
+    /// key, so they come out before any region can take them. A box centred on
+    /// them is a digit on the display, not a key, so it takes nothing and is
+    /// reported as a frame. Only text that starts above the clock's bottom edge
+    /// counts: the labels just under the display are real keys.
+    static func reading(_ located: [Word], regions: [PanelRect]) -> Reading {
+        let kept = removingClockWords(from: located)
+        let removed = located.filter { !kept.contains($0) }
+        let clockBottom = removed.max { $0.height < $1.height }?.bottom ?? -.infinity
+        let display = removed.filter { $0.top < clockBottom }
+        let words = located.filter { !display.contains($0) }
+        let displayBoxes = Set(regions.indices.filter { index in
+            let center = regions[index].center
+            return display.contains { word in
+                word.left <= center.x && center.x <= word.right
+                    && word.top <= center.y && center.y <= word.bottom
+            }
+        })
+        let assigned = assign(words, to: regions, skipping: displayBoxes)
         return Reading(
             labels: assigned.labels,
-            textButtons: Self.textButtons(from: assigned.unused, regions: regions.indices.filter { !assigned.frames.contains($0) }.map { regions[$0] }),
+            textButtons: Self.textButtons(
+                from: assigned.unused,
+                regions: regions.indices
+                    .filter { !assigned.frames.contains($0) }
+                    .map { regions[$0] }
+            ),
             frames: assigned.frames
         )
     }
@@ -173,18 +205,18 @@ public struct LabelReader: Sendable {
     /// region's height, and under it horizontally. That line can come from a
     /// box the detector drew tightly around the word itself; that box is the
     /// label, not a key, so it's dropped too.
-    static func assign(_ words: [Word], to regions: [PanelRect]) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
+    static func assign(_ words: [Word], to regions: [PanelRect], skipping: Set<Int> = []) -> (labels: [String?], unused: [Word], frames: Set<Int>) {
         var taken = Array(repeating: [Word](), count: regions.count)
         var unused: [Word] = []
         for word in words {
-            if let index = regions.firstIndex(where: { $0.contains(word.centre) }) {
+            if let index = regions.indices.first(where: { !skipping.contains($0) && regions[$0].contains(word.centre) }) {
                 taken[index].append(word)
             } else {
                 unused.append(word)
             }
         }
 
-        var frames = Set<Int>()
+        var frames = skipping
         for index in regions.indices where groups(of: taken[index]).count > 1 {
             frames.insert(index)
             unused += taken[index]
@@ -196,6 +228,20 @@ public struct LabelReader: Sendable {
             guard taken[index].count == 1, let word = taken[index].first else { return false }
             let wordArea = (word.right - word.left) * (word.bottom - word.top)
             return wordArea >= regions[index].width * regions[index].height * 0.4
+        }
+
+        let huggers = regions.indices.filter { hugsItsWord($0) }
+        for a in huggers {
+            for b in huggers where b > a
+                && !taken[a].isEmpty
+                && !taken[b].isEmpty
+                && belongTogether(taken[a][0], taken[b][0])
+                && Set([taken[a][0].text.lowercased(), taken[b][0].text.lowercased()]) == ["time", "cook"] {
+                unused += taken[a] + taken[b]
+                taken[a] = []
+                taken[b] = []
+                frames.formUnion([a, b])
+            }
         }
 
         for (index, region) in regions.enumerated() where taken[index].isEmpty && !frames.contains(index) {
@@ -253,33 +299,7 @@ public struct LabelReader: Sendable {
     /// and nearby text within the display's horizontal columns.
     /// Kept independent of Vision so the geometry can be unit tested.
     static func removingClockWords(from words: [Word]) -> [Word] {
-        let heights = words.map(\.height).filter { $0.isFinite && $0 > 0 }.sorted()
-        guard !heights.isEmpty else { return words }
-
-        let middle = heights.count / 2
-        let medianHeight = heights.count.isMultiple(of: 2)
-            ? (heights[middle - 1] + heights[middle]) / 2
-            : heights[middle]
-
-        let clocks = words.filter { word in
-            let digits = word.text.filter(\.isNumber).count
-            let clockCharacters = word.text.allSatisfy {
-                $0.isNumber || $0 == ":" || $0 == "."
-            }
-
-            let width = word.right - word.left
-            let height = word.height
-            let longSide = max(width, height)
-            let shortSide = min(width, height)
-
-            return clockCharacters
-                && (3...4).contains(digits)
-                && height >= 2 * medianHeight
-                && shortSide > 0
-                && longSide >= 2 * shortSide
-        }
-
-        guard let clock = clocks.max(by: { $0.height < $1.height }) else {
+        guard let (clock, medianHeight) = clock(in: words) else {
             return words
         }
 
@@ -310,10 +330,43 @@ public struct LabelReader: Sendable {
             return true
         }
     }
-    /// The words split into labels: words that belong together end up in one group
+
+    /// Finds the most likely clock display and the median word height used to
+    /// distinguish display-sized text from ordinary labels.
+    static func clock(in words: [Word]) -> (clock: Word, medianHeight: Double)? {
+        let heights = words.map(\.height).filter { $0.isFinite && $0 > 0 }.sorted()
+        guard !heights.isEmpty else { return nil }
+
+        let middle = heights.count / 2
+        let medianHeight = heights.count.isMultiple(of: 2)
+            ? (heights[middle - 1] + heights[middle]) / 2
+            : heights[middle]
+
+        let clocks = words.filter { word in
+            let digits = word.text.filter(\.isNumber).count
+            let clockCharacters = word.text.allSatisfy {
+                $0.isNumber || $0 == ":" || $0 == "."
+            }
+
+            let width = word.right - word.left
+            let height = word.height
+            let longSide = max(width, height)
+            let shortSide = min(width, height)
+
+            return clockCharacters
+                && (3...4).contains(digits)
+                && height >= 2 * medianHeight
+                && shortSide > 0
+                && longSide >= 2 * shortSide
+        }
+
+        guard let clock = clocks.max(by: { $0.height < $1.height }) else { return nil }
+        return (clock, medianHeight)
+    }
+
+    /// The words split into labels: words that belong together end up in one group.
     static func groups(of words: [Word], regions: [PanelRect] = []) -> [[Word]] {
         var parent = Array(words.indices)
-        
         func root(_ index: Int) -> Int {
             if parent[index] == index {
                 return index

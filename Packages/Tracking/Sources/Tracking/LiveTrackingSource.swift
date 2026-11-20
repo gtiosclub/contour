@@ -66,29 +66,29 @@ public struct LiveTrackingSource: TrackingSource {
     }
 
     /// Registration failure for the current reference, if initialization failed.
-    /// Cleared by the next reference handoff. No camera ownership is transferred.
+    /// Cleared by a reference handoff, explicit stop, or successful registration retry.
+    /// No camera ownership is transferred.
     public func registrationError() async -> PanelTrackingError? { await engine?.registrationError() }
 
     public func hybridStatus() async -> HybridTrackingDiagnostics? { await engine?.hybridStatus() }
 
+    /// Retire processing/calibration while retaining the requested reference for retry.
+    public func stop() async { await engine?.stop() }
+
     /// Start tracking and return the stream of frames.
     ///
-    /// One stream at a time: frames are a chain, so two streams would compete
-    /// for the same panel tracker.
+    /// A new consumer replaces and drains the previous consumer. Cancelling a
+    /// consumer retains registration/calibration; each new run requires fresh input.
+    /// Explicit stop or natural camera termination retires the backend.
     ///
     /// - Returns: frames in normalized panel space, at camera rate.
     public func frames() -> AsyncStream<TrackingFrame> {
         guard let engine else { return AsyncStream { $0.finish() } }
         return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-            let task = Task {
-                await engine.beginStream()
-                for await frame in await engine.cameraFrames() {
-                    if Task.isCancelled { break }
-                    continuation.yield(await engine.process(frame))
-                }
-                continuation.finish()
-            }
-            continuation.onTermination = { _ in task.cancel() }
+            let worker = TrackingWorker()
+            let task = Task { await engine.run(continuation, worker: worker) }
+            worker.install(task)
+            continuation.onTermination = { _ in worker.cancel() }
         }
     }
 }
@@ -127,6 +127,10 @@ private actor Engine {
     private var panelStatus: PanelObservation.Status?
     private var featureDiagnostics: FeatureTrackingDiagnostics?
     private var hybridDiagnostics: HybridTrackingDiagnostics?
+    private var runGeneration: UInt64 = 0
+    private var worker: TrackingWorker?
+    private var output: AsyncStream<TrackingFrame>.Continuation?
+    private var operationTail: Task<Void, Never>?
 
     init(camera: any CameraFrameSource, panelTracker: any PanelTracking,
          fingertipTracker: FingertipTracker, evaluator: TrackingQualityEvaluator,
@@ -136,10 +140,6 @@ private actor Engine {
         self.fingertipTracker = fingertipTracker
         self.evaluator = evaluator
         self.onSample = onSample
-    }
-
-    func cameraFrames() async -> AsyncStream<CameraFrame> {
-        await camera.cameraFrames()
     }
 
     func use(_ reference: PanelReference) {
@@ -156,20 +156,108 @@ private actor Engine {
 
     func hybridStatus() -> HybridTrackingDiagnostics? { hybridDiagnostics }
 
-    /// Each guidance session starts fresh from the panel, not from wherever
-    /// the last session left off.
-    func beginStream() {
-        if let reference { use(reference) }
+    func run(_ continuation: AsyncStream<TrackingFrame>.Continuation, worker incoming: TrackingWorker) async {
+        guard !Task.isCancelled else { continuation.finish(); return }
+        runGeneration &+= 1
+        let run = runGeneration
+        let old = worker
+        let oldOutput = output
+        worker = incoming
+        output = continuation
+        old?.cancel()
+        oldOutput?.finish()
+        await old?.wait()
+        // An explicit stop may have queued backend retirement while we waited.
+        try? await enqueue(cancellable: false) { await self.prepare(run: run) }
+        guard runGeneration == run, !Task.isCancelled else {
+            await finish(run: run, cameraEnded: false)
+            continuation.finish()
+            return
+        }
+        for await frame in await camera.cameraFrames() {
+            if Task.isCancelled { break }
+            do {
+                // Detaching a target consumer is not cancelling its reference.
+                // Drain a started frame so calibration hooks cannot be left half
+                // committed; run/reference checks suppress obsolete publication.
+                let result = try await enqueue(cancellable: false) { try await self.process(frame, run: run) }
+                continuation.yield(result)
+            } catch { break }
+        }
+        await finish(run: run, cameraEnded: !Task.isCancelled)
+        continuation.finish()
     }
 
-    func process(_ frame: CameraFrame) async -> TrackingFrame {
+    private func prepare(run: UInt64) {
+        guard run == runGeneration else { return }
+        previous = nil
+        smoothed = nil
+        clearEvidence()
+    }
+
+    func stop() async {
+        generation &+= 1
+        runGeneration &+= 1
+        let request = generation
+        let old = worker
+        worker = nil
+        output?.finish(); output = nil
+        old?.cancel()
+        panel = reference.map(Panel.waiting) ?? .none
+        previous = nil; smoothed = nil; initializationFailure = nil
+        clearEvidence()
+        try? await enqueue(cancellable: false) { await self.retire(request: request) }
+        await old?.wait()
+    }
+
+    private func finish(run: UInt64, cameraEnded: Bool) async {
+        guard run == runGeneration else { return }
+        worker = nil; output = nil
+        runGeneration &+= 1
+        if cameraEnded {
+            generation &+= 1
+            let request = generation
+            panel = reference.map(Panel.waiting) ?? .none
+            previous = nil; smoothed = nil
+            clearEvidence()
+            try? await enqueue(cancellable: false) { await self.retire(request: request) }
+        }
+    }
+
+    private func retire(request: Int) async {
+        guard generation == request else { return }
+        await panelTracker.stopTracking()
+    }
+
+    private func clearEvidence() {
+        sampleQuad = nil; sampleTip = nil; sampleAssessment = nil
+        panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
+    }
+
+    private func enqueue<T: Sendable>(cancellable: Bool = true,
+                                     _ operation: @escaping @Sendable () async throws -> T) async throws -> T {
+        let previous = operationTail
+        let job = Task {
+            await previous?.value
+            if cancellable { try Task.checkCancellation() }
+            return try await operation()
+        }
+        operationTail = Task { _ = await job.result }
+        return try await withTaskCancellationHandler {
+            try await job.value
+        } onCancel: { if cancellable { job.cancel() } }
+    }
+
+    private func process(_ frame: CameraFrame, run: UInt64) async throws -> TrackingFrame {
+        guard runGeneration == run, !Task.isCancelled else { throw CancellationError() }
         let session = generation
         sampleQuad = nil
         sampleTip = nil
         sampleAssessment = nil
         panelStatus = nil; featureDiagnostics = nil; hybridDiagnostics = nil
         let result = await processFrame(frame)
-        guard generation == session, !Task.isCancelled else { return .lost(at: frame.timestamp) }
+        guard generation == session, runGeneration == run,
+              worker?.isCancelled == false, !Task.isCancelled else { return .lost(at: frame.timestamp) }
         onSample?(LiveTrackingSample(cameraFrame: frame, frame: result,
             panelQuad: sampleQuad, imageFingertip: sampleTip, assessment: sampleAssessment,
             registrationError: initializationFailure, panelStatus: panelStatus,
@@ -189,6 +277,7 @@ private actor Engine {
                 // A newer panel arrived while this one was registering.
                 guard generation == handOver else { return lost(frame) }
                 panel = .tracking
+                initializationFailure = nil
             } catch let error as PanelTrackingError where error.meansUnusablePanel {
                 if generation == handOver {
                     panel = .unusable
@@ -265,6 +354,41 @@ private actor Engine {
         let next = smoothed.map { PanelPoint(x: ($0.x + point.x) / 2, y: ($0.y + point.y) / 2) } ?? point
         smoothed = next
         return next
+    }
+}
+
+/// Installs a producer task before consumers can await its retirement. Keeping
+/// cancellation separate also handles termination that races task installation.
+private final class TrackingWorker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var task: Task<Void, Never>?
+    private var cancelled = false
+    private var waiters: [CheckedContinuation<Task<Void, Never>, Never>] = []
+    var isCancelled: Bool { lock.withLock { cancelled } }
+
+    func install(_ task: Task<Void, Never>) {
+        let state = lock.withLock {
+            self.task = task
+            let waiting = waiters; waiters = []
+            return (cancelled, waiting)
+        }
+        if state.0 { task.cancel() }
+        state.1.forEach { $0.resume(returning: task) }
+    }
+    func cancel() {
+        let task = lock.withLock { cancelled = true; return self.task }
+        task?.cancel()
+    }
+    func wait() async {
+        let task: Task<Void, Never> = await withCheckedContinuation { continuation in
+            let installed: Task<Void, Never>? = lock.withLock {
+                if let task { return task }
+                waiters.append(continuation)
+                return nil
+            }
+            if let installed { continuation.resume(returning: installed) }
+        }
+        await task.value
     }
 }
 

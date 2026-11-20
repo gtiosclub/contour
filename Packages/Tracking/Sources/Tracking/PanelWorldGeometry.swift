@@ -69,7 +69,7 @@ public struct WorldPanelCorners: Hashable, Sendable {
 
 /// Every way this math can fail to produce a usable answer. All explicit: a
 /// caller never gets a number that quietly means "no".
-public enum WorldGeometryError: Error, Equatable {
+public enum WorldGeometryError: Error, Hashable, CaseIterable {
     /// Nonfinite or non-invertible camera transform, or unusable intrinsics or
     /// sensor dimensions.
     case invalidSnapshot
@@ -87,6 +87,22 @@ public enum WorldGeometryError: Error, Equatable {
     case outsideImageBounds
     /// The arithmetic produced a NaN or an infinity.
     case nonfiniteResult
+}
+
+extension WorldGeometryError {
+    /// Short, deterministic labels for diagnostic rejection counts.
+    public var diagnosticDescription: String {
+        switch self {
+        case .invalidSnapshot: "Invalid camera geometry"
+        case .invalidPlane: "Invalid plane geometry"
+        case .parallelRay: "Viewing ray parallel to plane"
+        case .distanceOutOfRange: "Surface outside distance range"
+        case .outsidePlaneExtent: "Plane does not cover panel"
+        case .behindCamera: "Geometry behind camera"
+        case .outsideImageBounds: "Geometry outside image"
+        case .nonfiniteResult: "Nonfinite geometry"
+        }
+    }
 }
 
 // MARK: - Limits

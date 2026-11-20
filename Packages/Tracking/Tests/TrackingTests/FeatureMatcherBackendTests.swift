@@ -107,7 +107,7 @@ struct FeatureMatcherBackendTests {
         #expect(tracker.match(Self.liveFrame()).0 == CFT_STATUS_OK)
         #expect(cft_copy_inlier_points(tracker.handle, nil, 0) > 0)
 
-        var info = CFTRegistrationInfo(referenceFeatures: 99)
+        var info = CFTRegistrationInfo(); info.referenceFeatures = 99
         let status = Self.panel.withImage { cft_register_reference(tracker.handle, $0, nil, &info) }
         #expect(status == CFT_STATUS_INVALID_ARGUMENT)
         #expect(info.referenceFeatures == 0)
@@ -278,11 +278,14 @@ struct FeatureMatcherBackendTests {
 
 extension CFTStatus: @retroactive Error {}
 
-private final class Tracker {
+final class Tracker {
     let handle: OpaquePointer
 
-    init() throws {
-        guard let handle = cft_create(nil) else { throw CFT_STATUS_INTERNAL_ERROR }
+    init(_ configure: (inout CFTConfig) -> Void = { _ in }) throws {
+        var config = CFTConfig()
+        cft_default_config(&config)
+        configure(&config)
+        guard let handle = cft_create(&config) else { throw CFT_STATUS_INTERNAL_ERROR }
         self.handle = handle
     }
 
@@ -303,11 +306,11 @@ private final class Tracker {
     }
 }
 
-private func corners(of result: CFTMatchResult) -> [CFTPoint] {
+func corners(of result: CFTMatchResult) -> [CFTPoint] {
     [result.corners.0, result.corners.1, result.corners.2, result.corners.3]
 }
 
-private func expectCorners(_ result: CFTMatchResult, near truth: [CFTPoint], within tolerance: Float,
+func expectCorners(_ result: CFTMatchResult, near truth: [CFTPoint], within tolerance: Float,
                            sourceLocation: SourceLocation = #_sourceLocation) {
     for (found, expected) in zip(corners(of: result), truth) {
         let error = hypot(found.x - expected.x, found.y - expected.y)
