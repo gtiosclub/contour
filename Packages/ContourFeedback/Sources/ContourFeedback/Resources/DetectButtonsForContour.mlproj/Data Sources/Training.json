@@ -1,0 +1,94 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T05:14:11Z",
+        "event" : "dataSourceCreated",
+        "id" : "A0583F24-6FCB-4EC7-B44A-9FEC583A3C73",
+        "subtitle" : "Training",
+        "title" : "Data Source Created"
+      }
+    ],
+    "dataSourceMetrics",
+    [
+      {
+        "createdDate" : "2026-11-03T05:17:35Z",
+        "event" : "dataSourceMetrics",
+        "id" : "C4D67E34-F5D9-4934-8A50-94784BA02C98",
+        "subtitle" : "1 Classes, 21 Items",
+        "title" : "Data Summary"
+      }
+    ],
+    "dataSourceTrainingStarted",
+    [
+      {
+        "createdDate" : "2026-11-03T05:17:35Z",
+        "event" : "dataSourceTrainingStarted",
+        "id" : "096F0939-21A4-47AB-A88D-CBF0FF00ADA1",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Used By"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T05:14:11Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Training/",
+  "dataResult" : {
+    "classesCount" : 1,
+    "createdDate" : "2026-11-03T05:14:11Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "1 classes found, including button",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Less than 50 total images found - add more to improve model validation",
+          "severity" : "warning"
+        },
+        {
+          "description" : "Smallest class is \"button\" with 128 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"button\" with 128 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "button" : 128
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 1,
+        "classCount" : 1,
+        "counterExamples" : 2,
+        "sampleCount" : 21,
+        "suggestedMaxIterations" : 4000
+      },
+      "warning" : "Less than 50 total images found - add more to improve model validation"
+    },
+    "dataSourceID" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Training/",
+    "itemsCount" : 21,
+    "warning" : "Less than 50 total images found - add more to improve model validation"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Training/",
+  "experimentIDs" : [
+    "1BE4A72F-4B91-4355-BE54-84E4B0DC278F",
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+  "modifiedDate" : "2026-11-03T15:11:45Z",
+  "pathType" : 0,
+  "preferredFilename" : "Training",
+  "title" : "Training",
+  "version" : "1.0"
+}

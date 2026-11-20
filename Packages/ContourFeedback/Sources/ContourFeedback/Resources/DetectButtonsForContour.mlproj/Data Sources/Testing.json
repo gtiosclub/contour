@@ -1,0 +1,73 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T05:15:39Z",
+        "event" : "dataSourceCreated",
+        "id" : "912A1BCA-A179-4301-B788-7E93287C8F2D",
+        "subtitle" : "Testing",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T05:15:39Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Testing/",
+  "dataResult" : {
+    "classesCount" : 1,
+    "createdDate" : "2026-11-03T05:15:39Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "1 classes found, including button",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Less than 50 total images found - add more to improve model validation",
+          "severity" : "warning"
+        },
+        {
+          "description" : "Smallest class is \"button\" with 41 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"button\" with 41 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "button" : 41
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 0,
+        "classCount" : 1,
+        "counterExamples" : 1,
+        "sampleCount" : 7,
+        "suggestedMaxIterations" : 2000
+      },
+      "warning" : "Less than 50 total images found - add more to improve model validation"
+    },
+    "dataSourceID" : "F3B869C1-9A04-43B5-932D-3292D20A7C31",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Testing/",
+    "itemsCount" : 7,
+    "warning" : "Less than 50 total images found - add more to improve model validation"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Testing/",
+  "experimentIDs" : [
+    "1BE4A72F-4B91-4355-BE54-84E4B0DC278F"
+  ],
+  "id" : "F3B869C1-9A04-43B5-932D-3292D20A7C31",
+  "modifiedDate" : "2026-11-03T15:11:49Z",
+  "pathType" : 0,
+  "preferredFilename" : "Testing",
+  "title" : "Testing",
+  "version" : "1.0"
+}

@@ -1,0 +1,73 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T05:15:32Z",
+        "event" : "dataSourceCreated",
+        "id" : "BABBB281-02D8-4501-9AFF-8209F1019031",
+        "subtitle" : "Validation",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T05:15:32Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Validation/",
+  "dataResult" : {
+    "classesCount" : 1,
+    "createdDate" : "2026-11-03T05:15:32Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "1 classes found, including button",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Less than 50 total images found - add more to improve model validation",
+          "severity" : "warning"
+        },
+        {
+          "description" : "Smallest class is \"button\" with 32 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"button\" with 32 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "button" : 32
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 0,
+        "classCount" : 1,
+        "counterExamples" : 1,
+        "sampleCount" : 7,
+        "suggestedMaxIterations" : 2000
+      },
+      "warning" : "Less than 50 total images found - add more to improve model validation"
+    },
+    "dataSourceID" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Validation/",
+    "itemsCount" : 7,
+    "warning" : "Less than 50 total images found - add more to improve model validation"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Validation/",
+  "experimentIDs" : [
+    "1BE4A72F-4B91-4355-BE54-84E4B0DC278F"
+  ],
+  "id" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+  "modifiedDate" : "2026-11-03T15:11:49Z",
+  "pathType" : 0,
+  "preferredFilename" : "Validation",
+  "title" : "Validation",
+  "version" : "1.0"
+}

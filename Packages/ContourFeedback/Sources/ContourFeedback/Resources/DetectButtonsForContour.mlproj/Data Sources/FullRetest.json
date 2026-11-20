@@ -1,0 +1,31 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T15:24:16Z",
+        "event" : "dataSourceCreated",
+        "id" : "167CCAD1-4EE4-457B-A0FC-6C41D6CFB767",
+        "subtitle" : "FullRetest",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T15:24:16Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/work/diagnose/FullRetest/",
+  "dataResult" : {
+    "createdDate" : "2026-11-03T15:24:16Z",
+    "dataSourceID" : "DB179891-2EB4-4410-8224-27980951C6B8",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/FullRetest/"
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/work/diagnose/FullRetest/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "DB179891-2EB4-4410-8224-27980951C6B8",
+  "modifiedDate" : "2026-11-03T15:24:16Z",
+  "pathType" : 0,
+  "preferredFilename" : "FullRetest",
+  "title" : "FullRetest",
+  "version" : "1.0"
+}

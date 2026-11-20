@@ -47,6 +47,9 @@ struct DebugMenu: View {
                 Section("Captured image and returned controls") {
                     CapturedPanelReviewView(reference: reference)
                 }
+                Section("ML detected controls") {
+                    MLCapturedPanelReviewView(photo: reference.photo)
+                }
             }
         }
         .navigationTitle("Developer tools")

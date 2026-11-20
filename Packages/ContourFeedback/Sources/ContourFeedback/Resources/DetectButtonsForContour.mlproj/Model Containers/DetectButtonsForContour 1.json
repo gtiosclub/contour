@@ -1,0 +1,3806 @@
+{
+  "activityEntities" : [
+    "evaluationStarted",
+    [
+      {
+        "createdDate" : "2026-11-03T05:22:37Z",
+        "event" : "evaluationStarted",
+        "id" : "F0F8D4FA-92EA-425D-8872-AE0A7C38A798",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Testing Started"
+      },
+      {
+        "createdDate" : "2026-11-03T05:22:45Z",
+        "event" : "evaluationStarted",
+        "id" : "E4B20D25-5B90-4580-A161-BCBB50BEC714",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Testing Started"
+      }
+    ],
+    "evaluationDataAdded",
+    [
+      {
+        "createdDate" : "2026-11-03T05:15:39Z",
+        "event" : "evaluationDataAdded",
+        "id" : "D26876D3-7957-4894-827D-FA341E3DDFE9",
+        "subtitle" : "Testing",
+        "title" : "Testing Data Added"
+      }
+    ],
+    "validationDataAdded",
+    [
+      {
+        "createdDate" : "2026-11-03T05:15:32Z",
+        "event" : "validationDataAdded",
+        "id" : "B8D57B3A-349A-485D-9B3E-A0FBB2B6B276",
+        "subtitle" : "Validation",
+        "title" : "Validation Data Added"
+      }
+    ],
+    "trainingDataAdded",
+    [
+      {
+        "createdDate" : "2026-11-03T05:14:11Z",
+        "event" : "trainingDataAdded",
+        "id" : "E36A4F3B-0838-4683-84D5-BA55F321CA6C",
+        "subtitle" : "Training",
+        "title" : "Training Data Added"
+      }
+    ],
+    "trainingFinished",
+    [
+      {
+        "createdDate" : "2026-11-03T05:22:35Z",
+        "event" : "trainingFinished",
+        "id" : "51EE8C2E-7A5B-4A5E-88FE-E06BF4E08A84",
+        "subtitle" : "1,000 iterations",
+        "title" : "Training Completed"
+      }
+    ],
+    "evaluationCanceled",
+    [
+      {
+        "createdDate" : "2026-11-03T05:22:38Z",
+        "event" : "evaluationCanceled",
+        "id" : "F17CCE9D-0EC5-40EF-9003-6F6AE0E3E89F",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Testing Canceled"
+      },
+      {
+        "createdDate" : "2026-11-03T05:22:46Z",
+        "event" : "evaluationCanceled",
+        "id" : "385FF2D6-8776-4D9B-B150-7315C0C18034",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Testing Canceled"
+      }
+    ],
+    "trainingStarted",
+    [
+      {
+        "createdDate" : "2026-11-03T05:17:35Z",
+        "event" : "trainingStarted",
+        "id" : "A0628F21-E4CB-4B06-A807-57639E6921A6",
+        "subtitle" : "1,000 iterations",
+        "title" : "Training Started"
+      }
+    ],
+    "experimentCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T05:06:30Z",
+        "event" : "experimentCreated",
+        "id" : "007CA93C-C963-4239-B3AC-804B2A34C678",
+        "subtitle" : "DetectButtonsForContour 1",
+        "title" : "Model Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T05:06:30Z",
+  "evaluationContainerEntity" : {
+    "createdDate" : "2026-11-03T05:22:46Z",
+    "evaluationEntities" : [
+
+    ],
+    "id" : "d0ea96cd-1de5-4d6c-aad5-e32be0e7e705",
+    "modifiedDate" : "2026-11-03T05:22:46Z",
+    "previewType" : "objectDetector",
+    "testingEvaluationEntity" : {
+      "analysedDataType" : "datasource",
+      "createdDate" : "2026-11-03T05:06:30Z",
+      "dataResult" : {
+        "classesCount" : 1,
+        "createdDate" : "2026-11-03T05:06:30Z",
+        "dataAnalysis" : {
+          "classifierAnalysis" : {
+
+          },
+          "issues" : [
+            {
+              "description" : "1 classes found, including button",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Less than 50 total images found - add more to improve model validation",
+              "severity" : "warning"
+            },
+            {
+              "description" : "Smallest class is \"button\" with 41 images",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Largest class is \"button\" with 41 images",
+              "severity" : "debug"
+            }
+          ],
+          "objectDetectorAnalysis" : {
+            "details" : {
+
+            },
+            "labelStats" : {
+              "button" : 41
+            }
+          },
+          "summary" : {
+            "canUseValidation" : 0,
+            "classCount" : 1,
+            "counterExamples" : 1,
+            "sampleCount" : 7,
+            "suggestedMaxIterations" : 2000
+          },
+          "warning" : "Less than 50 total images found - add more to improve model validation"
+        },
+        "dataSourceID" : "F3B869C1-9A04-43B5-932D-3292D20A7C31",
+        "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Testing/",
+        "itemsCount" : 7,
+        "warning" : "Less than 50 total images found - add more to improve model validation"
+      },
+      "dataSourceID" : "F3B869C1-9A04-43B5-932D-3292D20A7C31",
+      "id" : "b19f05ed-cbcb-484f-a20e-b95094938364",
+      "startTime" : "2026-11-03T05:22:45Z"
+    },
+    "trainingEvaluationEntity" : {
+      "analysedDataType" : "none",
+      "createdDate" : "2026-11-03T05:06:30Z",
+      "dataResult" : {
+        "classesCount" : 1,
+        "createdDate" : "2026-11-03T05:06:30Z",
+        "dataAnalysis" : {
+          "classifierAnalysis" : {
+
+          },
+          "issues" : [
+            {
+              "description" : "1 classes found, including button",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Less than 50 total images found - add more to improve model validation",
+              "severity" : "warning"
+            },
+            {
+              "description" : "Smallest class is \"button\" with 128 images",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Largest class is \"button\" with 128 images",
+              "severity" : "debug"
+            }
+          ],
+          "objectDetectorAnalysis" : {
+            "details" : {
+
+            },
+            "labelStats" : {
+              "button" : 128
+            }
+          },
+          "summary" : {
+            "canUseValidation" : 1,
+            "classCount" : 1,
+            "counterExamples" : 2,
+            "sampleCount" : 21,
+            "suggestedMaxIterations" : 4000
+          },
+          "warning" : "Less than 50 total images found - add more to improve model validation"
+        },
+        "dataSourceID" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+        "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Training/",
+        "itemsCount" : 21,
+        "warning" : "Less than 50 total images found - add more to improve model validation"
+      },
+      "dataSourceID" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+      "evaluationResult" : {
+        "objectDetector" : {
+          "averagePrecision" : {
+            "button" : {
+              "IoU50" : 0.9989588260650635,
+              "variedIoU" : 0.9989588260650635
+            }
+          },
+          "meanAveragePrecision" : {
+            "IoU50" : 0.9989588260650635,
+            "variedIoU" : 0.9989588260650635
+          }
+        }
+      },
+      "id" : "68200df0-068e-4247-881d-f125c5380be4"
+    },
+    "validationEvaluationEntity" : {
+      "analysedDataType" : "datasource",
+      "createdDate" : "2026-11-03T05:06:30Z",
+      "dataResult" : {
+        "classesCount" : 1,
+        "createdDate" : "2026-11-03T05:06:30Z",
+        "dataAnalysis" : {
+          "classifierAnalysis" : {
+
+          },
+          "issues" : [
+            {
+              "description" : "1 classes found, including button",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Less than 50 total images found - add more to improve model validation",
+              "severity" : "warning"
+            },
+            {
+              "description" : "Smallest class is \"button\" with 32 images",
+              "severity" : "debug"
+            },
+            {
+              "description" : "Largest class is \"button\" with 32 images",
+              "severity" : "debug"
+            }
+          ],
+          "objectDetectorAnalysis" : {
+            "details" : {
+
+            },
+            "labelStats" : {
+              "button" : 32
+            }
+          },
+          "summary" : {
+            "canUseValidation" : 0,
+            "classCount" : 1,
+            "counterExamples" : 1,
+            "sampleCount" : 7,
+            "suggestedMaxIterations" : 2000
+          },
+          "warning" : "Less than 50 total images found - add more to improve model validation"
+        },
+        "dataSourceID" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+        "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Validation/",
+        "itemsCount" : 7,
+        "warning" : "Less than 50 total images found - add more to improve model validation"
+      },
+      "dataSourceID" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+      "evaluationResult" : {
+        "objectDetector" : {
+          "averagePrecision" : {
+            "button" : {
+              "IoU50" : 0.2502889931201935,
+              "variedIoU" : 0.054847491325926964
+            }
+          },
+          "meanAveragePrecision" : {
+            "IoU50" : 0.2502889931201935,
+            "variedIoU" : 0.054847491325926964
+          }
+        }
+      },
+      "id" : "8a2f7725-8d5c-48c9-ab4f-15833d53208c"
+    }
+  },
+  "evaluationEntity" : {
+    "analysedDataType" : "none",
+    "dataResult" : {
+
+    },
+    "id" : "93468683-ed82-4a60-9e50-dfa798d2e367"
+  },
+  "evaluationState" : "canceled",
+  "id" : "1BE4A72F-4B91-4355-BE54-84E4B0DC278F",
+  "modelEntity" : {
+    "createdDate" : "2026-11-03T05:06:30Z",
+    "experimentID" : "1BE4A72F-4B91-4355-BE54-84E4B0DC278F",
+    "id" : "C35A95C4-79D0-41EC-919D-48F94D4F1BB7",
+    "modelURL" : "Models/DetectButtonsForContour%201.mlmodel",
+    "modifiedDate" : "2026-11-03T05:06:30Z",
+    "title" : "",
+    "version" : "1.0"
+  },
+  "modifiedDate" : "2026-11-03T05:22:46Z",
+  "preferredFilename" : "DetectButtonsForContour 1",
+  "settingEntity" : {
+    "algorithmType" : "maxEnt",
+    "augmentations" : [
+
+    ],
+    "featureNames" : [
+
+    ],
+    "handActionClassifierAugmentations" : [
+
+    ],
+    "handPoseClassifierAugmentations" : [
+
+    ],
+    "harVideoAugmentations" : 0,
+    "iterationCount" : 1000,
+    "odAlgorithmType" : "transferLearningObjectPrintV1",
+    "odGridHeight" : 13,
+    "odGridWidth" : 13,
+    "recommendedIterationCount" : 4000,
+    "seedType" : "default",
+    "taskType" : "objectDetector",
+    "transferLearningEmbeddingType" : "dynamic"
+  },
+  "snapshotRole" : {
+    "withoutSnapshots" : 0
+  },
+  "state" : "trained",
+  "title" : "DetectButtonsForContour 1",
+  "trainingEntity" : {
+    "analysedDataType" : "datasource",
+    "checkpointMetrics" : {
+      "10" : {
+        "createdDate" : "2026-11-03T05:17:41Z",
+        "iteration" : 10,
+        "metrics" : {
+          "loss" : 2.8605191707611084
+        }
+      },
+      "100" : {
+        "createdDate" : "2026-11-03T05:18:07Z",
+        "iteration" : 100,
+        "metrics" : {
+          "loss" : 0.42380785942077637
+        }
+      },
+      "1000" : {
+        "createdDate" : "2026-11-03T05:22:35Z",
+        "iteration" : 1000,
+        "metrics" : {
+          "loss" : 0.0070389267057180405
+        }
+      },
+      "110" : {
+        "createdDate" : "2026-11-03T05:18:10Z",
+        "iteration" : 110,
+        "metrics" : {
+          "loss" : 0.3347232937812805
+        }
+      },
+      "120" : {
+        "createdDate" : "2026-11-03T05:18:13Z",
+        "iteration" : 120,
+        "metrics" : {
+          "loss" : 0.2657298147678375
+        }
+      },
+      "130" : {
+        "createdDate" : "2026-11-03T05:18:16Z",
+        "iteration" : 130,
+        "metrics" : {
+          "loss" : 0.20804938673973083
+        }
+      },
+      "140" : {
+        "createdDate" : "2026-11-03T05:18:19Z",
+        "iteration" : 140,
+        "metrics" : {
+          "loss" : 0.16688917577266693
+        }
+      },
+      "150" : {
+        "createdDate" : "2026-11-03T05:18:22Z",
+        "iteration" : 150,
+        "metrics" : {
+          "loss" : 0.13032235205173492
+        }
+      },
+      "160" : {
+        "createdDate" : "2026-11-03T05:18:25Z",
+        "iteration" : 160,
+        "metrics" : {
+          "loss" : 0.10418358445167542
+        }
+      },
+      "170" : {
+        "createdDate" : "2026-11-03T05:18:28Z",
+        "iteration" : 170,
+        "metrics" : {
+          "loss" : 0.09145673364400864
+        }
+      },
+      "180" : {
+        "createdDate" : "2026-11-03T05:18:31Z",
+        "iteration" : 180,
+        "metrics" : {
+          "loss" : 0.08235907554626465
+        }
+      },
+      "190" : {
+        "createdDate" : "2026-11-03T05:18:34Z",
+        "iteration" : 190,
+        "metrics" : {
+          "loss" : 0.07239368557929993
+        }
+      },
+      "20" : {
+        "createdDate" : "2026-11-03T05:17:44Z",
+        "iteration" : 20,
+        "metrics" : {
+          "loss" : 2.201390027999878
+        }
+      },
+      "200" : {
+        "createdDate" : "2026-11-03T05:18:37Z",
+        "iteration" : 200,
+        "metrics" : {
+          "loss" : 0.06238671392202377
+        }
+      },
+      "210" : {
+        "createdDate" : "2026-11-03T05:18:40Z",
+        "iteration" : 210,
+        "metrics" : {
+          "loss" : 0.05500372499227524
+        }
+      },
+      "220" : {
+        "createdDate" : "2026-11-03T05:18:43Z",
+        "iteration" : 220,
+        "metrics" : {
+          "loss" : 0.04763421043753624
+        }
+      },
+      "230" : {
+        "createdDate" : "2026-11-03T05:18:46Z",
+        "iteration" : 230,
+        "metrics" : {
+          "loss" : 0.04432429373264313
+        }
+      },
+      "240" : {
+        "createdDate" : "2026-11-03T05:18:49Z",
+        "iteration" : 240,
+        "metrics" : {
+          "loss" : 0.041356638073921204
+        }
+      },
+      "250" : {
+        "createdDate" : "2026-11-03T05:18:52Z",
+        "iteration" : 250,
+        "metrics" : {
+          "loss" : 0.036453574895858765
+        }
+      },
+      "260" : {
+        "createdDate" : "2026-11-03T05:18:55Z",
+        "iteration" : 260,
+        "metrics" : {
+          "loss" : 0.036070264875888824
+        }
+      },
+      "270" : {
+        "createdDate" : "2026-11-03T05:18:58Z",
+        "iteration" : 270,
+        "metrics" : {
+          "loss" : 0.03517630323767662
+        }
+      },
+      "280" : {
+        "createdDate" : "2026-11-03T05:19:01Z",
+        "iteration" : 280,
+        "metrics" : {
+          "loss" : 0.03184790164232254
+        }
+      },
+      "290" : {
+        "createdDate" : "2026-11-03T05:19:04Z",
+        "iteration" : 290,
+        "metrics" : {
+          "loss" : 0.029575305059552193
+        }
+      },
+      "30" : {
+        "createdDate" : "2026-11-03T05:17:47Z",
+        "iteration" : 30,
+        "metrics" : {
+          "loss" : 1.7788012027740479
+        }
+      },
+      "300" : {
+        "createdDate" : "2026-11-03T05:19:07Z",
+        "iteration" : 300,
+        "metrics" : {
+          "loss" : 0.02827061153948307
+        }
+      },
+      "310" : {
+        "createdDate" : "2026-11-03T05:19:10Z",
+        "iteration" : 310,
+        "metrics" : {
+          "loss" : 0.0269466582685709
+        }
+      },
+      "320" : {
+        "createdDate" : "2026-11-03T05:19:13Z",
+        "iteration" : 320,
+        "metrics" : {
+          "loss" : 0.02497587725520134
+        }
+      },
+      "330" : {
+        "createdDate" : "2026-11-03T05:19:16Z",
+        "iteration" : 330,
+        "metrics" : {
+          "loss" : 0.02377818338572979
+        }
+      },
+      "340" : {
+        "createdDate" : "2026-11-03T05:19:19Z",
+        "iteration" : 340,
+        "metrics" : {
+          "loss" : 0.023465270176529884
+        }
+      },
+      "350" : {
+        "createdDate" : "2026-11-03T05:19:22Z",
+        "iteration" : 350,
+        "metrics" : {
+          "loss" : 0.023470556363463402
+        }
+      },
+      "360" : {
+        "createdDate" : "2026-11-03T05:19:25Z",
+        "iteration" : 360,
+        "metrics" : {
+          "loss" : 0.022565331310033798
+        }
+      },
+      "370" : {
+        "createdDate" : "2026-11-03T05:19:27Z",
+        "iteration" : 370,
+        "metrics" : {
+          "loss" : 0.02015174925327301
+        }
+      },
+      "380" : {
+        "createdDate" : "2026-11-03T05:19:30Z",
+        "iteration" : 380,
+        "metrics" : {
+          "loss" : 0.02030467428267002
+        }
+      },
+      "390" : {
+        "createdDate" : "2026-11-03T05:19:33Z",
+        "iteration" : 390,
+        "metrics" : {
+          "loss" : 0.02196790650486946
+        }
+      },
+      "40" : {
+        "createdDate" : "2026-11-03T05:17:50Z",
+        "iteration" : 40,
+        "metrics" : {
+          "loss" : 1.478914499282837
+        }
+      },
+      "400" : {
+        "createdDate" : "2026-11-03T05:19:36Z",
+        "iteration" : 400,
+        "metrics" : {
+          "loss" : 0.021504148840904236
+        }
+      },
+      "410" : {
+        "createdDate" : "2026-11-03T05:19:39Z",
+        "iteration" : 410,
+        "metrics" : {
+          "loss" : 0.023467959836125374
+        }
+      },
+      "420" : {
+        "createdDate" : "2026-11-03T05:19:42Z",
+        "iteration" : 420,
+        "metrics" : {
+          "loss" : 0.02377687767148018
+        }
+      },
+      "430" : {
+        "createdDate" : "2026-11-03T05:19:45Z",
+        "iteration" : 430,
+        "metrics" : {
+          "loss" : 0.021704794839024544
+        }
+      },
+      "440" : {
+        "createdDate" : "2026-11-03T05:19:48Z",
+        "iteration" : 440,
+        "metrics" : {
+          "loss" : 0.020396199077367783
+        }
+      },
+      "450" : {
+        "createdDate" : "2026-11-03T05:19:51Z",
+        "iteration" : 450,
+        "metrics" : {
+          "loss" : 0.017193907871842384
+        }
+      },
+      "460" : {
+        "createdDate" : "2026-11-03T05:19:54Z",
+        "iteration" : 460,
+        "metrics" : {
+          "loss" : 0.01612865924835205
+        }
+      },
+      "470" : {
+        "createdDate" : "2026-11-03T05:19:57Z",
+        "iteration" : 470,
+        "metrics" : {
+          "loss" : 0.017602194100618362
+        }
+      },
+      "480" : {
+        "createdDate" : "2026-11-03T05:20:00Z",
+        "iteration" : 480,
+        "metrics" : {
+          "loss" : 0.016730286180973053
+        }
+      },
+      "490" : {
+        "createdDate" : "2026-11-03T05:20:03Z",
+        "iteration" : 490,
+        "metrics" : {
+          "loss" : 0.015098413452506065
+        }
+      },
+      "50" : {
+        "createdDate" : "2026-11-03T05:17:53Z",
+        "iteration" : 50,
+        "metrics" : {
+          "loss" : 1.2380832433700562
+        }
+      },
+      "500" : {
+        "createdDate" : "2026-11-03T05:20:06Z",
+        "iteration" : 500,
+        "metrics" : {
+          "loss" : 0.01390555128455162
+        }
+      },
+      "510" : {
+        "createdDate" : "2026-11-03T05:20:09Z",
+        "iteration" : 510,
+        "metrics" : {
+          "loss" : 0.011562373489141464
+        }
+      },
+      "520" : {
+        "createdDate" : "2026-11-03T05:20:12Z",
+        "iteration" : 520,
+        "metrics" : {
+          "loss" : 0.009707657620310783
+        }
+      },
+      "530" : {
+        "createdDate" : "2026-11-03T05:20:15Z",
+        "iteration" : 530,
+        "metrics" : {
+          "loss" : 0.009300986304879189
+        }
+      },
+      "540" : {
+        "createdDate" : "2026-11-03T05:20:18Z",
+        "iteration" : 540,
+        "metrics" : {
+          "loss" : 0.00861428864300251
+        }
+      },
+      "550" : {
+        "createdDate" : "2026-11-03T05:20:21Z",
+        "iteration" : 550,
+        "metrics" : {
+          "loss" : 0.009104154072701931
+        }
+      },
+      "560" : {
+        "createdDate" : "2026-11-03T05:20:24Z",
+        "iteration" : 560,
+        "metrics" : {
+          "loss" : 0.008575817570090294
+        }
+      },
+      "570" : {
+        "createdDate" : "2026-11-03T05:20:27Z",
+        "iteration" : 570,
+        "metrics" : {
+          "loss" : 0.008014809340238571
+        }
+      },
+      "580" : {
+        "createdDate" : "2026-11-03T05:20:30Z",
+        "iteration" : 580,
+        "metrics" : {
+          "loss" : 0.008028359152376652
+        }
+      },
+      "590" : {
+        "createdDate" : "2026-11-03T05:20:33Z",
+        "iteration" : 590,
+        "metrics" : {
+          "loss" : 0.008332430385053158
+        }
+      },
+      "60" : {
+        "createdDate" : "2026-11-03T05:17:56Z",
+        "iteration" : 60,
+        "metrics" : {
+          "loss" : 1.0047599077224731
+        }
+      },
+      "600" : {
+        "createdDate" : "2026-11-03T05:20:36Z",
+        "iteration" : 600,
+        "metrics" : {
+          "loss" : 0.008115077391266823
+        }
+      },
+      "610" : {
+        "createdDate" : "2026-11-03T05:20:39Z",
+        "iteration" : 610,
+        "metrics" : {
+          "loss" : 0.007861356250941753
+        }
+      },
+      "620" : {
+        "createdDate" : "2026-11-03T05:20:42Z",
+        "iteration" : 620,
+        "metrics" : {
+          "loss" : 0.008147469721734524
+        }
+      },
+      "630" : {
+        "createdDate" : "2026-11-03T05:20:45Z",
+        "iteration" : 630,
+        "metrics" : {
+          "loss" : 0.008082514628767967
+        }
+      },
+      "640" : {
+        "createdDate" : "2026-11-03T05:20:48Z",
+        "iteration" : 640,
+        "metrics" : {
+          "loss" : 0.008142494596540928
+        }
+      },
+      "650" : {
+        "createdDate" : "2026-11-03T05:20:51Z",
+        "iteration" : 650,
+        "metrics" : {
+          "loss" : 0.008446276187896729
+        }
+      },
+      "660" : {
+        "createdDate" : "2026-11-03T05:20:54Z",
+        "iteration" : 660,
+        "metrics" : {
+          "loss" : 0.008412841707468033
+        }
+      },
+      "670" : {
+        "createdDate" : "2026-11-03T05:20:57Z",
+        "iteration" : 670,
+        "metrics" : {
+          "loss" : 0.008154093287885189
+        }
+      },
+      "680" : {
+        "createdDate" : "2026-11-03T05:20:59Z",
+        "iteration" : 680,
+        "metrics" : {
+          "loss" : 0.008324304595589638
+        }
+      },
+      "690" : {
+        "createdDate" : "2026-11-03T05:21:03Z",
+        "iteration" : 690,
+        "metrics" : {
+          "loss" : 0.008320377208292484
+        }
+      },
+      "70" : {
+        "createdDate" : "2026-11-03T05:17:59Z",
+        "iteration" : 70,
+        "metrics" : {
+          "loss" : 0.817491888999939
+        }
+      },
+      "700" : {
+        "createdDate" : "2026-11-03T05:21:06Z",
+        "iteration" : 700,
+        "metrics" : {
+          "loss" : 0.0075722066685557365
+        }
+      },
+      "710" : {
+        "createdDate" : "2026-11-03T05:21:09Z",
+        "iteration" : 710,
+        "metrics" : {
+          "loss" : 0.0074346549808979034
+        }
+      },
+      "720" : {
+        "createdDate" : "2026-11-03T05:21:12Z",
+        "iteration" : 720,
+        "metrics" : {
+          "loss" : 0.00732007110491395
+        }
+      },
+      "730" : {
+        "createdDate" : "2026-11-03T05:21:14Z",
+        "iteration" : 730,
+        "metrics" : {
+          "loss" : 0.007692408747971058
+        }
+      },
+      "740" : {
+        "createdDate" : "2026-11-03T05:21:17Z",
+        "iteration" : 740,
+        "metrics" : {
+          "loss" : 0.007584819104522467
+        }
+      },
+      "750" : {
+        "createdDate" : "2026-11-03T05:21:20Z",
+        "iteration" : 750,
+        "metrics" : {
+          "loss" : 0.007567737251520157
+        }
+      },
+      "760" : {
+        "createdDate" : "2026-11-03T05:21:23Z",
+        "iteration" : 760,
+        "metrics" : {
+          "loss" : 0.007320959586650133
+        }
+      },
+      "770" : {
+        "createdDate" : "2026-11-03T05:21:26Z",
+        "iteration" : 770,
+        "metrics" : {
+          "loss" : 0.007822082377970219
+        }
+      },
+      "780" : {
+        "createdDate" : "2026-11-03T05:21:29Z",
+        "iteration" : 780,
+        "metrics" : {
+          "loss" : 0.007440378423780203
+        }
+      },
+      "790" : {
+        "createdDate" : "2026-11-03T05:21:32Z",
+        "iteration" : 790,
+        "metrics" : {
+          "loss" : 0.007358405739068985
+        }
+      },
+      "80" : {
+        "createdDate" : "2026-11-03T05:18:02Z",
+        "iteration" : 80,
+        "metrics" : {
+          "loss" : 0.6670500040054321
+        }
+      },
+      "800" : {
+        "createdDate" : "2026-11-03T05:21:35Z",
+        "iteration" : 800,
+        "metrics" : {
+          "loss" : 0.007525060325860977
+        }
+      },
+      "810" : {
+        "createdDate" : "2026-11-03T05:21:38Z",
+        "iteration" : 810,
+        "metrics" : {
+          "loss" : 0.007669021375477314
+        }
+      },
+      "820" : {
+        "createdDate" : "2026-11-03T05:21:41Z",
+        "iteration" : 820,
+        "metrics" : {
+          "loss" : 0.007676849141716957
+        }
+      },
+      "830" : {
+        "createdDate" : "2026-11-03T05:21:44Z",
+        "iteration" : 830,
+        "metrics" : {
+          "loss" : 0.007579721510410309
+        }
+      },
+      "840" : {
+        "createdDate" : "2026-11-03T05:21:47Z",
+        "iteration" : 840,
+        "metrics" : {
+          "loss" : 0.007231501862406731
+        }
+      },
+      "850" : {
+        "createdDate" : "2026-11-03T05:21:50Z",
+        "iteration" : 850,
+        "metrics" : {
+          "loss" : 0.007525732275098562
+        }
+      },
+      "860" : {
+        "createdDate" : "2026-11-03T05:21:53Z",
+        "iteration" : 860,
+        "metrics" : {
+          "loss" : 0.007017007563263178
+        }
+      },
+      "870" : {
+        "createdDate" : "2026-11-03T05:21:56Z",
+        "iteration" : 870,
+        "metrics" : {
+          "loss" : 0.007487767841666937
+        }
+      },
+      "880" : {
+        "createdDate" : "2026-11-03T05:21:59Z",
+        "iteration" : 880,
+        "metrics" : {
+          "loss" : 0.00716351019218564
+        }
+      },
+      "890" : {
+        "createdDate" : "2026-11-03T05:22:02Z",
+        "iteration" : 890,
+        "metrics" : {
+          "loss" : 0.007609471678733826
+        }
+      },
+      "90" : {
+        "createdDate" : "2026-11-03T05:18:05Z",
+        "iteration" : 90,
+        "metrics" : {
+          "loss" : 0.5311578512191772
+        }
+      },
+      "900" : {
+        "createdDate" : "2026-11-03T05:22:05Z",
+        "iteration" : 900,
+        "metrics" : {
+          "loss" : 0.007327406667172909
+        }
+      },
+      "910" : {
+        "createdDate" : "2026-11-03T05:22:08Z",
+        "iteration" : 910,
+        "metrics" : {
+          "loss" : 0.007441173307597637
+        }
+      },
+      "920" : {
+        "createdDate" : "2026-11-03T05:22:11Z",
+        "iteration" : 920,
+        "metrics" : {
+          "loss" : 0.007567286491394043
+        }
+      },
+      "930" : {
+        "createdDate" : "2026-11-03T05:22:14Z",
+        "iteration" : 930,
+        "metrics" : {
+          "loss" : 0.007610811851918697
+        }
+      },
+      "940" : {
+        "createdDate" : "2026-11-03T05:22:17Z",
+        "iteration" : 940,
+        "metrics" : {
+          "loss" : 0.007412901613861322
+        }
+      },
+      "950" : {
+        "createdDate" : "2026-11-03T05:22:20Z",
+        "iteration" : 950,
+        "metrics" : {
+          "loss" : 0.007345940452069044
+        }
+      },
+      "960" : {
+        "createdDate" : "2026-11-03T05:22:23Z",
+        "iteration" : 960,
+        "metrics" : {
+          "loss" : 0.007195335812866688
+        }
+      },
+      "970" : {
+        "createdDate" : "2026-11-03T05:22:26Z",
+        "iteration" : 970,
+        "metrics" : {
+          "loss" : 0.00721884798258543
+        }
+      },
+      "980" : {
+        "createdDate" : "2026-11-03T05:22:29Z",
+        "iteration" : 980,
+        "metrics" : {
+          "loss" : 0.007349496707320213
+        }
+      },
+      "990" : {
+        "createdDate" : "2026-11-03T05:22:32Z",
+        "iteration" : 990,
+        "metrics" : {
+          "loss" : 0.00712980143725872
+        }
+      }
+    },
+    "dataResult" : {
+      "classesCount" : 1,
+      "createdDate" : "2026-11-03T05:06:30Z",
+      "dataAnalysis" : {
+        "classifierAnalysis" : {
+
+        },
+        "issues" : [
+          {
+            "description" : "1 classes found, including button",
+            "severity" : "debug"
+          },
+          {
+            "description" : "Less than 50 total images found - add more to improve model validation",
+            "severity" : "warning"
+          },
+          {
+            "description" : "Smallest class is \"button\" with 128 images",
+            "severity" : "debug"
+          },
+          {
+            "description" : "Largest class is \"button\" with 128 images",
+            "severity" : "debug"
+          }
+        ],
+        "objectDetectorAnalysis" : {
+          "details" : {
+
+          },
+          "labelStats" : {
+            "button" : 128
+          }
+        },
+        "summary" : {
+          "canUseValidation" : 1,
+          "classCount" : 1,
+          "counterExamples" : 2,
+          "sampleCount" : 21,
+          "suggestedMaxIterations" : 4000
+        },
+        "warning" : "Less than 50 total images found - add more to improve model validation"
+      },
+      "dataSourceID" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+      "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Training/",
+      "itemsCount" : 21,
+      "warning" : "Less than 50 total images found - add more to improve model validation"
+    },
+    "dataSourceID" : "6DFCF017-1540-4A99-847D-465F8AD4F0B3",
+    "featureExtractionCheckpointMayBeAvailable" : false,
+    "finishTime" : "2026-11-03T05:22:35Z",
+    "progress" : [
+      {
+        "count" : 5,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 4.328709959983826,
+          "iterationCount" : 5,
+          "loss" : 3.2839975357055664
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 10,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 10,
+          "loss" : 2.8605191707611084
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 15,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 7.358031988143921,
+          "iterationCount" : 15,
+          "loss" : 2.4966578483581543
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 20,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 20,
+          "loss" : 2.201390027999878
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 25,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 10.35689103603363,
+          "iterationCount" : 25,
+          "loss" : 1.9625344276428223
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 30,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 30,
+          "loss" : 1.7788012027740479
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 35,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 13.332602977752686,
+          "iterationCount" : 35,
+          "loss" : 1.626177191734314
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 40,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 40,
+          "loss" : 1.478914499282837
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 45,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 16.347839951515198,
+          "iterationCount" : 45,
+          "loss" : 1.3493914604187012
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 50,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 50,
+          "loss" : 1.2380832433700562
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 55,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 19.344594955444336,
+          "iterationCount" : 55,
+          "loss" : 1.1165611743927002
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 60,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 60,
+          "loss" : 1.0047599077224731
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 65,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 22.32239294052124,
+          "iterationCount" : 65,
+          "loss" : 0.9110940098762512
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 70,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 70,
+          "loss" : 0.817491888999939
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 75,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 25.280639052391052,
+          "iterationCount" : 75,
+          "loss" : 0.7369982600212097
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 80,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 80,
+          "loss" : 0.6670500040054321
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 85,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 28.220767974853516,
+          "iterationCount" : 85,
+          "loss" : 0.6002992391586304
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 90,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 90,
+          "loss" : 0.5311578512191772
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 95,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 31.14838695526123,
+          "iterationCount" : 95,
+          "loss" : 0.4713808298110962
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 100,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 100,
+          "loss" : 0.42380785942077637
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 105,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 34.10499894618988,
+          "iterationCount" : 105,
+          "loss" : 0.37589597702026367
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 110,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 110,
+          "loss" : 0.3347232937812805
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 115,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 37.03673696517944,
+          "iterationCount" : 115,
+          "loss" : 0.2983033061027527
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 120,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 120,
+          "loss" : 0.2657298147678375
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 125,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 39.97543203830719,
+          "iterationCount" : 125,
+          "loss" : 0.23618096113204956
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 130,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 130,
+          "loss" : 0.20804938673973083
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 135,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 42.93914198875427,
+          "iterationCount" : 135,
+          "loss" : 0.18440774083137512
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 140,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 140,
+          "loss" : 0.16688917577266693
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 145,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 45.877447962760925,
+          "iterationCount" : 145,
+          "loss" : 0.14839807152748108
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 150,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 150,
+          "loss" : 0.13032235205173492
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 155,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 48.783133029937744,
+          "iterationCount" : 155,
+          "loss" : 0.11802183836698532
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 160,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 160,
+          "loss" : 0.10418358445167542
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 165,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 51.75417697429657,
+          "iterationCount" : 165,
+          "loss" : 0.09777408838272095
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 170,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 170,
+          "loss" : 0.09145673364400864
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 175,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 54.68615698814392,
+          "iterationCount" : 175,
+          "loss" : 0.08472800999879837
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 180,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 180,
+          "loss" : 0.08235907554626465
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 185,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 57.62001895904541,
+          "iterationCount" : 185,
+          "loss" : 0.0780954658985138
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 190,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 190,
+          "loss" : 0.07239368557929993
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 195,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 60.559934973716736,
+          "iterationCount" : 195,
+          "loss" : 0.06685207784175873
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 200,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 200,
+          "loss" : 0.06238671392202377
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 205,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 63.519636034965515,
+          "iterationCount" : 205,
+          "loss" : 0.05935332551598549
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 210,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 210,
+          "loss" : 0.05500372499227524
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 215,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 66.44509100914001,
+          "iterationCount" : 215,
+          "loss" : 0.050903789699077606
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 220,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 220,
+          "loss" : 0.04763421043753624
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 225,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 69.36917400360107,
+          "iterationCount" : 225,
+          "loss" : 0.04566287249326706
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 230,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 230,
+          "loss" : 0.04432429373264313
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 235,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 72.30193400382996,
+          "iterationCount" : 235,
+          "loss" : 0.04265296459197998
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 240,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 240,
+          "loss" : 0.041356638073921204
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 245,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 75.25788497924805,
+          "iterationCount" : 245,
+          "loss" : 0.03877715766429901
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 250,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 250,
+          "loss" : 0.036453574895858765
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 255,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 78.29558801651001,
+          "iterationCount" : 255,
+          "loss" : 0.03453150764107704
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 260,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 260,
+          "loss" : 0.036070264875888824
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 265,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 81.2975070476532,
+          "iterationCount" : 265,
+          "loss" : 0.036345161497592926
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 270,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 270,
+          "loss" : 0.03517630323767662
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 275,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 84.28678297996521,
+          "iterationCount" : 275,
+          "loss" : 0.03311537951231003
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 280,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 280,
+          "loss" : 0.03184790164232254
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 285,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 87.30019199848175,
+          "iterationCount" : 285,
+          "loss" : 0.031005362048745155
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 290,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 290,
+          "loss" : 0.029575305059552193
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 295,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 90.34520494937897,
+          "iterationCount" : 295,
+          "loss" : 0.029343023896217346
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 300,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 300,
+          "loss" : 0.02827061153948307
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 305,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 93.38865995407104,
+          "iterationCount" : 305,
+          "loss" : 0.02797286957502365
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 310,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 310,
+          "loss" : 0.0269466582685709
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 315,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 96.37799501419067,
+          "iterationCount" : 315,
+          "loss" : 0.025671863928437233
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 320,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 320,
+          "loss" : 0.02497587725520134
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 325,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 99.30966794490814,
+          "iterationCount" : 325,
+          "loss" : 0.024510525166988373
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 330,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 330,
+          "loss" : 0.02377818338572979
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 335,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 102.26695203781128,
+          "iterationCount" : 335,
+          "loss" : 0.022660469636321068
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 340,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 340,
+          "loss" : 0.023465270176529884
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 345,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 105.23782396316528,
+          "iterationCount" : 345,
+          "loss" : 0.022348882630467415
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 350,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 350,
+          "loss" : 0.023470556363463402
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 355,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 108.18111801147461,
+          "iterationCount" : 355,
+          "loss" : 0.023444311693310738
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 360,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 360,
+          "loss" : 0.022565331310033798
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 365,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 111.14229702949524,
+          "iterationCount" : 365,
+          "loss" : 0.021313365548849106
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 370,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 370,
+          "loss" : 0.02015174925327301
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 375,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 114.0940170288086,
+          "iterationCount" : 375,
+          "loss" : 0.020947227254509926
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 380,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 380,
+          "loss" : 0.02030467428267002
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 385,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 117.04679799079895,
+          "iterationCount" : 385,
+          "loss" : 0.02064691111445427
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 390,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 390,
+          "loss" : 0.02196790650486946
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 395,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 120.00892496109009,
+          "iterationCount" : 395,
+          "loss" : 0.022044723853468895
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 400,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 400,
+          "loss" : 0.021504148840904236
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 405,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 123.00307297706604,
+          "iterationCount" : 405,
+          "loss" : 0.021984394639730453
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 410,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 410,
+          "loss" : 0.023467959836125374
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 415,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 125.98444294929504,
+          "iterationCount" : 415,
+          "loss" : 0.024015814065933228
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 420,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 420,
+          "loss" : 0.02377687767148018
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 425,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 128.94156503677368,
+          "iterationCount" : 425,
+          "loss" : 0.023196298629045486
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 430,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 430,
+          "loss" : 0.021704794839024544
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 435,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 131.91968894004822,
+          "iterationCount" : 435,
+          "loss" : 0.020812395960092545
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 440,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 440,
+          "loss" : 0.020396199077367783
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 445,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 134.88824796676636,
+          "iterationCount" : 445,
+          "loss" : 0.018901722505688667
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 450,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 450,
+          "loss" : 0.017193907871842384
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 455,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 137.8734029531479,
+          "iterationCount" : 455,
+          "loss" : 0.016081232577562332
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 460,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 460,
+          "loss" : 0.01612865924835205
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 465,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 140.84869003295898,
+          "iterationCount" : 465,
+          "loss" : 0.016769107431173325
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 470,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 470,
+          "loss" : 0.017602194100618362
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 475,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 143.7822550535202,
+          "iterationCount" : 475,
+          "loss" : 0.017751390114426613
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 480,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 480,
+          "loss" : 0.016730286180973053
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 485,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 146.75457799434662,
+          "iterationCount" : 485,
+          "loss" : 0.015826592221856117
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 490,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 490,
+          "loss" : 0.015098413452506065
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 495,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 149.72437703609467,
+          "iterationCount" : 495,
+          "loss" : 0.014234427362680435
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 500,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 500,
+          "loss" : 0.01390555128455162
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 505,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 152.6670160293579,
+          "iterationCount" : 505,
+          "loss" : 0.012532150372862816
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 510,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 510,
+          "loss" : 0.011562373489141464
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 515,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 155.6175639629364,
+          "iterationCount" : 515,
+          "loss" : 0.010427516885101795
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 520,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 520,
+          "loss" : 0.009707657620310783
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 525,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 158.6120400428772,
+          "iterationCount" : 525,
+          "loss" : 0.009183474816381931
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 530,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 530,
+          "loss" : 0.009300986304879189
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 535,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 161.55193197727203,
+          "iterationCount" : 535,
+          "loss" : 0.009025937877595425
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 540,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 540,
+          "loss" : 0.00861428864300251
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 545,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 164.48306596279144,
+          "iterationCount" : 545,
+          "loss" : 0.008727075532078743
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 550,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 550,
+          "loss" : 0.009104154072701931
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 555,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 167.43511497974396,
+          "iterationCount" : 555,
+          "loss" : 0.0088163111358881
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 560,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 560,
+          "loss" : 0.008575817570090294
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 565,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 170.3932889699936,
+          "iterationCount" : 565,
+          "loss" : 0.008398689329624176
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 570,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 570,
+          "loss" : 0.008014809340238571
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 575,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 173.3578840494156,
+          "iterationCount" : 575,
+          "loss" : 0.0079960310831666
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 580,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 580,
+          "loss" : 0.008028359152376652
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 585,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 176.47834599018097,
+          "iterationCount" : 585,
+          "loss" : 0.0077869100496172905
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 590,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 590,
+          "loss" : 0.008332430385053158
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 595,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 179.49819898605347,
+          "iterationCount" : 595,
+          "loss" : 0.008287305943667889
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 600,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 600,
+          "loss" : 0.008115077391266823
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 605,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 182.47899496555328,
+          "iterationCount" : 605,
+          "loss" : 0.008069542236626148
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 610,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 610,
+          "loss" : 0.007861356250941753
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 615,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 185.45759201049805,
+          "iterationCount" : 615,
+          "loss" : 0.008254342712461948
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 620,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 620,
+          "loss" : 0.008147469721734524
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 625,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 188.3824280500412,
+          "iterationCount" : 625,
+          "loss" : 0.008346027694642544
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 630,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 630,
+          "loss" : 0.008082514628767967
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 635,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 191.34732294082642,
+          "iterationCount" : 635,
+          "loss" : 0.008057092316448689
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 640,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 640,
+          "loss" : 0.008142494596540928
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 645,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 194.26131796836853,
+          "iterationCount" : 645,
+          "loss" : 0.008075217716395855
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 650,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 650,
+          "loss" : 0.008446276187896729
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 655,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 197.2243219614029,
+          "iterationCount" : 655,
+          "loss" : 0.008242323063313961
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 660,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 660,
+          "loss" : 0.008412841707468033
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 665,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 200.19462096691132,
+          "iterationCount" : 665,
+          "loss" : 0.00862680934369564
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 670,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 670,
+          "loss" : 0.008154093287885189
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 675,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 203.14327704906464,
+          "iterationCount" : 675,
+          "loss" : 0.008306673727929592
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 680,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 680,
+          "loss" : 0.008324304595589638
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 685,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 206.16543304920197,
+          "iterationCount" : 685,
+          "loss" : 0.008259274996817112
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 690,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 690,
+          "loss" : 0.008320377208292484
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 695,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 209.24674797058105,
+          "iterationCount" : 695,
+          "loss" : 0.007914518937468529
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 700,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 700,
+          "loss" : 0.0075722066685557365
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 705,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 212.23321902751923,
+          "iterationCount" : 705,
+          "loss" : 0.00749888876453042
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 710,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 710,
+          "loss" : 0.0074346549808979034
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 715,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 215.19917595386505,
+          "iterationCount" : 715,
+          "loss" : 0.0073692831210792065
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 720,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 720,
+          "loss" : 0.00732007110491395
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 725,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 218.1553100347519,
+          "iterationCount" : 725,
+          "loss" : 0.007330950815230608
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 730,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 730,
+          "loss" : 0.007692408747971058
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 735,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 221.05877494812012,
+          "iterationCount" : 735,
+          "loss" : 0.007762160152196884
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 740,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 740,
+          "loss" : 0.007584819104522467
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 745,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 224.05207300186157,
+          "iterationCount" : 745,
+          "loss" : 0.007319366559386253
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 750,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 750,
+          "loss" : 0.007567737251520157
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 755,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 227.00961995124817,
+          "iterationCount" : 755,
+          "loss" : 0.007716397289186716
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 760,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 760,
+          "loss" : 0.007320959586650133
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 765,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 229.94516098499298,
+          "iterationCount" : 765,
+          "loss" : 0.0073294308967888355
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 770,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 770,
+          "loss" : 0.007822082377970219
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 775,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 232.88916194438934,
+          "iterationCount" : 775,
+          "loss" : 0.007848571054637432
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 780,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 780,
+          "loss" : 0.007440378423780203
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 785,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 235.8946269750595,
+          "iterationCount" : 785,
+          "loss" : 0.007400622125715017
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 790,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 790,
+          "loss" : 0.007358405739068985
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 795,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 238.8409299850464,
+          "iterationCount" : 795,
+          "loss" : 0.0076464200392365456
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 800,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 800,
+          "loss" : 0.007525060325860977
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 805,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 241.82492303848267,
+          "iterationCount" : 805,
+          "loss" : 0.008026186376810074
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 810,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 810,
+          "loss" : 0.007669021375477314
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 815,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 244.8150999546051,
+          "iterationCount" : 815,
+          "loss" : 0.007879950106143951
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 820,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 820,
+          "loss" : 0.007676849141716957
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 825,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 247.76905298233032,
+          "iterationCount" : 825,
+          "loss" : 0.007617190945893526
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 830,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 830,
+          "loss" : 0.007579721510410309
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 835,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 250.73394799232483,
+          "iterationCount" : 835,
+          "loss" : 0.007482033688575029
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 840,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 840,
+          "loss" : 0.007231501862406731
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 845,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 253.7217229604721,
+          "iterationCount" : 845,
+          "loss" : 0.007587698753923178
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 850,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 850,
+          "loss" : 0.007525732275098562
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 855,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 256.74727404117584,
+          "iterationCount" : 855,
+          "loss" : 0.0071878633461892605
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 860,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 860,
+          "loss" : 0.007017007563263178
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 865,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 259.74499797821045,
+          "iterationCount" : 865,
+          "loss" : 0.007422866299748421
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 870,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 870,
+          "loss" : 0.007487767841666937
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 875,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 262.69482803344727,
+          "iterationCount" : 875,
+          "loss" : 0.007506712805479765
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 880,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 880,
+          "loss" : 0.00716351019218564
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 885,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 265.66620802879333,
+          "iterationCount" : 885,
+          "loss" : 0.007040014024823904
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 890,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 890,
+          "loss" : 0.007609471678733826
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 895,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 268.6545649766922,
+          "iterationCount" : 895,
+          "loss" : 0.007384365890175104
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 900,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 900,
+          "loss" : 0.007327406667172909
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 905,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 271.6288460493088,
+          "iterationCount" : 905,
+          "loss" : 0.007603092584758997
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 910,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 910,
+          "loss" : 0.007441173307597637
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 915,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 274.56891095638275,
+          "iterationCount" : 915,
+          "loss" : 0.0077581750229001045
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 920,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 920,
+          "loss" : 0.007567286491394043
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 925,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 277.5264070034027,
+          "iterationCount" : 925,
+          "loss" : 0.007431355770677328
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 930,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 930,
+          "loss" : 0.007610811851918697
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 935,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 280.50097393989563,
+          "iterationCount" : 935,
+          "loss" : 0.007605345454066992
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 940,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 940,
+          "loss" : 0.007412901613861322
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 945,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 283.4887340068817,
+          "iterationCount" : 945,
+          "loss" : 0.007212446536868811
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 950,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 950,
+          "loss" : 0.007345940452069044
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 955,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 286.4593199491501,
+          "iterationCount" : 955,
+          "loss" : 0.007123779505491257
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 960,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 960,
+          "loss" : 0.007195335812866688
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 965,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 289.4023269414902,
+          "iterationCount" : 965,
+          "loss" : 0.007126379758119583
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 970,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 970,
+          "loss" : 0.00721884798258543
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 975,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 292.37380504608154,
+          "iterationCount" : 975,
+          "loss" : 0.007256998214870691
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 980,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 980,
+          "loss" : 0.007349496707320213
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 985,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 295.33733904361725,
+          "iterationCount" : 985,
+          "loss" : 0.007108548656105995
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 990,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 0,
+          "iterationCount" : 990,
+          "loss" : 0.00712980143725872
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 995,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 298.31000804901123,
+          "iterationCount" : 995,
+          "loss" : 0.007187216076999903
+        },
+        "percentComplete" : 0,
+        "tableDone" : false,
+        "tableIndex" : 0
+      },
+      {
+        "count" : 1000,
+        "currentRowIndex" : 0,
+        "isLast" : false,
+        "odColumnHeader" : {
+          "elapsedTime" : 299.5963350534439,
+          "iterationCount" : 1000,
+          "loss" : 0.0070389267057180405
+        },
+        "percentComplete" : 0,
+        "tableDone" : true,
+        "tableIndex" : 0
+      }
+    ],
+    "resumableCheckpoint" : {
+      "checkpointURL" : "file:///Users/evan/Library/Caches/com.apple.dt.createml/projects/81CF5EC6-C8D1-420C-9BD0-29486D0C0561fca76543562c3296d4cb6023432305486c1d5304/sessions/checkpoint.sessions/1BE4A72F-4B91-4355-BE54-84E4B0DC278F/training-000001000.checkpoint",
+      "createdDate" : "2026-11-03T05:22:35Z",
+      "iteration" : 1000
+    },
+    "resumableCheckpointURL" : "Checkpoints/1BE4A72F-4B91-4355-BE54-84E4B0DC278F.DetectButtonsForContour1.checkpoint",
+    "snapshottableCheckpointModelURL" : "Checkpoints/1BE4A72F-4B91-4355-BE54-84E4B0DC278F.DetectButtonsForContour1.checkpoint/training-000001000.checkpoint.model/checkpointModel.mlmodel",
+    "snapshottableCheckpoints" : {
+      "1000" : {
+        "createdDate" : "2026-11-03T05:22:35Z",
+        "iteration" : 1000,
+        "modelURL" : "file:///Users/evan/Library/Caches/com.apple.dt.createml/projects/81CF5EC6-C8D1-420C-9BD0-29486D0C0561fca76543562c3296d4cb6023432305486c1d5304/sessions/checkpoint.sessions/1BE4A72F-4B91-4355-BE54-84E4B0DC278F/training-000001000.checkpoint.model/checkpointModel.mlmodel"
+      }
+    },
+    "startTime" : "2026-11-03T05:17:35Z",
+    "trainingAccuracy" : 0.9989588260650635,
+    "trainingResults" : {
+      "objectDetector" : {
+        "averagePrecision" : {
+          "button" : {
+            "IoU50" : 0.9989588260650635,
+            "variedIoU" : 0.9989588260650635
+          }
+        },
+        "meanAveragePrecision" : {
+          "IoU50" : 0.9989588260650635,
+          "variedIoU" : 0.9989588260650635
+        }
+      }
+    },
+    "validationAccuracy" : 0.2502889931201935,
+    "validationResults" : {
+      "objectDetector" : {
+        "averagePrecision" : {
+          "button" : {
+            "IoU50" : 0.2502889931201935,
+            "variedIoU" : 0.054847491325926964
+          }
+        },
+        "meanAveragePrecision" : {
+          "IoU50" : 0.2502889931201935,
+          "variedIoU" : 0.054847491325926964
+        }
+      }
+    }
+  },
+  "validationEntity" : {
+    "analysedDataType" : "datasource",
+    "dataResult" : {
+      "classesCount" : 1,
+      "createdDate" : "2026-11-03T05:06:30Z",
+      "dataAnalysis" : {
+        "classifierAnalysis" : {
+
+        },
+        "issues" : [
+          {
+            "description" : "1 classes found, including button",
+            "severity" : "debug"
+          },
+          {
+            "description" : "Less than 50 total images found - add more to improve model validation",
+            "severity" : "warning"
+          },
+          {
+            "description" : "Smallest class is \"button\" with 32 images",
+            "severity" : "debug"
+          },
+          {
+            "description" : "Largest class is \"button\" with 32 images",
+            "severity" : "debug"
+          }
+        ],
+        "objectDetectorAnalysis" : {
+          "details" : {
+
+          },
+          "labelStats" : {
+            "button" : 32
+          }
+        },
+        "summary" : {
+          "canUseValidation" : 0,
+          "classCount" : 1,
+          "counterExamples" : 1,
+          "sampleCount" : 7,
+          "suggestedMaxIterations" : 2000
+        },
+        "warning" : "Less than 50 total images found - add more to improve model validation"
+      },
+      "dataSourceID" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+      "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/ApBotButtonTraining/Validation/",
+      "itemsCount" : 7,
+      "warning" : "Less than 50 total images found - add more to improve model validation"
+    },
+    "dataSourceID" : "183C03C9-54BB-4298-B5C9-E931700E69C1",
+    "splitOptions" : {
+      "strategy" : {
+        "automatic" : {
+
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

@@ -1,0 +1,75 @@
+{
+  "activityEntities" : [
+    "dataSourceCreated",
+    [
+      {
+        "createdDate" : "2026-11-03T06:25:09Z",
+        "event" : "dataSourceCreated",
+        "id" : "A62A3115-626B-4CD4-AE2B-E51991AC9693",
+        "subtitle" : "Validation",
+        "title" : "Data Source Created"
+      }
+    ]
+  ],
+  "createdDate" : "2026-11-03T06:25:09Z",
+  "dataPathRelativeToProjectURL" : "../Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Validation/",
+  "dataResult" : {
+    "classesCount" : 5,
+    "createdDate" : "2026-11-03T06:25:09Z",
+    "dataAnalysis" : {
+      "classifierAnalysis" : {
+
+      },
+      "issues" : [
+        {
+          "description" : "5 classes found, including pushbutton, knob, touch",
+          "severity" : "debug"
+        },
+        {
+          "description" : "7188 annotations found, automatically creating validation set",
+          "severity" : "good"
+        },
+        {
+          "description" : "Smallest class is \"toggle\" with 86 images",
+          "severity" : "debug"
+        },
+        {
+          "description" : "Largest class is \"pushbutton\" with 4174 images",
+          "severity" : "debug"
+        }
+      ],
+      "objectDetectorAnalysis" : {
+        "details" : {
+
+        },
+        "labelStats" : {
+          "knob" : 2086,
+          "pushbutton" : 4174,
+          "slider" : 201,
+          "toggle" : 86,
+          "touch" : 641
+        }
+      },
+      "summary" : {
+        "canUseValidation" : 1,
+        "classCount" : 5,
+        "counterExamples" : 0,
+        "sampleCount" : 1356,
+        "suggestedMaxIterations" : 26000
+      }
+    },
+    "dataSourceID" : "3299941D-8BAB-4456-98CC-2A985E491CD9",
+    "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Validation/",
+    "itemsCount" : 1356
+  },
+  "dataURL" : "file:///Users/evan/Documents/Codex/2026-11-01/jx-uk/outputs/HouseholdApplianceTraining/Validation/",
+  "experimentIDs" : [
+    "AFAF6EAC-E58E-48D5-A7F3-B56C2906CC49"
+  ],
+  "id" : "3299941D-8BAB-4456-98CC-2A985E491CD9",
+  "modifiedDate" : "2026-11-03T15:12:25Z",
+  "pathType" : 0,
+  "preferredFilename" : "Validation (2)",
+  "title" : "Validation (2)",
+  "version" : "1.0"
+}
