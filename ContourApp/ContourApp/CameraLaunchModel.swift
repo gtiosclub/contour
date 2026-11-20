@@ -2,6 +2,7 @@ import ContourCore
 import ContourFeedback
 import Foundation
 import Observation
+import SurfaceUnderstanding
 
 /// Coordinates cancellation before the shared camera changes ownership or a new request starts.
 @MainActor @Observable
@@ -129,15 +130,28 @@ final class CameraLaunchModel {
                 photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
             }
             try Task.checkCancellation()
-            let map = try await self.pipeline.detectPanel(in: photo)
+            let map: SurfaceMap
+            do {
+                map = try await self.pipeline.detectPanel(in: photo)
+            } catch {
+                guard let problem = ScanProblem.after(error) else {
+                    throw CancellationError()
+                }
+                try Task.checkCancellation()
+                self.status = problem.spoken
+                return
+            }
             try Task.checkCancellation()
             self.knownReferenceID = self.pipeline.panelReference?.photo.id
             guard !map.buttons.isEmpty else {
-                self.status = "No buttons found. Show the whole panel and scan again."
+                self.status = ScanProblem.noButtons.spoken
                 return
             }
             guard self.pipeline.canGuide else {
-                self.status = "Panel outline unclear. Show all four corners and scan again."
+                let problem = self.pipeline.panelReference.flatMap {
+                    ScanProblem.after($0.detection, photo: photo, target: nil)
+                }
+                self.status = problem?.spoken ?? "Panel outline unclear. Show all four corners and scan again."
                 return
             }
             self.status = "Panel ready. Say a button name or choose one below."
