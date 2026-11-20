@@ -26,7 +26,8 @@ struct CameraLaunchTests {
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
-        #expect(model.error != nil)
+        #expect(model.status == "That scan didn't work. Try again")
+        #expect(model.error == nil)
         #expect(!model.hasSelectionContent)
         let photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 100, height: 100), timestamp: Date())
         let reference = try PanelReference(photo: photo, detection: PanelDetection(
@@ -39,6 +40,99 @@ struct CameraLaunchTests {
         await model.waitForWork()
         #expect(!model.hasSelectionContent)
         #expect(model.map == nil)
+    }
+
+    @Test("No panel found produces the correct spoken status")
+    func noPanelFoundUsesSpokenStatus() async {
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(failure: .noPanelFound),
+            tracking: EmptyLaunchFrames(),
+            feedback: PrintingFeedbackEngine(isPrinting: false),
+            liveComponents: []
+        )
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+
+        #expect(model.status == "I can't see the panel")
+        #expect(model.error == nil)
+    }
+
+    @Test("Undecodable image produces the retry message")
+    func undecodableImageUsesSpokenStatus() async {
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(failure: .undecodableImage),
+            tracking: EmptyLaunchFrames(),
+            feedback: PrintingFeedbackEngine(isPrinting: false),
+            liveComponents: []
+        )
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+
+        #expect(model.status == "That scan didn't work. Try again")
+        #expect(model.error == nil)
+    }
+
+    @Test("Cancelled scans do not announce a failure")
+    func cancelledScanDoesNotReportFailure() async {
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(failure: .cancelled),
+            tracking: EmptyLaunchFrames(),
+            feedback: PrintingFeedbackEngine(isPrinting: false),
+            liveComponents: []
+        )
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+
+        #expect(model.error == nil)
+        #expect(model.status != "Unable to complete the request")
+    }
+
+    @Test("A scan without buttons produces the correct spoken status")
+    func noButtonsUsesSpokenStatus() async {
+        let pipeline = ContourPipeline(
+            surfaceUnderstanding: MockSurfaceUnderstanding(
+                map: SurfaceMap(buttons: [], confidence: 1)
+            ),
+            tracking: EmptyLaunchFrames(),
+            feedback: PrintingFeedbackEngine(isPrinting: false),
+            liveComponents: []
+        )
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+
+        #expect(
+            model.status ==
+            "I can't find any buttons. Point the phone at the control panel"
+        )
+        #expect(model.error == nil)
+    }
+
+    @Test("Successful scans preserve the panel ready message")
+    func successfulScanKeepsReadyStatus() async {
+        let pipeline = pipeline()
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline)
+
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+
+        #expect(
+            model.status ==
+            "Panel ready. Say a button name or choose one below."
+        )
+        #expect(model.error == nil)
     }
 
     @Test("Mock launch scans and a spoken target starts guidance")
