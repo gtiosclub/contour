@@ -180,3 +180,50 @@ func boxesJustOutsidePanelEdgeFinishTrimming() {
     #expect(found.allSatisfy { $0.bounds.width > 0 && $0.bounds.height > 0 })
     #expect(!boxesOverlap(found[0].bounds, found[1].bounds))
 }
+
+@Test("box inside START label is removed")
+func boxInsideStartLabelIsRemoved() {
+    let start = PanelRect(x: 0.639, y: 0.896, width: 0.209, height: 0.042)
+    let rtBox = PanelRect(x: 0.771, y: 0.905, width: 0.073, height: 0.024)
+    let digitKey = PanelRect(x: 0.10, y: 0.10, width: 0.20, height: 0.20)
+
+    let found = removeBoxesInsideWords(
+        [(rtBox, 1.0), (digitKey, 1.0)],
+        textBoxes: [start]
+    )
+
+    #expect(found.count == 1)
+    #expect(found.first?.bounds == digitKey)
+}
+
+@Test("digit key survives when its digit text is inside it")
+func digitKeySurvivesInsidePrintedDigit() {
+    let key = PanelRect(x: 0.10, y: 0.20, width: 0.20, height: 0.18)
+    let digit = PanelRect(x: 0.165, y: 0.255, width: 0.07, height: 0.07)
+
+    let found = removeBoxesInsideWords([(key, 1.0)], textBoxes: [digit])
+
+    #expect(found.count == 1)
+    #expect(found.first?.bounds == key)
+}
+
+@Test("detected box with no text survives")
+func detectedBoxWithNoTextSurvives() {
+    let key = PanelRect(x: 0.30, y: 0.40, width: 0.16, height: 0.12)
+
+    let found = removeBoxesInsideWords([(key, 1.0)], textBoxes: [])
+
+    #expect(found.count == 1)
+    #expect(found.first?.bounds == key)
+}
+
+@Test("key survives when its name is printed just above it")
+func keySurvivesWhenNameIsPrintedAbove() {
+    let name = PanelRect(x: 0.42, y: 0.30, width: 0.16, height: 0.04)
+    let key = PanelRect(x: 0.40, y: 0.36, width: 0.20, height: 0.12)
+
+    let found = removeBoxesInsideWords([(key, 1.0)], textBoxes: [name])
+
+    #expect(found.count == 1)
+    #expect(found.first?.bounds == key)
+}
