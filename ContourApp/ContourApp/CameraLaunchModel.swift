@@ -22,6 +22,10 @@ final class CameraLaunchModel {
     private var requestID = UUID()
     private var transition: Task<Void, Never>?
     private var lifecycleID = UUID()
+    /// Reads the display after a good scan. Tests swap in a fake.
+    @ObservationIgnored var displaySentence: @MainActor (PanelReference) async -> String? = {
+        await DisplayReadout.sentence(for: $0)
+    }
 
     init(camera: CameraService, pipeline: ContourPipeline,
          listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) }) {
@@ -140,7 +144,14 @@ final class CameraLaunchModel {
                 self.status = "Panel outline unclear. Show all four corners and scan again."
                 return
             }
-            self.status = "Panel ready. Say a button name or choose one below."
+            var display: String?
+            if let reference = self.pipeline.panelReference {
+                display = await self.displaySentence(reference)
+                try Task.checkCancellation()
+            }
+            self.status = ["Panel ready. Say a button name or choose one below.", display]
+                .compactMap { $0 }
+                .joined(separator: " ")
         }
     }
 
