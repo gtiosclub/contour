@@ -38,6 +38,13 @@ struct ContentView: View {
             .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
                 if AppLifecycle.audioWasTaken(notification.userInfo) { experience.stop() }
             }
+            #if !targetEnvironment(simulator)
+            // After the camera's alert, so the two don't race. The simulator runs the
+            // tests, which shouldn't wait on an alert or a download.
+            .task(id: experience.ready) {
+                if experience.ready { await VoiceRequest.prepare() }
+            }
+            #endif
     }
 
     /// The screen stays on while the camera runs: a 5-key plan with a minute for

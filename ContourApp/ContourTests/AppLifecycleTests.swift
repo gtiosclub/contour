@@ -58,4 +58,21 @@ struct AppLifecycleTests {
         #expect(!AppLifecycle.audioWasTaken([AVAudioSessionInterruptionTypeKey: "began"]))
         #expect(!AppLifecycle.audioWasTaken([AVAudioSessionInterruptionTypeKey: UInt(99)]))
     }
+
+    @Test("Speech and the microphone share one setup the system accepts, and it comes back after guidance changes it")
+    func audioSession() throws {
+        #expect(AppAudioSession.options.contains(.defaultToSpeaker))
+        #expect(AppAudioSession.options.contains(.mixWithOthers))
+        #expect(!AppAudioSession.options.contains(.allowAirPlay))
+        let session = AVAudioSession.sharedInstance()
+        // What ContourFeedback's guidance cues set when they start.
+        try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try AppAudioSession.activate()
+        #expect(session.category == .playAndRecord)
+        #expect(session.mode == .default)
+        #expect(session.categoryOptions == AppAudioSession.options)
+        // Nothing changed it since, so this one leaves it alone.
+        try AppAudioSession.activate()
+        #expect(session.category == .playAndRecord)
+    }
 }

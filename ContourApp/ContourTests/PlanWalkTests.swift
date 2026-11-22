@@ -515,15 +515,21 @@ struct PlanWalkTests {
         await model.waitForWork()
     }
 
-    @Test("The microphone failing doesn't end the plan, and Next still works")
+    @Test("The microphone failing doesn't end the plan, says so once, and Next still works")
     func listeningFails() async {
         let speaker = FakeSpeaker()
+        var attempts = 0
         let (model, _) = await scanned(speaker: speaker, next: {
+            attempts += 1
             throw NSError(domain: "VoiceTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone."])
         })
         model.sayAButton()
-        await until { model.status.contains("No microphone.") }
+        await until { attempts >= 2 }
         #expect(model.plan != nil && model.busy)
+        #expect(model.status.contains("No microphone."))
+        #expect(!NextWord.isIn(model.displayStatus))
+        #expect(speaker.spoken.filter { $0 == "Voice isn't available. Use the button to move on." }.count == 1)
+        #expect(speaker.spoken.last == "Voice isn't available. Use the button to move on.")
         model.next()
         await until { model.planIndex == 1 && model.status.contains("No microphone.") }
         model.stop()

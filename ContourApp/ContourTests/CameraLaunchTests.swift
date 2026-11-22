@@ -86,19 +86,26 @@ struct CameraLaunchTests {
         #expect(model.status.contains("Guidance ended"))
     }
 
-    @Test("Recognition errors remain recoverable without discarding the panel")
-    func recognitionError() async {
-        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline()) { _ in
+    @Test("Recognition errors remain recoverable without discarding the panel, and say so out loud")
+    func recognitionError() async throws {
+        let speaker = SpokenLines()
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline(), listen: { _ in
             throw NSError(domain: "VoiceTest", code: 1,
                           userInfo: [NSLocalizedDescriptionKey: "Microphone access denied"])
-        }
+        }, speaker: speaker)
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
         model.sayAButton()
         await model.waitForWork()
         #expect(model.error == "Microphone access denied")
-        #expect(model.map != nil && !model.busy)
+        #expect(model.map != nil && !model.busy && !model.listening && model.ready)
+        #expect(speaker.lines == ["Voice isn't available. Choose a button below."])
+        #expect(model.status == "Voice isn't available. Choose a button below.")
+        // Tapping a button still guides.
+        model.choose(try #require(model.map?.button(labelled: "Start")))
+        await model.waitForWork()
+        #expect(model.status == "Reached Start.")
     }
 
     @Test("Replacing a panel cancels a pending voice selection")
@@ -209,6 +216,13 @@ struct CameraLaunchTests {
         #expect(!model.pipeline.guidanceArrived)
     }
 
+}
+
+/// Records what the model says out loud, and finishes each sentence at once.
+private final class SpokenLines: PlanSpeaking {
+    var lines: [String] = []
+    func speak(_ text: String) async { lines.append(text) }
+    func stop() {}
 }
 
 private struct EmptyLaunchFrames: TrackingSource {
