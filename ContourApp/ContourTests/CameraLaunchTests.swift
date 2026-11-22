@@ -475,6 +475,41 @@ struct CameraLaunchTests {
         if !background { #expect(model.status.hasPrefix("Stopped")) }
     }
 
+    @Test("The user's Stop is said once, by the app only without VoiceOver, and a stopped scan says to scan again",
+          arguments: [false, true])
+    func stopIsSaid(voiceOver: Bool) async {
+        let surface = ScanSequence([.success(MockSurfaceMaps.microwave)], latency: .milliseconds(300))
+        let speaker = RecordingSpeaker()
+        let model = speakingModel(pipeline(surface: surface), speaker: speaker, voiceOver: voiceOver)
+        await model.setActive(true).value
+        model.scan()
+        await until { surface.photoIDs.count == 1 }
+        model.stop(aloud: true)
+        await model.waitForWork()
+        #expect(model.status == "Stopped. Scan the panel again.")
+        #expect(!model.busy && !model.listening && !model.speaksOwnStatus, "VoiceOver reads the status")
+        #expect(speaker.spoken == (voiceOver ? [] : ["Scanning panel. Hold the phone steady.", "Stopped. Scan the panel again."]))
+    }
+
+    @Test("The buttons work while Stop is said, and the next tap cuts it off")
+    func tapCutsOffStop() async {
+        let surface = ScanSequence([.success(MockSurfaceMaps.microwave)], latency: .milliseconds(300))
+        let speaker = RecordingSpeaker()
+        speaker.held = "Stopped"
+        let model = speakingModel(pipeline(surface: surface), speaker: speaker)
+        await model.setActive(true).value
+        model.scan()
+        await until { surface.photoIDs.count == 1 }
+        model.stop(aloud: true)
+        await until { speaker.isHolding }
+        #expect(!model.busy)
+        model.scan()
+        #expect(!speaker.isHolding)
+        model.stop()
+        await model.waitForWork()
+        #expect(Array(speaker.spoken.prefix(2)) == ["Scanning panel. Hold the phone steady.", "Stopped. Scan the panel again."])
+    }
+
     @Test("The best photo: one that can guide, then the cook-time keys, then more buttons")
     func ranking() throws {
         typealias Attempt = CameraLaunchModel.ScanAttempt

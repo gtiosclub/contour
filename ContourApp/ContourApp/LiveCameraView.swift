@@ -180,7 +180,7 @@ struct LiveCameraView: View {
 
     /// The big button: Stop while anything is running, otherwise the next thing to do.
     private func primaryAction() {
-        if experience.busy { experience.stop() }
+        if experience.busy { experience.stop(aloud: true) }
         else if !experience.ready { experience.setActive(true) }
         else if !hasSelectionContent { scanPanel() }
         else { experience.sayAButton() }
@@ -633,7 +633,9 @@ struct LiveCameraView: View {
         .onChange(of: experience.status) { _, message in
             // State transitions only; tracking's per-frame output stays in the feedback engine.
             // VoiceRequest announces listening before it opens the microphone.
-            if !experience.listening && !experience.speaksOwnStatus && !(pipeline.guidanceArrived
+            // Guidance says "Target reached" itself, so only the arrival line is
+            // left out: arrival stays set until the next guidance, past a Stop.
+            if !experience.listening && !experience.speaksOwnStatus && !(message.hasPrefix("Reached ")
                 && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
                 UIAccessibility.post(notification: .announcement, argument: message)
             }

@@ -189,9 +189,22 @@ final class CameraLaunchModel {
         return cleanup
     }
 
-    func stop() {
-        stopWork()
-        status = "Stopped. Say a button name, choose a button, or scan again."
+    /// `aloud` is for the user's own Stop. VoiceOver reads the status out, so the
+    /// line is only said without it, and the next tap cuts it off like a scan's
+    /// last line. A call or Siri taking the audio stops quietly.
+    func stop(aloud: Bool = false) {
+        let cleanup = stopWork()
+        // A scan clears the panel while it looks, so stopping one can leave none.
+        status = hasSelectionContent ? "Stopped. Say a button name, choose a button, or scan again."
+            : "Stopped. Scan the panel again."
+        guard aloud else { return }
+        let line = status
+        let id = requestID
+        work = Task {
+            await cleanup.value
+            guard requestID == id, !Task.isCancelled, active else { return }
+            await sayUnlessVoiceOver(line)
+        }
     }
 
     /// A scan takes up to this many photos, and no more once the next one would

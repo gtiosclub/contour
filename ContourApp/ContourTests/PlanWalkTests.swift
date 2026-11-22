@@ -485,6 +485,21 @@ struct PlanWalkTests {
         #expect(!model.busy)
     }
 
+    @Test("Stop after a key is reached is said, and says what still works")
+    func stopAfterArrivalIsSaid() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { model.listening && model.plan != nil }
+        #expect(model.pipeline.guidanceArrived, "Arrival stands until the plan's work unwinds")
+        model.stop(aloud: true)
+        // What the screen checks before VoiceOver reads a new status.
+        #expect(!model.listening && !model.speaksOwnStatus && !model.status.hasPrefix("Reached "))
+        await model.waitForWork()
+        #expect(speaker.spoken.last == "Stopped. Say a button name, choose a button, or scan again.")
+        #expect(model.status == speaker.spoken.last && model.hasSelectionContent)
+    }
+
     @Test("A rescan ends the plan, and the old ids are never guided to")
     func rescanEndsThePlan() async throws {
         let speaker = FakeSpeaker()
