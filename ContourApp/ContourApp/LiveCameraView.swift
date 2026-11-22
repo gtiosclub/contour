@@ -178,6 +178,14 @@ struct LiveCameraView: View {
         experience.scan()
     }
 
+    /// The big button: Stop while anything is running, otherwise the next thing to do.
+    private func primaryAction() {
+        if experience.busy { experience.stop() }
+        else if !experience.ready { experience.setActive(true) }
+        else if !hasSelectionContent { scanPanel() }
+        else { experience.sayAButton() }
+    }
+
     private var canRescan: Bool {
         // The center button already handles first scan, empty results and unclear outlines.
         primaryDetached && experience.ready && hasSelectionContent && !experience.busy
@@ -356,12 +364,7 @@ struct LiveCameraView: View {
                                 .accessibilityHidden(true)
                         }
 
-                        Button {
-                            if experience.busy { experience.stop() }
-                            else if !experience.ready { experience.setActive(true) }
-                            else if !hasSelectionContent { scanPanel() }
-                            else { experience.sayAButton() }
-                        } label: {
+                        Button { primaryAction() } label: {
                             // Hidden text must not impose its full intrinsic size on the docked circle.
                             Text(primaryDetached ? primaryTitle : "")
                                 .font(.title.bold())
@@ -497,6 +500,15 @@ struct LiveCameraView: View {
         .background { cameraBackground }
         .buttonStyle(.glass)
         .preferredColorScheme(.dark)
+        // VoiceOver's two-finger double-tap, with focus anywhere on this screen, so
+        // moving on needs no hunting for a button. During a plan it's Move on, and
+        // only that: before a key is guided it does nothing rather than stop the plan.
+        // Otherwise it's the big button, like Stop during guidance. Handling it also
+        // keeps the system from playing or pausing other audio instead.
+        .accessibilityAction(.magicTap) {
+            if experience.plan != nil { experience.next() }
+            else if primaryDetached { primaryAction() }
+        }
         #if DEBUG
         .sheet(isPresented: $showDeveloperTools) {
             NavigationStack { DebugMenu(camera: camera, pipeline: pipeline) }
@@ -641,17 +653,20 @@ struct LiveCameraView: View {
                 .font(.headline)
                 .glassForeground()
             Button { experience.next() } label: {
-                Text("Next")
-                    .font(.title3.bold())
+                // Not "Next": VoiceOver reads the name out loud, and the
+                // microphone may be open.
+                Text("Move on")
+                    .font(.title.bold())
                     .glassForeground()
-                    .frame(minWidth: 120, minHeight: 44)
+                    // Wide and tall, to hit without looking.
+                    .frame(maxWidth: .infinity, minHeight: 64)
             }
             .buttonStyle(.glass(headerGlass))
             .modifier(SelectionButtonAvailability())
             // Off whenever a tap would be ignored, like before a key is guided.
             .disabled(!experience.canMoveOn)
-            // VoiceOver reads this label out loud, and the microphone may be open.
-            .accessibilityLabel("Continue to the following key")
+            // Nor does the hint say the word it listens for.
+            .accessibilityHint("Goes on once you've pressed this key. A two-finger double-tap does the same.")
         }
         .padding(.horizontal, 24)
     }

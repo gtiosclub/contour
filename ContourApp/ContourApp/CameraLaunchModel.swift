@@ -36,6 +36,9 @@ final class CameraLaunchModel {
     private let speaker: any PlanSpeaking
     private let voiceOverRunning: @MainActor () -> Bool
     private let warmingUp: @MainActor () -> Bool
+    /// How long guidance can go without a direction to give before the user is
+    /// told what to do, and how long between each reminder after that.
+    private let reminderDelay: Duration
     private var knownReferenceID: UUID?
     private var active = false
     private var work: Task<Void, Never>?
@@ -49,7 +52,8 @@ final class CameraLaunchModel {
          speaker: any PlanSpeaking = PlanSpeaker(),
          openAI: OpenAIPlans? = nil,
          voiceOverRunning: @escaping @MainActor () -> Bool = { UIAccessibility.isVoiceOverRunning },
-         warmingUp: @escaping @MainActor () -> Bool = { LabelReader.isWarmingUp }) {
+         warmingUp: @escaping @MainActor () -> Bool = { LabelReader.isWarmingUp },
+         reminderDelay: Duration = .seconds(4)) {
         self.camera = camera
         self.pipeline = pipeline
         self.listen = listen
@@ -58,6 +62,7 @@ final class CameraLaunchModel {
         self.openAI = openAI
         self.voiceOverRunning = voiceOverRunning
         self.warmingUp = warmingUp
+        self.reminderDelay = reminderDelay
         knownReferenceID = pipeline.panelReference?.photo.id
     }
 
@@ -456,16 +461,81 @@ final class CameraLaunchModel {
         replaceWork { await self.guide(button, referenceID: referenceID) }
     }
 
+    /// Said when the tracker can't follow the scanned panel at all. Only a new
+    /// scan helps, so guidance ends, and so does a plan.
+    nonisolated static let cannotFollow = "The phone can't follow this panel. Scan again."
+
     private func guide(_ button: SurfaceMap.Button, referenceID: UUID?) async {
         guard pipeline.panelReference?.photo.id == referenceID, !Task.isCancelled else { return }
         guiding = true
         status = "Guiding to \(button.label ?? "selected button"). Keep the panel in view and move your finger toward the target."
-        await pipeline.guide(to: button)
+        // A child task, so Stop and Next cancel the reminders as they cancel this
+        // work, not once guidance has finished unwinding.
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.remindWhileQuiet() }
+            await pipeline.guide(to: button)
+            group.cancelAll()
+        }
         guard !Task.isCancelled, pipeline.panelReference?.photo.id == referenceID else { return }
         guiding = false
+        // The tracking error is a developer's reason. Say what to do instead, out
+        // loud, because guidance ends without a sound.
+        if pipeline.trackingError != nil {
+            canMoveOn = false
+            await announce(Self.cannotFollow)
+            return
+        }
         status = pipeline.guidanceArrived ? "Reached \(button.label ?? "the selected button")."
             : "Guidance ended. Choose the button to retry, or scan again."
-        error = pipeline.trackingError
+    }
+
+    /// Guidance goes quiet while it can't see the panel or the finger, and would
+    /// stay quiet until Stop. After `reminderDelay` of that, says what to do, and
+    /// again each time it goes on. Runs only while guiding, so it never talks over
+    /// the plan's own sentences.
+    private func remindWhileQuiet() async {
+        var quiet: (gap: String, since: ContinuousClock.Instant)?
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(100))
+            guard let gap = pipeline.guidanceGap, !Task.isCancelled else {
+                quiet = nil
+                continue
+            }
+            // Something else missing starts the wait over, so its reminder can't
+            // land on feedback's own word about it, like the loss said at 0.4 s.
+            guard let current = quiet, current.gap == gap else {
+                quiet = (gap, .now)
+                continue
+            }
+            guard current.since.duration(to: .now) >= reminderDelay else { continue }
+            await say(Self.reminder(for: gap, inPlan: plan != nil), whileStill: gap)
+            quiet = (gap, .now)
+        }
+    }
+
+    /// In a plan, a finger taken away after pressing the key, before arrival
+    /// fired, ends up here, so say how to move on.
+    nonisolated static func reminder(for gap: String, inPlan: Bool) -> String {
+        if gap == ContourPipeline.panelLost {
+            return "Can't see the panel. Point the phone at it, or tap Stop, in the middle of the screen."
+        }
+        return inPlan ? "Can't see your finger. Hold it near the panel, or tap Move on if you've pressed the key."
+            : "Can't see your finger. Hold it near the panel."
+    }
+
+    /// Stops talking as soon as `gap` is over: guidance has a direction again, or
+    /// something else is missing. The reminder and the guidance voice then never
+    /// talk over each other, and a reminder is never about the wrong thing.
+    private func say(_ text: String, whileStill gap: String) async {
+        let watch = Task {
+            while !Task.isCancelled, pipeline.guidanceGap == gap {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            if !Task.isCancelled { speaker.stop() }
+        }
+        await speaker.speak(text)
+        watch.cancel()
+        await watch.value
     }
 
     /// Moves on from the current key once its guidance has started, and through
@@ -510,6 +580,12 @@ final class CameraLaunchModel {
                 self.plan = nil
                 return
             }
+            // Every key after this one would fail the same way, and `guide` has
+            // said to scan again.
+            guard pipeline.trackingError == nil else {
+                self.plan = nil
+                return
+            }
             let reached = pipeline.guidanceArrived
             let lead = reached ? "Press \(step.name)" : "Guidance ended before \(step.name)"
             // After the last key there's nowhere to move on to, and a tap mustn't
@@ -539,26 +615,31 @@ final class CameraLaunchModel {
         live.stop()
     }
 
+    nonisolated static let cannotListen = "Can't listen. Tap Move on, below the middle of the screen."
+
     /// Listens until "next" is heard. False if this work was cancelled instead.
     /// Failing to listen doesn't end the plan, because the Next button still works.
     private func waitForNext() async -> Bool {
         listening = true
         defer { listening = false }
-        var toldVoiceUnavailable = false
+        var toldTheUser = false
         while !Task.isCancelled {
             do {
                 if try await listenForNext() { return !Task.isCancelled }
             } catch is CancellationError {
                 return false
             } catch {
-                let shown = "Can't listen: \(error.localizedDescription) Use the button to move on."
-                // Once, out loud: the screen alone is silent without VoiceOver. Neither
-                // says Next, because VoiceOver reads that button as Continue.
-                if !toldVoiceUnavailable {
-                    toldVoiceUnavailable = true
-                    await announce("Voice isn't available. Use the button to move on.", showing: shown)
+                // A recognizer can fail its own way when it's cancelled. That's
+                // Stop or Next, and what they put on screen stays.
+                guard !Task.isCancelled else { return false }
+                status = "Can't listen: \(error.localizedDescription) Use the button to move on."
+                // VoiceOver stays quiet during a plan, so the screen alone would
+                // leave someone saying "next" to nothing. The microphone is closed.
+                // The button is named the way VoiceOver reads it.
+                if !toldTheUser {
+                    toldTheUser = true
+                    await announce(Self.cannotListen, showing: status)
                 }
-                status = shown
             }
             // The microphone has to reopen, so don't spin if it ends straight away.
             try? await Task.sleep(for: .seconds(1))

@@ -62,6 +62,59 @@ private struct NoFingertipEver: TrackingSource {
     }
 }
 
+/// Lost frames and never ends, like a phone pointed away from the panel.
+private struct PanelLostForever: TrackingSource {
+    func frames() -> AsyncStream<TrackingFrame> {
+        AsyncStream { $0.yield(.lost(at: Date())) }
+    }
+}
+
+/// A tracker that can't register the scanned panel, so every frame is lost.
+private actor UnusablePanel: GuidanceTrackingSession {
+    func use(_ reference: PanelReference) {}
+    func stop() {}
+    func registrationError() -> PanelTrackingError? { .registrationFailed }
+    func hybridStatus() -> HybridTrackingDiagnostics? { nil }
+    nonisolated func frames() -> AsyncStream<TrackingFrame> { PanelLostForever().frames() }
+}
+
+/// Lost frames, each keeping tracking busy for 0.3 s in a way cancelling can't
+/// cut short, like a frame already being processed on a phone under load.
+private actor BusyLostSession: GuidanceTrackingSession {
+    func use(_ reference: PanelReference) {}
+    func stop() {}
+    func registrationError() async -> PanelTrackingError? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { continuation.resume() }
+        }
+        return nil
+    }
+    func hybridStatus() -> HybridTrackingDiagnostics? { nil }
+    nonisolated func frames() -> AsyncStream<TrackingFrame> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let task = Task {
+                while !Task.isCancelled {
+                    continuation.yield(.lost(at: Date()))
+                    try? await Task.sleep(for: .milliseconds(20))
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
+/// Frames the test sends one at a time, for one key's guidance.
+private final class SentFrames: TrackingSource, @unchecked Sendable {
+    private let pair = AsyncStream<TrackingFrame>.makeStream()
+    func frames() -> AsyncStream<TrackingFrame> { pair.stream }
+    func send(_ frame: TrackingFrame) { pair.continuation.yield(frame) }
+    func send(fingertip: PanelPoint?) {
+        send(TrackingFrame(timestamp: Date(), fingertip: fingertip,
+            panel: PanelPose(column0: SIMD4(1,0,0,0), column1: SIMD4(0,1,0,0),
+                column2: SIMD4(0,0,1,0), column3: SIMD4(0,0,0,1), confidence: 1), trackingQuality: .good))
+    }
+}
+
 /// No fingertip ever, like `NoFingertipEver`, and counts each time tracking is
 /// told to stop, which makes the real tracker register the panel again.
 private actor StopCountingSession: GuidanceTrackingSession {
@@ -122,17 +175,19 @@ struct PlanWalkTests {
     }
 
     /// A model with a scanned panel. `say` is what the user asks for, and
-    /// `next` answers each time the model listens for "next".
+    /// `next` answers each time the model listens for "next". Reminders are off
+    /// unless a test asks for them.
     private func scanned(say: String = "cook for a minute and a half", map: SurfaceMap = panel(),
                          tracking: (any TrackingSource)? = nil, speaker: FakeSpeaker,
-                         next: @escaping @MainActor () async throws -> Bool = { true })
+                         next: @escaping @MainActor () async throws -> Bool = { true },
+                         reminderDelay: Duration = .seconds(60))
         async -> (model: CameraLaunchModel, finger: FingerOnTheKey) {
         // The finger follows the plan: whichever key the model is on right now.
         var read: (() -> PanelPoint?)?
         let finger = FingerOnTheKey { read?() }
         let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline(map: map, tracking: tracking ?? finger),
             listen: { map in VoiceRequest.Heard(text: say, button: ButtonLookup.button(for: say, in: map)) },
-            listenForNext: next, speaker: speaker)
+            listenForNext: next, speaker: speaker, reminderDelay: reminderDelay)
         read = { [weak model] in
             guard let model, let plan = model.plan else { return nil }
             return plan.steps[model.planIndex].button.bounds.center
@@ -513,25 +568,168 @@ struct PlanWalkTests {
         #expect(speaker.spoken == [model.status])
     }
 
-    @Test("The microphone failing doesn't end the plan, says so once, and Next still works")
+    @Test("The microphone failing doesn't end the plan, is said once out loud, and Next still works")
     func listeningFails() async {
         let speaker = FakeSpeaker()
-        var attempts = 0
+        var tries = 0
         let (model, _) = await scanned(speaker: speaker, next: {
-            attempts += 1
+            tries += 1
             throw NSError(domain: "VoiceTest", code: 1, userInfo: [NSLocalizedDescriptionKey: "No microphone."])
         })
         model.sayAButton()
-        await until { attempts >= 2 }
+        await until { tries >= 2 }
         #expect(model.plan != nil && model.busy)
         #expect(model.status.contains("No microphone."))
         #expect(!NextWord.isIn(model.displayStatus))
-        #expect(speaker.spoken.filter { $0 == "Voice isn't available. Use the button to move on." }.count == 1)
-        #expect(speaker.spoken.last == "Voice isn't available. Use the button to move on.")
+        #expect(speaker.spoken.filter { $0 == CameraLaunchModel.cannotListen }.count == 1)
+        #expect(speaker.spoken.last == CameraLaunchModel.cannotListen)
         model.next()
         await until { model.planIndex == 1 && model.status.contains("No microphone.") }
         model.stop()
         await model.waitForWork()
+    }
+
+    @Test("Can't see the panel or the finger during a key: it keeps saying what to do, and the plan goes on",
+          arguments: [true, false])
+    func remindsWhileQuiet(panelLost: Bool) async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: panelLost ? PanelLostForever() : NoFingertipEver(),
+                                       speaker: speaker, reminderDelay: .milliseconds(50))
+        model.sayAButton()
+        let reminder = CameraLaunchModel.reminder(for: panelLost ? ContourPipeline.panelLost : "No fingertip seen.",
+                                                  inPlan: true)
+        #expect(reminder.hasPrefix(panelLost ? "Can't see the panel." : "Can't see your finger."))
+        // A finger taken away after pressing the key, before arrival fired, is how
+        // a plan gets stuck, so that reminder says how to move on.
+        #expect(reminder.contains(panelLost ? "tap Stop" : "tap Move on"))
+        #expect(!NextWord.isIn(reminder))
+        await until { speaker.spoken.filter { $0 == reminder }.count >= 2 }
+        #expect(model.plan != nil && model.guiding && model.planIndex == 0 && model.canMoveOn)
+        #expect(model.status.hasPrefix("Guiding to"), "The reminder is said, not put on screen")
+        model.stop()
+        await model.waitForWork()
+        let said = speaker.spoken.count
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(speaker.spoken.count == said, "Nothing more once it's stopped")
+    }
+
+    @Test("A reminder stops as soon as guidance has a direction again")
+    func reminderGivesWay() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Can't see"
+        let frames = SentFrames()
+        let (model, _) = await scanned(tracking: frames, speaker: speaker, reminderDelay: .milliseconds(50))
+        model.sayAButton()
+        await until { model.guiding }
+        frames.send(.lost(at: Date()))
+        await until { speaker.isHolding }
+        let stops = speaker.stops
+        frames.send(fingertip: PanelPoint(x: 0.95, y: 0.95))
+        await until { !speaker.isHolding }
+        #expect(speaker.stops > stops)
+        #expect(model.guiding && model.plan != nil && model.pipeline.guidanceGap == nil)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("A reminder about the finger stops when the panel is lost, and the panel's comes later")
+    func reminderChangesWithTheGap() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Can't see"
+        let frames = SentFrames()
+        let (model, _) = await scanned(tracking: frames, speaker: speaker, reminderDelay: .milliseconds(50))
+        model.sayAButton()
+        await until { model.guiding }
+        frames.send(fingertip: nil)
+        let finger = CameraLaunchModel.reminder(for: "No fingertip seen.", inPlan: true)
+        await until { speaker.isHolding && speaker.spoken.last == finger }
+        let stops = speaker.stops
+        frames.send(.lost(at: Date()))
+        await until { !speaker.isHolding }
+        #expect(speaker.stops > stops)
+        let panel = CameraLaunchModel.reminder(for: ContourPipeline.panelLost, inPlan: true)
+        await until { speaker.isHolding && speaker.spoken.last == panel }
+        #expect(model.guiding && model.plan != nil && model.planIndex == 0)
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("Next while a reminder is said cuts it off and guides the following key")
+    func nextDuringAReminder() async {
+        let speaker = FakeSpeaker()
+        speaker.held = "Can't see"
+        let (model, _) = await scanned(tracking: NoFingertipEver(), speaker: speaker,
+                                       reminderDelay: .milliseconds(50))
+        model.sayAButton()
+        await until { speaker.isHolding && model.planIndex == 0 }
+        let stops = speaker.stops
+        model.next()
+        #expect(speaker.stops > stops)
+        await until { model.guiding && model.planIndex == 1 }
+        #expect(speaker.spoken.contains("Step 2 of 5: 1"))
+        model.stop()
+        await model.waitForWork()
+    }
+
+    @Test("A panel the phone can't follow ends the plan and says to scan again")
+    func cannotFollowThePanel() async throws {
+        let speaker = FakeSpeaker()
+        speaker.held = CameraLaunchModel.cannotFollow
+        let (model, _) = await scanned(tracking: UnusablePanel(), speaker: speaker, next: Self.hangs)
+        model.sayAButton()
+        await until { speaker.isHolding }
+        // Nothing to move on to: every key would fail the same way.
+        #expect(!model.canMoveOn)
+        let stops = speaker.stops
+        model.next()
+        #expect(speaker.stops == stops && model.plan != nil)
+        speaker.finish()
+        await model.waitForWork()
+        #expect(speaker.spoken == ["Cook for a minute and a half: Time Cook, 1, 3, 0, Start.",
+                                   "Step 1 of 5: Time Cook", CameraLaunchModel.cannotFollow])
+        #expect(model.plan == nil && !model.busy && !model.canMoveOn && !model.guiding)
+        #expect(model.status == CameraLaunchModel.cannotFollow && model.error == nil)
+
+        // One button is said out loud too, and the developer's reason isn't read out.
+        speaker.held = nil
+        model.choose(try #require(model.map?.button(labelled: "Start/Pause")))
+        await model.waitForWork()
+        #expect(model.status == CameraLaunchModel.cannotFollow && model.error == nil)
+        #expect(speaker.spoken.count == 4 && speaker.spoken.last == CameraLaunchModel.cannotFollow)
+        #expect(!model.busy && !model.guiding)
+    }
+
+    @Test("Stop while tracking is still busy with a frame says nothing more")
+    func stopWhileTrackingIsBusy() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(tracking: BusyLostSession(), speaker: speaker,
+                                       reminderDelay: .milliseconds(50))
+        model.sayAButton()
+        let reminder = CameraLaunchModel.reminder(for: ContourPipeline.panelLost, inPlan: true)
+        await until { speaker.spoken.contains(reminder) }
+        model.stop()
+        let said = speaker.spoken.count
+        // Guidance takes up to 0.3 s more to end, and reminders come every 0.1 s.
+        await model.waitForWork()
+        try? await Task.sleep(for: .milliseconds(300))
+        #expect(speaker.spoken.count == said)
+        #expect(model.status.hasPrefix("Stopped"))
+    }
+
+    @Test("A listening error after Stop leaves Stop's status")
+    func listeningErrorAfterStop() async {
+        let speaker = FakeSpeaker()
+        let (model, _) = await scanned(speaker: speaker, next: {
+            // Like a recognizer that fails its own way, not as a cancellation.
+            while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+            throw NSError(domain: "VoiceTest", code: 2, userInfo: [NSLocalizedDescriptionKey: "Recognizer stopped."])
+        })
+        model.sayAButton()
+        await until { model.listening }
+        model.stop()
+        await model.waitForWork()
+        #expect(model.status.hasPrefix("Stopped"))
+        #expect(!speaker.spoken.contains(CameraLaunchModel.cannotListen))
     }
 
     @Test("Guidance ending early doesn't claim the finger got there")

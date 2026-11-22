@@ -1,4 +1,5 @@
 import ContourCore
+import ContourMocks
 import Foundation
 import Testing
 @testable import ContourFeedback
@@ -21,7 +22,7 @@ struct GuidanceArrivalHoldTests {
         #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(1250))).outcome == .arrived)
     }
 
-    @Test("Leaving, losing the finger or unusable tracking cancels pending confirmation", arguments: [0, 1, 2, 3])
+    @Test("Leaving, losing the panel or unusable tracking cancels pending confirmation", arguments: [0, 1, 2])
     func cancellation(reason: Int) {
         var hold = GuidanceArrivalHold()
         let epoch = ContinuousClock.now
@@ -31,8 +32,7 @@ struct GuidanceArrivalHoldTests {
         let interrupted: GuidanceState
         switch reason {
         case 0: interrupted = sample(0.1)
-        case 1: interrupted = GuidanceState(timestamp: Date(), vector: nil)
-        case 2: interrupted = .outcome(.lostTracking, at: Date())
+        case 1: interrupted = .outcome(.lostTracking, at: Date())
         default: interrupted = .outcome(.lowConfidence, at: Date())
         }
         #expect(hold.update(interrupted, at: epoch.advanced(by: .milliseconds(1100))) == interrupted)
@@ -51,6 +51,81 @@ struct GuidanceArrivalHoldTests {
         #expect(hold.update(sample(), at: epoch).outcome == nil)
         hold.reset()
         #expect(hold.update(sample(), at: epoch.advanced(by: .seconds(4))).outcome == nil)
+    }
+
+    private let missed = GuidanceState(timestamp: Date(), vector: nil)
+
+    @Test("A frame that missed the fingertip keeps a pending hold going, but can't complete it")
+    func missedFingertip() {
+        var hold = GuidanceArrivalHold()
+        let epoch = ContinuousClock.now
+        #expect(hold.update(missed, at: epoch) == missed, "There's no hold to keep yet")
+        for ms in stride(from: 100, through: 1000, by: 100) {
+            _ = hold.update(sample(), at: epoch.advanced(by: .milliseconds(ms)))
+        }
+        // Hand pose misses the finger for 400 ms, past the end of the hold.
+        for ms in [1100, 1200, 1300, 1400] {
+            let state = hold.update(missed, at: epoch.advanced(by: .milliseconds(ms)))
+            #expect(state.vector == .onTarget && state.outcome == nil)
+        }
+        #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(1450))).outcome == .arrived)
+    }
+
+    @Test("A stall shorter than half a second keeps the hold, which still takes 1.25 seconds")
+    func briefStall() {
+        var hold = GuidanceArrivalHold()
+        let epoch = ContinuousClock.now
+        for ms in stride(from: 0, through: 800, by: 100) {
+            _ = hold.update(sample(), at: epoch.advanced(by: .milliseconds(ms)))
+        }
+        #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(1249))).outcome == nil)
+        #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(1250))).outcome == .arrived)
+    }
+
+    @Test("Half a second without seeing the finger on the target starts the hold over",
+          arguments: [false, true])
+    func longDropout(missedFrames: Bool) {
+        var hold = GuidanceArrivalHold()
+        let epoch = ContinuousClock.now
+        for ms in stride(from: 0, through: 700, by: 100) {
+            _ = hold.update(sample(), at: epoch.advanced(by: .milliseconds(ms)))
+        }
+        if missedFrames {
+            for ms in [800, 900, 1000, 1100] {
+                #expect(hold.update(missed, at: epoch.advanced(by: .milliseconds(ms))).vector == .onTarget)
+            }
+            #expect(hold.update(missed, at: epoch.advanced(by: .milliseconds(1200))) == missed)
+        }
+        // The finger is back 500 ms after it was last seen, so the 1.25 s starts here.
+        for ms in stride(from: 1200, through: 2400, by: 100) {
+            #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(ms))).outcome == nil)
+        }
+        #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(2449))).outcome == nil)
+        #expect(hold.update(sample(), at: epoch.advanced(by: .milliseconds(2450))).outcome == .arrived)
+    }
+
+    @Test("A finger that slides onto the next key while unseen never completes this one")
+    func neighbourAfterDropout() {
+        // The 8 and the 0 under it, from hand-labelled microwave-01.jpg.
+        let eight = SurfaceMap.Button(label: "8", bounds: PanelRect(x: 0.405, y: 0.75, width: 0.2, height: 0.055),
+                                      confidence: 1)
+        let zero = SurfaceMap.Button(label: "0", bounds: PanelRect(x: 0.405, y: 0.835, width: 0.2, height: 0.065),
+                                     confidence: 1)
+        let pose = PanelPose(column0: SIMD4(1, 0, 0, 0), column1: SIMD4(0, 1, 0, 0),
+                             column2: SIMD4(0, 0, 1, 0), column3: SIMD4(0, 0, 0, 1), confidence: 1)
+        // On the 0 for 0.8 s, unseen for 0.4 s, then on the 8 for 2 s.
+        let fingertips: [PanelPoint?] = Array(repeating: zero.bounds.center, count: 9)
+            + Array(repeating: nil, count: 4) + Array(repeating: eight.bounds.center, count: 20)
+        var hold = GuidanceArrivalHold()
+        let epoch = ContinuousClock.now
+        for (index, fingertip) in fingertips.enumerated() {
+            let frame = TrackingFrame(timestamp: Date(), fingertip: fingertip, panel: pose,
+                                      trackingQuality: fingertip == nil ? .degraded : .good)
+            let state = hold.update(MockGuidance.state(for: frame, target: zero),
+                                    at: epoch.advanced(by: .milliseconds(index * 100)))
+            #expect(state.outcome != .arrived, "frame \(index)")
+            if index >= 13 { #expect(state.vector != .onTarget, "frame \(index) is on the 8") }
+        }
     }
 }
 
@@ -125,6 +200,20 @@ struct HoldRenderingTests {
         #expect(!haptics.isRunning)
         await engine.present(GuidanceState(timestamp: Date(), vector: .onTarget))
         #expect(haptics.isHoldingTarget && !engine.didReachTarget)
+        engine.stop()
+    }
+
+    @Test("A stall the hold rides out doesn't pause the hold's feedback")
+    func briefStall() async {
+        let haptics = HapticsExperienceEngine(onPulse: {})
+        let engine = LiveFeedbackEngine(haptics: haptics)
+        engine.setChannels(audio: false, voice: false, haptics: true)
+        await engine.present(GuidanceState(timestamp: Date(), vector: .onTarget))
+        let presented = ContinuousClock.now
+        #expect(!engine.expireStaleGuidance(at: presented.advanced(by: .milliseconds(400))))
+        #expect(haptics.isHoldingTarget && engine.instructionText == "Stop. Hold here.")
+        #expect(engine.expireStaleGuidance(at: presented.advanced(by: GuidanceArrivalHold.maximumDropout)))
+        #expect(!haptics.isRunning && engine.instructionText == "Guidance paused.")
         engine.stop()
     }
 }
