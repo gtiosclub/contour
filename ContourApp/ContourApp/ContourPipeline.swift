@@ -343,8 +343,9 @@ final class ContourPipeline {
     ///
     /// An outcome is presented once, not on every frame it stays true. Losing
     /// the panel quiets feedback immediately and is announced after 0.4 s, then guidance
-    /// picks up again when it's back. Arriving ends the session, and any other
-    /// ending stops the vibration.
+    /// picks up again when it's back. Arriving ends the session, and so does a
+    /// panel the tracker can't follow at all, which leaves `trackingError` set.
+    /// Any ending but arrival stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
         guidanceArrived = false
         guidanceGap = nil
@@ -376,10 +377,12 @@ final class ContourPipeline {
         }
     }
 
+    nonisolated static let panelLost = "Panel lost."
+
     /// A lost frame has no panel to measure against. A tracked frame with no point
     /// means the panel is fine and it's the finger that wasn't seen.
     nonisolated static func gap(in frame: TrackingFrame) -> String? {
-        if frame.trackingQuality == .lost { return "Panel lost." }
+        if frame.trackingQuality == .lost { return panelLost }
         return frame.fingertip == nil ? "No fingertip seen." : nil
     }
 
@@ -389,6 +392,7 @@ final class ContourPipeline {
         var loss = GuidanceLossEpisode()
         var arrivalHold = GuidanceArrivalHold()
         var arrived = false
+        var cannotTrack = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
             if let live = source as? any GuidanceTrackingSession {
@@ -408,6 +412,12 @@ final class ContourPipeline {
                 }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
+            if trackingError != nil {
+                // The tracker can't follow this panel at all, so every frame from
+                // now on is lost and waiting can't help.
+                cannotTrack = true
+                break
+            }
             let gap = Self.gap(in: frame)
             if gap != guidanceGap { guidanceGap = gap }
             // MockGuidance's immediate arrival is only a geometric candidate.
@@ -435,7 +445,9 @@ final class ContourPipeline {
                 break
             }
         }
-        if generation == session {
+        // A registration failure keeps its reason, so the caller can tell why
+        // guidance ended, until the next guidance, Stop or a new panel clears it.
+        if generation == session, !cannotTrack {
             hybridStatus = nil
             trackingError = nil
             guidanceStatus.reset(to: .stopped)

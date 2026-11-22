@@ -34,8 +34,12 @@ struct SharedTrackingSetupTests {
         #expect(await session.referenceID == reference.photo.id)
         #expect(pipeline.trackingError != nil)
         #expect(pipeline.hybridStatus?.source == .unavailable)
-        await session.finish()
+        // A panel the tracker can't register ends guidance, and its reason stays
+        // until Stop.
         await guidance.value
+        #expect(pipeline.trackingError != nil)
+        await session.finish()
+        await pipeline.stopGuidance()
         #expect(pipeline.trackingError == nil)
         #expect(pipeline.hybridStatus == nil)
     }
