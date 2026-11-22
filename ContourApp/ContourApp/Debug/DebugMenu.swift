@@ -13,6 +13,8 @@ struct DebugMenu: View {
     @State private var error: String?
     @State private var capturing = false
     @State private var showManual = false
+    @State private var savedScans = 0
+    @State private var confirmingDelete = false
 
     var body: some View {
         List {
@@ -36,6 +38,18 @@ struct DebugMenu: View {
                     }
                 }.disabled(capturing)
                 if let error { Text(error).foregroundStyle(.red) }
+            }
+            Section("Saved scans") {
+                LabeledContent("Scans on this phone", value: "\(savedScans)")
+                Button("Delete saved scans", role: .destructive) { confirmingDelete = true }
+                    .disabled(savedScans == 0)
+                    .confirmationDialog("Delete every saved scan? Copy them to the Mac first.",
+                                        isPresented: $confirmingDelete, titleVisibility: .visible) {
+                        Button("Delete", role: .destructive) {
+                            ScanArchive.shared.clear()
+                            savedScans = 0
+                        }
+                    }
             }
             Section("Pipeline") {
                 ForEach(ContourPipeline.Component.allCases, id: \.self) { component in
@@ -62,6 +76,7 @@ struct DebugMenu: View {
                 }
             }
         }
+        .onAppear { savedScans = ScanArchive.shared.count() }
         .onDisappear { capture?.cancel() }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { capture?.cancel() }

@@ -296,7 +296,12 @@ final class CameraLaunchModel {
         // A load still going when the scan starts can leave its keypad read with nothing.
         let loading = warmingUp()
         do {
+            // Every photo tried is kept, not just the one the scan settles on.
+            #if DEBUG
+            let map = try await ScanArchive.shared.detectPanel(in: photo, with: pipeline)
+            #else
             let map = try await pipeline.detectPanel(in: photo)
+            #endif
             try Task.checkCancellation()
             return ScanAttempt(reference: pipeline.panelReference, guidable: !map.buttons.isEmpty && pipeline.canGuide,
                                missing: CookTimePlan.missingKeys(in: map), buttons: map.buttons.count,
