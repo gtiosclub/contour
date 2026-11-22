@@ -370,6 +370,8 @@ struct OpenAIVoiceFlowTests {
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
+        // What the scan said isn't part of the request.
+        speaker.spoken.removeAll()
         return Rig(model: model, finger: finger, server: server, speaker: speaker, tokenCount: { count.value })
     }
 
@@ -481,8 +483,9 @@ struct OpenAIVoiceFlowTests {
         await r.model.waitForWork()
         #expect(r.server.requests.isEmpty)
         #expect(r.model.planNote == nil)
-        #expect(r.speaker.spoken.isEmpty)
         #expect(r.model.status == "No button matching “heat up my coffee”. Try again or choose a button below.")
+        // Out loud too, since VoiceOver is off here.
+        #expect(r.speaker.spoken == [r.model.status])
         #expect(r.model.displayStatus == r.model.status)
     }
 

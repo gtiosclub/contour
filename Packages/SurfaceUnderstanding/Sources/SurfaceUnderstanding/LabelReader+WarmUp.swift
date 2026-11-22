@@ -30,6 +30,10 @@ extension LabelReader {
     /// True from when the warm-up starts until it ends, however it ends.
     static let modelLoading = OSAllocatedUnfairLock(initialState: false)
 
+    /// Whether the warm-up is still loading the model. A scan started now gets no
+    /// digit keys, so the app can say to wait instead of to aim again.
+    public static var isWarmingUp: Bool { modelLoading.withLock { $0 } }
+
     /// Starts loading the `.accurate` model at low priority and returns at once.
     ///
     /// Call it once, when the app opens. Nothing waits on it. If it fails, that's

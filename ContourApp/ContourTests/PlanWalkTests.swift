@@ -140,6 +140,8 @@ struct PlanWalkTests {
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
+        // What the scan said isn't part of the plan.
+        speaker.log.removeAll()
         return (model, finger)
     }
 

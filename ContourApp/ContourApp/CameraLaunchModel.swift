@@ -3,6 +3,7 @@ import ContourFeedback
 import Foundation
 import Observation
 import SurfaceUnderstanding
+import UIKit
 
 /// Coordinates cancellation before the shared camera changes ownership or a new request starts.
 @MainActor @Observable
@@ -33,6 +34,8 @@ final class CameraLaunchModel {
     private let listen: @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard
     private let listenForNext: @MainActor () async throws -> Bool
     private let speaker: any PlanSpeaking
+    private let voiceOverRunning: @MainActor () -> Bool
+    private let warmingUp: @MainActor () -> Bool
     private var knownReferenceID: UUID?
     private var active = false
     private var work: Task<Void, Never>?
@@ -44,13 +47,17 @@ final class CameraLaunchModel {
          listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) },
          listenForNext: @escaping @MainActor () async throws -> Bool = { try await VoiceRequest().listenForNext() },
          speaker: any PlanSpeaking = PlanSpeaker(),
-         openAI: OpenAIPlans? = nil) {
+         openAI: OpenAIPlans? = nil,
+         voiceOverRunning: @escaping @MainActor () -> Bool = { UIAccessibility.isVoiceOverRunning },
+         warmingUp: @escaping @MainActor () -> Bool = { LabelReader.isWarmingUp }) {
         self.camera = camera
         self.pipeline = pipeline
         self.listen = listen
         self.listenForNext = listenForNext
         self.speaker = speaker
         self.openAI = openAI
+        self.voiceOverRunning = voiceOverRunning
+        self.warmingUp = warmingUp
         knownReferenceID = pipeline.panelReference?.photo.id
     }
 
@@ -99,7 +106,7 @@ final class CameraLaunchModel {
                     guard lifecycleID == id, active else { return }
                     ready = true
                     error = nil
-                    status = map.map(Self.readyStatus) ?? "Aim at the whole control panel, then scan."
+                    status = map.map { Self.readyStatus(for: $0) } ?? "Aim at the whole control panel, then scan."
                 } catch {
                     guard lifecycleID == id, active else { return }
                     self.error = error.localizedDescription
@@ -111,12 +118,29 @@ final class CameraLaunchModel {
         return task
     }
 
-    /// What to say once a panel is ready. Ovens and some panels really have no number
-    /// keys, so the warning has to hold for those too.
-    nonisolated static func readyStatus(for map: SurfaceMap) -> String {
-        let ready = "Panel ready. Say a button name or choose one below."
-        return map.hasNumberKeys ? ready
-            : ready + " Number keys not found. If this panel has them, hold the phone about a foot away and scan again."
+    /// What to say once a panel is ready, and whether every cook time can be guided
+    /// on it: Time Cook, the digits and Start, each one clear key, the same check a
+    /// plan makes. Ovens and some panels really have no number keys, so the advice
+    /// has to hold for those too. While the text model is still loading, a scan
+    /// gets no digit keys wherever the phone is, so then it says to wait.
+    nonisolated static func readyStatus(for map: SurfaceMap, warmingUp: Bool = false) -> String {
+        let missing = CookTimePlan.missingKeys(in: map)
+        guard !missing.isEmpty else { return "Panel ready. Cook times ready. Say a button name or choose one below." }
+        let ready = "Panel ready. Say a button name or choose one below. "
+        if warmingUp { return ready + "Cook times are still getting ready. Scan again in a moment." }
+        return ready + "Cook times not ready, missing \(spoken(missing)). "
+            + "If this panel has them, hold the phone about a foot away and scan again."
+    }
+
+    /// `keys` as a list to say, with "the number keys" for all of the digits.
+    nonisolated private static func spoken(_ keys: [String]) -> String {
+        let digits = CookTimePlan.cookTimeKeys.filter { $0.allSatisfy(\.isNumber) }
+        var names = keys
+        if let first = names.firstIndex(of: digits[0]), digits.allSatisfy(keys.contains) {
+            names.removeAll(where: digits.contains)
+            names.insert("the number keys", at: first)
+        }
+        return names.formatted(.list(type: .and))
     }
 
     func waitForWork() async { await work?.value }
@@ -128,7 +152,7 @@ final class CameraLaunchModel {
         guard !scanning else { return }
         stopWork()
         error = nil
-        status = map.map(Self.readyStatus) ?? "Aim at the whole control panel, then scan."
+        status = map.map { Self.readyStatus(for: $0) } ?? "Aim at the whole control panel, then scan."
     }
 
     /// Await this barrier before presenting diagnostics or starting replacement work.
@@ -165,46 +189,138 @@ final class CameraLaunchModel {
         status = "Stopped. Say a button name, choose a button, or scan again."
     }
 
+    /// A scan takes up to this many photos, and no more once the next one would
+    /// likely end after `scanBudget`.
+    static let scanPhotos = 3
+    static let scanBudget: Duration = .seconds(6)
+
     func scan() {
         guard ready else { return }
         replaceWork {
             self.scanning = true
             defer { self.scanning = false }
             self.status = "Scanning panel. Hold the phone steady."
-            let photo: PanelPhoto
-            if self.usesCamera {
-                photo = try await self.camera.capturePanelPhoto()
-            } else {
-                photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
-            }
-            try Task.checkCancellation()
-            let map: SurfaceMap
+            // Said out loud while the photos are taken, not before them.
+            async let cue: Void = self.sayUnlessVoiceOver("Scanning panel. Hold the phone steady.")
+            let line: String
             do {
-                map = try await self.pipeline.detectPanel(in: photo)
+                line = try await self.scanForBest()
             } catch {
-                guard let problem = ScanProblem.after(error) else {
-                    throw CancellationError()
-                }
                 try Task.checkCancellation()
-                self.status = problem.spoken
-                return
+                if error is CancellationError { throw error }
+                self.error = error.localizedDescription
+                line = "Unable to complete the request. Retry or choose a button below."
             }
+            await cue
             try Task.checkCancellation()
-            self.knownReferenceID = self.pipeline.panelReference?.photo.id
-            guard !map.buttons.isEmpty else {
-                self.status = ScanProblem.noButtons.spoken
-                return
-            }
-            guard self.pipeline.canGuide else {
-                let problem = self.pipeline.panelReference.flatMap {
-                    ScanProblem.after($0.detection, photo: photo, target: nil)
-                }
-                self.status = problem?.spoken ?? "Panel outline unclear. Show all four corners and scan again."
-                return
-            }
-            self.status = Self.readyStatus(for: map)
-            self.warmUpOpenAI()
+            await self.finish(line)
         }
+    }
+
+    /// One photo's scan, ranked against the others from the same tap.
+    struct ScanAttempt {
+        var reference: PanelReference?
+        /// Why the scan threw, when it did.
+        var problem: ScanProblem?
+        var guidable = false
+        var missing: [String] = []
+        var buttons = 0
+        var warmingUp = false
+
+        /// A scan that came back, then one that can guide, then the cook-time
+        /// keys, then more buttons.
+        var rank: (Int, Int, Int, Int) { (reference == nil ? 0 : 1, guidable ? 1 : 0, -missing.count, buttons) }
+
+        /// Another photo can't do better: it guides, and has every cook-time key
+        /// or can't have them until the text model has loaded.
+        var isEnough: Bool { guidable && (missing.isEmpty || warmingUp) }
+    }
+
+    /// Scans new photos until one can guide and has every cook-time key, keeps the
+    /// best as the panel, and returns what to say about it.
+    ///
+    /// Every photo is a new camera frame, but frames a second apart from the same
+    /// spot look much alike. Trying again gets past the detector missing something
+    /// on one frame, not a bad angle or distance, so a bad result still ends on
+    /// what to change.
+    private func scanForBest() async throws -> String {
+        let started = ContinuousClock.now
+        var best: ScanAttempt?
+        for _ in 0..<Self.scanPhotos {
+            let photoStarted = ContinuousClock.now
+            let attempt: ScanAttempt
+            do {
+                attempt = try await scanOnce()
+            } catch {
+                // The camera failing on a later photo leaves the ones before it.
+                guard best != nil, !(error is CancellationError) else { throw error }
+                try Task.checkCancellation()
+                break
+            }
+            if best.map({ attempt.rank >= $0.rank }) ?? true { best = attempt }
+            if best?.isEnough == true
+                || started.duration(to: .now) + photoStarted.duration(to: .now) > Self.scanBudget { break }
+        }
+        guard let best else { throw CancellationError() }
+        if let reference = best.reference, pipeline.panelReference?.photo.id != reference.photo.id {
+            await pipeline.replaceReference(with: reference)
+            try Task.checkCancellation()
+        }
+        knownReferenceID = pipeline.panelReference?.photo.id
+
+        guard let reference = best.reference else { return (best.problem ?? .scanFailed).spoken }
+        guard !reference.detection.map.buttons.isEmpty else { return ScanProblem.noButtons.spoken }
+        guard pipeline.canGuide else {
+            return ScanProblem.after(reference.detection, photo: reference.photo, target: nil)?.spoken
+                ?? "Panel outline unclear. Show all four corners and scan again."
+        }
+        warmUpOpenAI()
+        return Self.readyStatus(for: reference.detection.map, warmingUp: best.warmingUp)
+    }
+
+    /// Scans one new photo. A scan that throws is a result too: the next photo may work.
+    private func scanOnce() async throws -> ScanAttempt {
+        let photo: PanelPhoto
+        if usesCamera {
+            // Always a frame from after this call, never one an earlier scan used.
+            photo = try await camera.capturePanelPhoto()
+        } else {
+            photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
+        }
+        try Task.checkCancellation()
+        // A load still going when the scan starts can leave its keypad read with nothing.
+        let loading = warmingUp()
+        do {
+            let map = try await pipeline.detectPanel(in: photo)
+            try Task.checkCancellation()
+            return ScanAttempt(reference: pipeline.panelReference, guidable: !map.buttons.isEmpty && pipeline.canGuide,
+                               missing: CookTimePlan.missingKeys(in: map), buttons: map.buttons.count,
+                               warmingUp: loading)
+        } catch {
+            guard let problem = ScanProblem.after(error) else { throw CancellationError() }
+            try Task.checkCancellation()
+            return ScanAttempt(problem: problem)
+        }
+    }
+
+    /// The last thing a piece of work says. The buttons work while it's said, and
+    /// whatever the user does next cuts it off. VoiceOver reads the status line out
+    /// itself, so this only speaks when VoiceOver is off: either way it's heard once.
+    private func finish(_ line: String) async {
+        busy = false
+        scanning = false
+        if voiceOverRunning() {
+            status = line
+        } else {
+            await announce(line)
+        }
+    }
+
+    /// Says `text` when VoiceOver is off, where nothing else would. It doesn't
+    /// change the status.
+    private func sayUnlessVoiceOver(_ text: String) async {
+        guard !voiceOverRunning() else { return }
+        await speaker.speak(text)
     }
 
     /// Gets a token now so the first request doesn't spend its time limit on one.
@@ -238,7 +354,7 @@ final class CameraLaunchModel {
             try Task.checkCancellation()
             guard self.pipeline.panelReference?.photo.id == referenceID else { return }
             guard !heard.text.isEmpty else {
-                self.status = "Didn't hear anything. Try speaking again or choose a button below."
+                await self.finish("Didn't hear anything. Try speaking again or choose a button below.")
                 return
             }
             switch CookTimePlan.make(for: heard.text, in: map) {
@@ -260,7 +376,7 @@ final class CameraLaunchModel {
                 return
             }
             guard let button = heard.button else {
-                self.status = "No button matching “\(heard.text)”. Try again or choose a button below."
+                await self.finish("No button matching “\(heard.text)”. Try again or choose a button below.")
                 return
             }
             self.notePhonePlan()
