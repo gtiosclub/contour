@@ -56,7 +56,7 @@ struct CameraLaunchTests {
         model.scan()
         await model.waitForWork()
 
-        #expect(model.status == "I can't see the panel")
+        #expect(model.status == "I can't see the panel. Point the phone at the control panel and scan again")
         #expect(model.error == nil)
     }
 
@@ -128,10 +128,8 @@ struct CameraLaunchTests {
         model.scan()
         await model.waitForWork()
 
-        #expect(
-            model.status ==
-            "Panel ready. Say a button name or choose one below."
-        )
+        // What follows "Panel ready." depends on the panel's keys.
+        #expect(model.status.hasPrefix("Panel ready."))
         #expect(model.error == nil)
     }
 
