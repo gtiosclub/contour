@@ -118,6 +118,11 @@ public struct LabelReader: Sendable {
     }
 
     static func recognize(_ image: CGImage, level: RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation] {
+        try await recognize(image, level: level, loading: modelLoading, using: request)
+    }
+
+    /// Vision itself, with nothing in front of it.
+    static func request(_ image: CGImage, level: RecognizeTextRequest.RecognitionLevel) async throws -> [RecognizedTextObservation] {
         var request = RecognizeTextRequest()
         request.recognitionLevel = level
         request.usesLanguageCorrection = false
@@ -378,7 +383,7 @@ public struct LabelReader: Sendable {
     /// Measured from word centres against the smaller word's height, because
     /// Vision pads some word boxes far more than others: on real panels two
     /// lines of one label sit 1–1.5 heights apart and separate keys 1.9 or more.
-    private static func belongTogether(_ a: Word, _ b: Word) -> Bool {
+    static func belongTogether(_ a: Word, _ b: Word) -> Bool {
         let height = min(a.height, b.height)
         let rise = abs(a.centre.y - b.centre.y)
         if rise <= height * 0.5 {

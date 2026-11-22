@@ -266,16 +266,15 @@ struct PipelineWiringTests {
         #expect(await engine.outcomes == [.arrived])
     }
 
-    @Test("Missing finger, retreat, loss and low confidence restart a pending hold", arguments: [0, 1, 2, 3])
+    @Test("Retreat, loss and low confidence restart a pending hold", arguments: [0, 1, 2])
     func holdCancellation(reason: Int) async {
         let engine = PrintingFeedbackEngine(isPrinting: false)
         let epoch = ContinuousClock.now
         var tick = 0
         let interrupted: TrackingFrame
         switch reason {
-        case 0: interrupted = targetFrame(fingertip: nil)
-        case 1: interrupted = targetFrame(fingertip: PanelPoint(x: 0, y: 0))
-        case 2: interrupted = .lost(at: Date())
+        case 0: interrupted = targetFrame(fingertip: PanelPoint(x: 0, y: 0))
+        case 1: interrupted = .lost(at: Date())
         default: interrupted = targetFrame(confidence: 0.1)
         }
         let script = (0..<11).map { _ in targetFrame() } + [interrupted]
@@ -290,6 +289,26 @@ struct PipelineWiringTests {
         #expect(received.count == 26)
         #expect(received.last?.outcome == .arrived)
         #expect(received.dropLast().allSatisfy { $0.outcome != .arrived })
+    }
+
+    @Test("A frame that missed the finger keeps a pending hold, and keeps it on target")
+    func missedFingerKeepsTheHold() async {
+        let engine = PrintingFeedbackEngine(isPrinting: false)
+        let epoch = ContinuousClock.now
+        var tick = 0
+        let script = (0..<11).map { _ in targetFrame() } + [targetFrame(fingertip: nil)]
+            + (0..<14).map { _ in targetFrame() }
+        let pipeline = ContourPipeline(surfaceUnderstanding: MockSurfaceUnderstanding(),
+            tracking: ScriptedFrames(script: script), feedback: engine, liveComponents: [], guidanceNow: {
+                defer { tick += 1 }
+                return epoch.advanced(by: .milliseconds(tick * 100))
+            })
+        await pipeline.guide(to: MockSurfaceMaps.microwaveStartButton)
+        let received = await engine.received
+        // Arrival at 1.3 s, the first target frame past 1.25 s, not 1.25 s after the miss.
+        #expect(received.count == 14)
+        #expect(received.dropLast().allSatisfy { $0.vector == .onTarget && $0.outcome == nil })
+        #expect(await engine.outcomes == [.arrived])
     }
 
     @Test("Stop, replacement and interruption cancel a pending hold", arguments: [0, 1, 2])

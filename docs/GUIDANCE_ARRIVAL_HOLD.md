@@ -7,9 +7,12 @@ not a timer owned by the renderer. ContourCore is unchanged.
 - Keep MockGuidance's existing 0.05 panel-unit arrival radius as the geometric
   candidate boundary. This is separate from the pulse/continuous boundary.
 - Emit `vector: .onTarget, outcome: nil` while holding. Confirm with one
-  `.arrived` only after 1,250 ms of uninterrupted valid target samples.
-- A missing finger, retreat, low confidence, tracking loss, non-increasing
-  monotonic time, or sample gap of at least 250 ms resets the policy.
+  `.arrived` only after 1,250 ms of valid target samples.
+- A retreat, low confidence, tracking loss or non-increasing monotonic time
+  resets the policy. So does going 500 ms without a sample that sees the finger
+  on the target. Shorter stalls, and frames where hand pose missed the
+  fingertip, keep a pending hold (the missed frames still read as on target)
+  but can never complete it.
 - Completion requires a fresh sample. A stalled stream never confirms arrival.
   The feedback renderer checks freshness every 50 ms and silences stale output.
 - A new guidance loop owns a new policy. Stop, replacement, backgrounding,
@@ -31,8 +34,9 @@ signal, separate from both the entry tap and the continuous hold.
 The strength slider controls the sustained hold; contact uses maximum strength
 whenever haptic intensity is nonzero. Channel switches remain independent; muting haptics does not change the dwell.
 
-The 250 ms freshness budget and on-target texture constants are explicit initial
-settings, not a claim of physical-device tuning. Reconcile the selected experiment
+The 500 ms freshness budget (the same as the hold's dropout limit) and on-target
+texture constants are explicit initial settings, not a claim of physical-device
+tuning. Reconcile the selected experiment
 with #112 and validate texture, strength, and timing on a phone. The existing
 0.25/0.30 approach-mode boundaries are unchanged by this work.
 

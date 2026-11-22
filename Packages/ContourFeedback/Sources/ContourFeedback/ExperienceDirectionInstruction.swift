@@ -51,7 +51,10 @@ struct ExperienceDirectionInstruction: Sendable {
         // Lock the selected axis until its actual remaining offset is almost
         // zero. Never switch merely because the other axis becomes larger.
         // This tolerance uses distance-scaled offsets, not unit-vector components.
-        let deadZone = 0.02
+        // Rough multi-step branch: 0.02 left people on "Move slowly" outside the
+        // smaller arrival oval, with no direction to follow. Tune it together
+        // with the oval: see MockGuidance.ArrivalTuning in ContourMocks.
+        let deadZone = 0.01
         let horizontal: Direction = remaining.x >= 0 ? .right : .left
         let vertical: Direction = remaining.y >= 0 ? .down : .up
         if abs(remaining.x) <= deadZone && abs(remaining.y) <= deadZone {

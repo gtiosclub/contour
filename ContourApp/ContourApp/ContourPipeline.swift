@@ -54,6 +54,8 @@ final class ContourPipeline {
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     let guidanceStatus = GuidanceStatusDisplay()
     private(set) var guidanceArrived = false
+    /// What's missing while guidance has no direction to give, for the status line.
+    private(set) var guidanceGap: String?
     @ObservationIgnored private var lifecycleObservers: Set<AnyCancellable> = []
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
@@ -296,18 +298,18 @@ final class ContourPipeline {
         }
     }
 
+    /// The same rules as the camera screen, in `AppLifecycle`: the background, or
+    /// audio taken by a call or Siri, ends guidance. Control Center, the end of an
+    /// interruption and a route change don't.
     private func observeInterruptions() {
-        for name in [UIApplication.willResignActiveNotification, AVAudioSession.interruptionNotification] {
-            NotificationCenter.default.publisher(for: name)
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in MainActor.assumeIsolated { self?.interruptGuidance() } }
-                .store(in: &lifecycleObservers)
-        }
-        NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.interruptGuidance() } }
+            .store(in: &lifecycleObservers)
+        NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] notification in
-                guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-                      AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable else { return }
+                guard AppLifecycle.audioWasTaken(notification.userInfo) else { return }
                 MainActor.assumeIsolated { self?.interruptGuidance() }
             }
             .store(in: &lifecycleObservers)
@@ -341,10 +343,12 @@ final class ContourPipeline {
     ///
     /// An outcome is presented once, not on every frame it stays true. Losing
     /// the panel quiets feedback immediately and is announced after 0.4 s, then guidance
-    /// picks up again when it's back. Arriving ends the session, and any other
-    /// ending stops the vibration.
+    /// picks up again when it's back. Arriving ends the session, and so does a
+    /// panel the tracker can't follow at all, which leaves `trackingError` set.
+    /// Any ending but arrival stops the vibration.
     func guide(to target: SurfaceMap.Button) async {
         guidanceArrived = false
+        guidanceGap = nil
         guard trackingReady else { return }
         generation &+= 1
         let session = generation
@@ -373,12 +377,22 @@ final class ContourPipeline {
         }
     }
 
+    nonisolated static let panelLost = "Panel lost."
+
+    /// A lost frame has no panel to measure against. A tracked frame with no point
+    /// means the panel is fine and it's the finger that wasn't seen.
+    nonisolated static func gap(in frame: TrackingFrame) -> String? {
+        if frame.trackingQuality == .lost { return panelLost }
+        return frame.fingertip == nil ? "No fingertip seen." : nil
+    }
+
     private func runGuidance(to target: SurfaceMap.Button, session: UInt64,
                              source: any TrackingSource) async {
         var announced: OutcomeSignal?
         var loss = GuidanceLossEpisode()
         var arrivalHold = GuidanceArrivalHold()
         var arrived = false
+        var cannotTrack = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
             if let live = source as? any GuidanceTrackingSession {
@@ -398,6 +412,14 @@ final class ContourPipeline {
                 }
             }
             guidanceStatus.receive(GuidanceStatusSnapshot(diagnostics: hybridStatus, error: trackingError))
+            if trackingError != nil {
+                // The tracker can't follow this panel at all, so every frame from
+                // now on is lost and waiting can't help.
+                cannotTrack = true
+                break
+            }
+            let gap = Self.gap(in: frame)
+            if gap != guidanceGap { guidanceGap = gap }
             // MockGuidance's immediate arrival is only a geometric candidate.
             // This policy is the sole authority that can confirm the dwell.
             let now = guidanceNow()
@@ -423,7 +445,9 @@ final class ContourPipeline {
                 break
             }
         }
-        if generation == session {
+        // A registration failure keeps its reason, so the caller can tell why
+        // guidance ended, until the next guidance, Stop or a new panel clears it.
+        if generation == session, !cannotTrack {
             hybridStatus = nil
             trackingError = nil
             guidanceStatus.reset(to: .stopped)

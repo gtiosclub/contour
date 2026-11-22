@@ -120,6 +120,17 @@ func scanProblemFullFrame() {
     #expect(ScanProblem.after(detection, photo: photo, target: nil) == .panelCutOff)
 }
 
+@Test("a full-frame scan says the outline wasn't found, not which way to move")
+func scanProblemFullFrameSentence() {
+    // In #186's table of the Magic Chef frames, the full-frame ones were too far
+    // (9) or at an angle (7), never too close, so "Move back" was wrong every time.
+    let spoken = ScanProblem.panelCutOff.spoken
+    #expect(spoken == "I can't find the edges of the panel. Show all four corners and scan again")
+    for direction in ["back", "closer", "left", "right", "up", "down"] {
+        #expect(!spoken.lowercased().contains(direction))
+    }
+}
+
 @Test("successful target matching produces no problem")
 func scanProblemTargetFound() {
     let photo = testPhoto()

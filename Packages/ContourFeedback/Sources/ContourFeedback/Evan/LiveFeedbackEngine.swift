@@ -170,7 +170,9 @@ public final class LiveFeedbackEngine: FeedbackEngine {
         return true
     }
 
-    /// Silence stale tracking without ever treating elapsed time as arrival.
+    /// Silence stale tracking without ever treating elapsed time as arrival. A stall
+    /// the arrival hold rides out doesn't stop it, or the hold would start its Stop
+    /// and contact tap over when the next frame comes.
     private func startFreshnessWatch() {
         guard freshnessTask == nil else { return }
         freshnessTask = Task { @MainActor [weak self] in
@@ -184,7 +186,7 @@ public final class LiveFeedbackEngine: FeedbackEngine {
     @discardableResult
     func expireStaleGuidance(at now: ContinuousClock.Instant) -> Bool {
         guard let receivedAt else { return true }
-        guard receivedAt.duration(to: now) >= GuidanceArrivalHold.maximumSampleGap else { return false }
+        guard receivedAt.duration(to: now) >= GuidanceArrivalHold.maximumDropout else { return false }
         stop()
         instructionText = "Guidance paused."
         return true

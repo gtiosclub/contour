@@ -162,6 +162,89 @@ struct MockFeedbackTests {
         #expect(onIt.isTerminal)
     }
 
+    private func frame(at point: PanelPoint) -> TrackingFrame {
+        TrackingFrame(
+            timestamp: MockTrackingSource.fixedEpoch,
+            fingertip: point,
+            panel: MockTrackingSource().frame(atStep: 0).panel,
+            trackingQuality: .good
+        )
+    }
+
+    private func key(x: Double, y: Double, width: Double, height: Double) -> SurfaceMap.Button {
+        SurfaceMap.Button(label: "key", bounds: PanelRect(x: x, y: y, width: width, height: height), confidence: 1)
+    }
+
+    /// Key sizes from hand-labelled microwave-01.jpg: digit, then a word button
+    /// and its neighbours; then median and smallest digit keys off saved scans of
+    /// the Magic Chef, with that map's median row and column spacing.
+    @Test("a neighbour's center is outside the oval on real key sizes", arguments: [
+        (0.2, 0.055, 0.295, 0.08),
+        (0.27, 0.075, 0.305, 0.095),
+        (0.2127, 0.0591, 0.212, 0.058),
+        (0.0821, 0.0346, 0.212, 0.058),
+    ])
+    func neighbourIsOutside(width: Double, height: Double, columnStep: Double, rowStep: Double) {
+        let target = key(x: 0.4, y: 0.5, width: width, height: height)
+        let center = target.bounds.center
+        for step in [PanelVector(dx: columnStep, dy: 0), PanelVector(dx: -columnStep, dy: 0),
+                     PanelVector(dx: 0, dy: rowStep), PanelVector(dx: 0, dy: -rowStep)] {
+            #expect(MockGuidance.state(for: frame(at: center.offset(by: step)), target: target).outcome == nil)
+        }
+        #expect(MockGuidance.state(for: frame(at: center), target: target).outcome == .arrived)
+    }
+
+    @Test("the oval is 45% of each side, on each axis separately")
+    func ovalFollowsTheKey() {
+        // The 0 key on hand-labelled microwave-01.jpg.
+        let zero = key(x: 0.405, y: 0.835, width: 0.2, height: 0.065)
+        let center = zero.bounds.center
+        func arrived(_ dx: Double, _ dy: Double) -> Bool {
+            MockGuidance.state(for: frame(at: center.offset(by: PanelVector(dx: dx, dy: dy))), target: zero)
+                .outcome == .arrived
+        }
+        #expect(arrived(0.089, 0))
+        #expect(!arrived(0.091, 0))
+        #expect(arrived(0, 0.029))
+        #expect(!arrived(0, 0.03))
+        // Inside on each axis alone, but outside together: an oval, not a box.
+        #expect(!arrived(0.08, 0.026))
+    }
+
+    @Test("a stop nearer the key below no longer counts as arrived")
+    func oldCircleStopIsOut() {
+        // The 8 and 0 keys on microwave-01 have centers 0.09 apart. This stop is
+        // nearer the 0, and the old 0.05 circle called it arrived on the 8: the
+        // real case behind typing 1, 3, 8 for 1, 3, 0.
+        let eight = key(x: 0.405, y: 0.75, width: 0.2, height: 0.055)
+        let stop = eight.bounds.center.offset(by: PanelVector(dx: 0, dy: 0.046))
+        let oldCircle = MockGuidance.state(fingertip: stop, target: eight.bounds.center,
+                                           timestamp: MockTrackingSource.fixedEpoch)
+        #expect(oldCircle.outcome == .arrived)
+        #expect(MockGuidance.state(for: frame(at: stop), target: eight).outcome == nil)
+    }
+
+    @Test("a thin word box gets the floor and a huge box gets the cap")
+    func floorAndCap() {
+        let thin = MockGuidance.arrivalZone(for: key(x: 0, y: 0, width: 0.01, height: 0.01))
+        #expect(thin.x == 0.015 && thin.y == 0.015)
+        let huge = MockGuidance.arrivalZone(for: key(x: 0, y: 0, width: 0.9, height: 0.5))
+        #expect(huge.x == 0.12 && huge.y == 0.05)
+    }
+
+    @Test("off the oval, guidance still has a direction, and no fingertip has none")
+    func directionOutsideOval() {
+        let target = key(x: 0.4, y: 0.5, width: 0.2, height: 0.05)
+        let center = target.bounds.center
+        let beside = MockGuidance.state(for: frame(at: center.offset(by: PanelVector(dx: -0.3, dy: 0))), target: target)
+        #expect(beside.vector?.direction.dx == 1)
+        #expect(beside.outcome == nil)
+
+        let lostFinger = TrackingFrame(timestamp: MockTrackingSource.fixedEpoch, fingertip: nil,
+                                       panel: MockTrackingSource().frame(atStep: 0).panel, trackingQuality: .degraded)
+        #expect(MockGuidance.state(for: lostFinger, target: target).vector == nil)
+    }
+
     @Test("a lost frame becomes lostTracking")
     func lostBecomesOutcome() {
         let state = MockGuidance.state(

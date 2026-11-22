@@ -22,6 +22,12 @@
 //  we hand back. On the 18 test photos from #36 this took us from 11 to 17
 //  photos with buttons found.
 //
+//  WHEN VISION CAN'T READ THE DIGITS
+//  One read of a real camera frame misses most of the digit keys, so a cook time
+//  can't be typed. KeypadReader reads again in tiles, fits a keypad to the digits
+//  it finds and adds all ten keys. It runs once per scan, on top of the three
+//  stages, and leaves the map as it was if it fails or takes more than 4 s.
+//
 //  COORDINATES
 //  The quad is in normalized coordinates of the upright REFERENCE IMAGE, not in
 //  panel space — see PanelReference.swift. Button bounds are in normalized panel
@@ -48,6 +54,7 @@ import OSLog
 public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
 
     private let logger = Logger(subsystem: "edu.gatech.contour", category: "SurfaceScan")
+    var keypadReader = KeypadReader()
 
     public init() {}
 
@@ -95,7 +102,8 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         // Labels with no key outline around them are keys too on a flat
         // membrane panel. Less certain than an outlined key, so lower confidence.
         let printedOnly = Self.printedButtons(from: reading.textButtons)
-        let map = SurfaceMap(buttons: keys + printedOnly, confidence: confidence)
+        let buttons = try await addingKeypad(to: keys + printedOnly, in: photo, panel: quad)
+        let map = SurfaceMap(buttons: buttons, confidence: confidence)
         logger.info("Surface handoff: fullFrame=\(quad == .fullFrame) buttons=\(map.buttons.count) confidence=\(confidence)")
         return PanelDetection(referencePhotoID: photo.id, quad: quad, map: map)
     }
@@ -154,13 +162,18 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
         return reading
     }
 
-    /// A 2x crop of the panel for LabelReader when the photo's short side is
-    /// under 1000 px, with the quad moved into the crop so labels keep their
-    /// panel coordinates. Nil means read the photo as it is.
+    /// A crop of the panel for LabelReader, enlarged to the size it has on a
+    /// 720x1280 photo doubled, with the quad moved into the crop so labels keep
+    /// their panel coordinates. Nil means read the photo as it is: a photo with
+    /// a long side of 2560 px or more already has the text that big.
+    ///
+    /// Doubling was measured on 720x1280 frames. The world tracking camera's are
+    /// about 1440x1920 with about the same view along the long side, so they get
+    /// 4/3. Smaller photos are still only doubled.
     static func labelInput(for photo: PanelPhoto, panel: PanelQuad) -> (image: CGImage, panel: PanelQuad)? {
+        let scale = min(2, 2 * 1280 / Double(max(photo.pixelSize.width, photo.pixelSize.height)))
         // Size check first, so big photos aren't decoded here too.
-        guard min(photo.pixelSize.width, photo.pixelSize.height) < 1000,
-              let image = try? photo.cgImage() else { return nil }   // upright
+        guard scale > 1, let image = try? photo.cgImage() else { return nil }   // upright
 
         // The panel's bounding box plus a 5% margin, in pixels, kept inside the photo.
         let iw = Double(image.width), ih = Double(image.height)
@@ -171,23 +184,40 @@ public struct LiveSurfaceUnderstanding: ContourCore.SurfaceUnderstanding {
             .intersection(CGRect(x: 0, y: 0, width: iw, height: ih))
         guard !crop.isEmpty, let cropped = image.cropping(to: crop) else { return nil }
 
-        // Double the crop. Kept as an image: a TIFF copy used too much memory.
-        let w = cropped.width * 2, h = cropped.height * 2
+        // Enlarge the crop. Kept as an image: a TIFF copy used too much memory.
+        let w = Int((Double(cropped.width) * scale).rounded()), h = Int((Double(cropped.height) * scale).rounded())
         guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
                                   space: CGColorSpaceCreateDeviceRGB(),
                                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         ctx.interpolationQuality = .high
         ctx.draw(cropped, in: CGRect(x: 0, y: 0, width: w, height: h))
-        guard let doubled = ctx.makeImage() else { return nil }
+        guard let enlarged = ctx.makeImage() else { return nil }
 
         // Same quad, normalized to the crop.
         func moved(_ p: ImagePoint) -> ImagePoint {
             ImagePoint(x: (p.x * iw - crop.minX) / crop.width, y: (p.y * ih - crop.minY) / crop.height)
         }
-        return (doubled, PanelQuad(topLeft: moved(panel.topLeft), topRight: moved(panel.topRight),
-                                bottomRight: moved(panel.bottomRight), bottomLeft: moved(panel.bottomLeft)))
+        return (enlarged, PanelQuad(topLeft: moved(panel.topLeft), topRight: moved(panel.topRight),
+                                    bottomRight: moved(panel.bottomRight), bottomLeft: moved(panel.bottomLeft)))
     }
     
+    /// `buttons` with the keypad's digit keys in, if they can be placed. A failure
+    /// here isn't a failed scan: the buttons come back exactly as they were.
+    func addingKeypad(to buttons: [SurfaceMap.Button], in photo: PanelPhoto, panel: PanelQuad) async throws -> [SurfaceMap.Button] {
+        try checkCancellation()
+        let started = ContinuousClock.now
+        do {
+            let reading = try await keypadReader.read(in: photo, panel: panel, adding: buttons)
+            try checkCancellation()
+            logger.info("Keypad stage: fit=\(reading.fit) added=\(reading.added) read=\(reading.digitsRead) stage=\(reading.stage) buttons=\(reading.buttons.count) took=\(started.duration(to: .now), privacy: .public)")
+            return reading.buttons
+        } catch {
+            try checkCancellation()
+            logger.error("Keypad read failed: \(String(describing: error), privacy: .public) took=\(started.duration(to: .now), privacy: .public)")
+            return buttons
+        }
+    }
+
     /// `Task.checkCancellation()` throws `CancellationError`, which isn't part of
     /// the contract, so throw ours instead.
     private func checkCancellation() throws {

@@ -24,6 +24,15 @@ nonisolated enum ButtonLookup {
         return TargetMatcher().match(named.joined(separator: " "), in: map)?.button
     }
 
+    /// Whether `request` has stop, halt, pause or cancel in it. TargetMatcher has
+    /// rules for those keys, like pause never becoming Cancel, that a plan from
+    /// anywhere else could break, so the phone answers these even when it has no key.
+    static func mentionsStopping(_ request: String) -> Bool {
+        request.lowercased().split { !$0.isLetter }.contains { stopWords.contains(String($0)) }
+    }
+
+    private static let stopWords: Set<String> = ["stop", "halt", "pause", "cancel"]
+
     /// Words people say around a button's name that aren't part of it.
     private static let fillers: Set<String> = [
         "the", "a", "an", "please", "press", "push", "hit", "tap", "button", "to", "i", "want",

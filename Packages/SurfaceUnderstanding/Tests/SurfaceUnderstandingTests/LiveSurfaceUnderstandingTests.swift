@@ -222,9 +222,30 @@ func smallPhotoIsDoubled() throws {
     #expect(input.panel == .fullFrame)
 }
 
-@Test("a 1080x1920 photo is read as it is")
+@Test("a photo smaller than 720x1280 is only doubled")
+func smallerPhotoIsOnlyDoubled() throws {
+    let smaller = photo(try pngData(width: 360, height: 640) { _ in }, width: 360, height: 640)
+    let input = try #require(LiveSurfaceUnderstanding.labelInput(for: smaller, panel: .fullFrame))
+    #expect(input.image.width == 720 && input.image.height == 1280)
+}
+
+@Test("a world tracking frame's panel is enlarged to the size a 720x1280 frame's is")
+func bigFrameIsEnlargedLess() throws {
+    let middle = PanelQuad(topLeft: ImagePoint(x: 0.25, y: 0.25), topRight: ImagePoint(x: 0.75, y: 0.25),
+                           bottomRight: ImagePoint(x: 0.75, y: 0.75), bottomLeft: ImagePoint(x: 0.25, y: 0.75))
+    for (big, small) in [((1440, 1920), (960, 1280)), ((1080, 1920), (720, 1280))] {
+        let bigInput = try #require(LiveSurfaceUnderstanding.labelInput(
+            for: photo(try pngData(width: big.0, height: big.1) { _ in }, width: big.0, height: big.1), panel: middle))
+        let smallInput = try #require(LiveSurfaceUnderstanding.labelInput(
+            for: photo(try pngData(width: small.0, height: small.1) { _ in }, width: small.0, height: small.1), panel: middle))
+        #expect(abs(bigInput.image.width - smallInput.image.width) <= 2 && abs(bigInput.image.height - smallInput.image.height) <= 2, "\(big)")
+        #expect(abs(bigInput.panel.topLeft.x - smallInput.panel.topLeft.x) < 0.01, "\(big)")
+    }
+}
+
+@Test("a photo 2560 px or longer is read as it is")
 func largePhotoIsUnchanged() throws {
-    let large = photo(try pngData(width: 1080, height: 1920) { _ in }, width: 1080, height: 1920)
+    let large = photo(try pngData(width: 1440, height: 2560) { _ in }, width: 1440, height: 2560)
     #expect(LiveSurfaceUnderstanding.labelInput(for: large, panel: .fullFrame) == nil)
 }
 

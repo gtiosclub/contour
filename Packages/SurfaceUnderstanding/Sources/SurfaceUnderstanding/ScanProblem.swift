@@ -21,13 +21,15 @@ public enum ScanProblem: Hashable, Sendable {
     public var spoken: String {
         switch self {
         case .noPanel:
-            return "I can't see the panel"
+            return "I can't see the panel. Point the phone at the control panel and scan again"
 
         case .scanFailed:
             return "That scan didn't work. Try again"
 
         case .panelCutOff:
-            return "I can see buttons but not the whole panel. Move back a little"
+            // A full-frame scan means the panel's outline wasn't found. The phone
+            // can be too far, too close or at an angle, so no direction is given.
+            return "I can't find the edges of the panel. Show all four corners and scan again"
 
         case .noButtons:
             return "I can't find any buttons. Point the phone at the control panel"

@@ -70,7 +70,7 @@ jobs:
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Test app reference, session lifecycle, and status display
+      - name: Test app reference, session lifecycle, status display, and the demo flow
         run: |
           set -o pipefail
           xcodebuild test \
@@ -85,6 +85,20 @@ jobs:
             -only-testing:ContourTests/GuidanceLossEpisodeTests \
             -only-testing:ContourTests/TargetRequestTrackerTests \
             -only-testing:ContourTests/PipelineWiringTests \
+            -only-testing:ContourTests/CameraLaunchTests \
+            -only-testing:ContourTests/CookTimeTests \
+            -only-testing:ContourTests/CookTimePlanTests \
+            -only-testing:ContourTests/WholeSentenceLookupTests \
+            -only-testing:ContourTests/NextWordTests \
+            -only-testing:ContourTests/PlanWalkTests \
+            -only-testing:ContourTests/ButtonLookupTests \
+            -only-testing:ContourTests/AppCheckLocalFileTests \
+            -only-testing:ContourTests/OpenAIVoiceFlowTests \
+            -only-testing:ContourTests/ServerStepsTests \
+            -only-testing:ContourTests/MentionsATimeTests \
+            -only-testing:ContourTests/AppLifecycleTests \
+            -only-testing:ContourTests/ScanArchiveTests \
+            -only-testing:ContourTests/SharedTrackingSetupTests \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO
 

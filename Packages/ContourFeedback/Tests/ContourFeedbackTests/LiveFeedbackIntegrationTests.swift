@@ -24,6 +24,20 @@ struct LiveFeedbackIntegrationTests {
         #expect(policy.voiceGuidance == .direction(.left, near: false))
     }
 
+    @Test("A little outside the smallest arrival zone still gets a direction")
+    func deadZoneAtTheOval() {
+        // 0.015 panel units right of a key with the floor-sized zone, divided by
+        // the panel diagonal the way MockGuidance reports it.
+        var policy = ExperienceDirectionInstruction()
+        policy.update(state(0.016 / 2.0.squareRoot(), dx: 1, dy: 0).vector!, at: 1)
+        #expect(policy.voiceGuidance == .direction(.right, near: true))
+
+        // Inside it there's nothing left to correct on either axis.
+        var inside = ExperienceDirectionInstruction()
+        inside.update(state(0.009, dx: 1, dy: 0).vector!, at: 1)
+        #expect(inside.voiceGuidance == .slowly)
+    }
+
     @Test("Zero distance alone does not invent arrival")
     func zeroDistance() async {
         let engine = LiveFeedbackEngine()

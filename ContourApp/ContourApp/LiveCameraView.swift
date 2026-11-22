@@ -178,6 +178,14 @@ struct LiveCameraView: View {
         experience.scan()
     }
 
+    /// The big button: Stop while anything is running, otherwise the next thing to do.
+    private func primaryAction() {
+        if experience.busy { experience.stop(aloud: true) }
+        else if !experience.ready { experience.setActive(true) }
+        else if !hasSelectionContent { scanPanel() }
+        else { experience.sayAButton() }
+    }
+
     private var canRescan: Bool {
         // The center button already handles first scan, empty results and unclear outlines.
         primaryDetached && experience.ready && hasSelectionContent && !experience.busy
@@ -356,12 +364,7 @@ struct LiveCameraView: View {
                                 .accessibilityHidden(true)
                         }
 
-                        Button {
-                            if experience.busy { experience.stop() }
-                            else if !experience.ready { experience.setActive(true) }
-                            else if !hasSelectionContent { scanPanel() }
-                            else { experience.sayAButton() }
-                        } label: {
+                        Button { primaryAction() } label: {
                             // Hidden text must not impose its full intrinsic size on the docked circle.
                             Text(primaryDetached ? primaryTitle : "")
                                 .font(.title.bold())
@@ -442,6 +445,14 @@ struct LiveCameraView: View {
                 .padding(.top, 8)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
 
+                if let progress = experience.planProgress {
+                    let top = buttonCenterY + buttonSize / 2
+                    let height = max(0, targetBottom - collapsedHeight - top)
+                    planControls(progress: progress)
+                        .frame(width: geo.size.width, height: height)
+                        .position(x: primaryX, y: top + height / 2)
+                }
+
                 if selectionVisible {
                     VStack(spacing: 0) {
                         panelGrabber(restingHeight: restingHeight, collapsedHeight: collapsedHeight,
@@ -489,6 +500,15 @@ struct LiveCameraView: View {
         .background { cameraBackground }
         .buttonStyle(.glass)
         .preferredColorScheme(.dark)
+        // VoiceOver's two-finger double-tap, with focus anywhere on this screen, so
+        // moving on needs no hunting for a button. During a plan it's Move on, and
+        // only that: before a key is guided it does nothing rather than stop the plan.
+        // Otherwise it's the big button, like Stop during guidance. Handling it also
+        // keeps the system from playing or pausing other audio instead.
+        .accessibilityAction(.magicTap) {
+            if experience.plan != nil { experience.next() }
+            else if primaryDetached { primaryAction() }
+        }
         #if DEBUG
         .sheet(isPresented: $showDeveloperTools) {
             NavigationStack { DebugMenu(camera: camera, pipeline: pipeline) }
@@ -613,7 +633,9 @@ struct LiveCameraView: View {
         .onChange(of: experience.status) { _, message in
             // State transitions only; tracking's per-frame output stays in the feedback engine.
             // VoiceRequest announces listening before it opens the microphone.
-            if !experience.listening && !(pipeline.guidanceArrived
+            // Guidance says "Target reached" itself, so only the arrival line is
+            // left out: arrival stays set until the next guidance, past a Stop.
+            if !experience.listening && !experience.speaksOwnStatus && !(message.hasPrefix("Reached ")
                 && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
                 UIAccessibility.post(notification: .announcement, argument: message)
             }
@@ -624,6 +646,31 @@ struct LiveCameraView: View {
         .onChange(of: pipeline.panelReference?.photo.id) {
             experience.referenceChanged()
         }
+    }
+
+    /// Where the plan is, and the way past a key when arrival doesn't trigger.
+    private func planControls(progress: String) -> some View {
+        VStack(spacing: 8) {
+            Text(progress)
+                .font(.headline)
+                .glassForeground()
+            Button { experience.next() } label: {
+                // Not "Next": VoiceOver reads the name out loud, and the
+                // microphone may be open.
+                Text("Move on")
+                    .font(.title.bold())
+                    .glassForeground()
+                    // Wide and tall, to hit without looking.
+                    .frame(maxWidth: .infinity, minHeight: 64)
+            }
+            .buttonStyle(.glass(headerGlass))
+            .modifier(SelectionButtonAvailability())
+            // Off whenever a tap would be ignored, like before a key is guided.
+            .disabled(!experience.canMoveOn)
+            // Nor does the hint say the word it listens for.
+            .accessibilityHint("Goes on once you've pressed this key. A two-finger double-tap does the same.")
+        }
+        .padding(.horizontal, 24)
     }
 
     /// Keep material geometry and foreground crossfades in one transaction.
