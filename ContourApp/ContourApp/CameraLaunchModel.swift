@@ -178,7 +178,11 @@ final class CameraLaunchModel {
                 photo = PanelPhoto(data: Data(), pixelSize: PixelSize(width: 4032, height: 3024), timestamp: Date())
             }
             try Task.checkCancellation()
+            #if DEBUG
+            let map = try await ScanArchive.shared.detectPanel(in: photo, with: self.pipeline)
+            #else
             let map = try await self.pipeline.detectPanel(in: photo)
+            #endif
             try Task.checkCancellation()
             self.knownReferenceID = self.pipeline.panelReference?.photo.id
             guard !map.buttons.isEmpty else {
