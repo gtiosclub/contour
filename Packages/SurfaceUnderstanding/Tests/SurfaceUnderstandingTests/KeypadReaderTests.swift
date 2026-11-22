@@ -1029,7 +1029,7 @@ func noTimeCookCropWithoutTheTime() async throws {
 // MARK: - Recorded camera frames
 
 /// Point CONTOUR_FRAMES_DIR at a folder of NAME.jpg with NAME.json beside it, as
-/// the app's frame recorder writes them, for a table of what real scans get. The
+/// Scripts/pull-scans.sh copies them off a phone, for a table of what real scans get. The
 /// frames aren't in the repo, so this skips everywhere else, CI included.
 @Test(
     "real frames scoreboard",
@@ -1056,7 +1056,14 @@ func realFramesScoreboard() async throws {
     for url in frames {
         let photo = try recordedPhoto(url)
         let started = ContinuousClock.now
-        let detection = try await LiveSurfaceUnderstanding().detectPanel(from: photo)
+        let detection: PanelDetection
+        do {
+            detection = try await LiveSurfaceUnderstanding().detectPanel(from: photo)
+        } catch {
+            // The app keeps scans that failed on the phone too. One shouldn't end the table.
+            print("| \(url.deletingPathExtension().lastPathComponent) | \(error) | | | | |")
+            continue
+        }
         let duration = started.duration(to: .now).components
         seconds.append(Double(duration.seconds) + Double(duration.attoseconds) / 1e18)
 
@@ -1068,7 +1075,7 @@ func realFramesScoreboard() async throws {
         typeableWithStart += types && start ? 1 : 0
         print("| \(url.deletingPathExtension().lastPathComponent) | \(detection.quad == .fullFrame ? "full frame" : "quad") | \(digits) | \(types ? "yes" : "no") | \(start ? "yes" : "no") | \(String(format: "%.2f", seconds.last!)) |")
     }
-    let middle = seconds.sorted()[seconds.count / 2]
+    let middle = seconds.isEmpty ? 0 : seconds.sorted()[seconds.count / 2]
     print("Of \(frames.count) frames: \(typeable) can type 1,3,0 and \(typeableWithStart) also find Start. Median \(String(format: "%.2f", middle)) s, slowest \(String(format: "%.2f", seconds.max() ?? 0)) s. This counts keys on the map; whether they're on the right spot takes an eye on the frame.")
 }
 
