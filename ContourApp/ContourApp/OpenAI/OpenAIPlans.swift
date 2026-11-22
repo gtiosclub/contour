@@ -52,10 +52,10 @@ nonisolated struct OpenAIPlans: Sendable {
 
 nonisolated extension CookTimePlan {
     /// A server plan in the form the step loop walks, held to the phone plan's rules:
-    /// one clear key for every step, and its warning when there are numbers to press
-    /// and no Time Cook key. The sentence is built here from the same names as the
-    /// steps, not taken from the model, so what the user hears is what they'll be
-    /// guided through.
+    /// one clear key for every step, and no number before Time Cook, since on a panel
+    /// with Express Cook a number pressed first can start cooking. The sentence is
+    /// built here from the same names as the steps, not taken from the model, so
+    /// what the user hears is what they'll be guided through.
     static func make(serverSteps: [SurfaceMap.Button], in map: SurfaceMap) -> Outcome {
         let start = TargetMatcher().match("start", in: map)?.button
         let steps = serverSteps.map { button in
@@ -70,17 +70,23 @@ nonisolated extension CookTimePlan {
         }
         guard unclear.isEmpty else { return .missing(noClearKey(for: unclear)) }
 
+        let firstDigit = steps.firstIndex { step in
+            let label = trimmed(step.button.label)
+            return !label.isEmpty && label.allSatisfy(\.isNumber)
+        }
+        if let firstDigit, !steps[..<firstDigit].contains(where: { isTimeCook(trimmed($0.button.label)) }) {
+            return .missing(only(in: map, where: isTimeCook) == nil ? noClearKey(for: ["Time Cook"]) : skipsTimeCook)
+        }
+
         let names = steps.map(\.name)
         let say = names.count > 1
             ? "Press \(names.dropLast().joined(separator: ", ")), then \(names[names.count - 1])."
             : "Press \(names.joined())."
-        let typesDigits = steps.contains { step in
-            let label = trimmed(step.button.label)
-            return !label.isEmpty && label.allSatisfy(\.isNumber)
-        }
-        let timeCook = only(in: map, where: isTimeCook)
-        return .plan(CookTimePlan(steps: steps, say: say, warning: typesDigits && timeCook == nil ? noTimeCook : nil))
+        return .plan(CookTimePlan(steps: steps, say: say))
     }
+
+    /// The panel has Time Cook, but the server's plan presses a number before it.
+    static let skipsTimeCook = "OpenAI's plan presses a number before Time Cook, so I won't run it."
 
     private static func trimmed(_ label: String?) -> String {
         label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""

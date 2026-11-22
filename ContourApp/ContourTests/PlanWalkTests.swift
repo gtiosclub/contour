@@ -140,6 +140,8 @@ struct PlanWalkTests {
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
+        // What the scan said isn't part of the plan.
+        speaker.log.removeAll()
         return (model, finger)
     }
 
@@ -273,20 +275,18 @@ struct PlanWalkTests {
         await model.waitForWork()
     }
 
-    @Test("Next while the plan is read back skips nothing, not even the warning", arguments: [true, false])
-    func nextDuringReadBack(timeCook: Bool) async {
+    @Test("Next while the plan is read back skips nothing")
+    func nextDuringReadBack() async {
         let speaker = FakeSpeaker()
         speaker.slow = "Cook for"
-        let (model, _) = await scanned(map: panel(timeCook: timeCook), tracking: NoFingertipEver(), speaker: speaker)
+        let (model, _) = await scanned(tracking: NoFingertipEver(), speaker: speaker)
         model.sayAButton()
         await until { model.status.hasPrefix("Cook for") }
         #expect(!model.canMoveOn, "The Next button is off")
         model.next()
         await until { model.guiding }
-        #expect(model.planProgress == (timeCook ? "Step 1 of 5: Time Cook" : "Step 1 of 4: 1"))
+        #expect(model.planProgress == "Step 1 of 5: Time Cook")
         #expect(speaker.spoken.contains(model.planProgress ?? ""))
-        #expect((model.plan?.warning == nil) == timeCook)
-        if let warning = model.plan?.warning { #expect(speaker.spoken.contains(warning)) }
         model.stop()
         await model.waitForWork()
     }
@@ -500,19 +500,17 @@ struct PlanWalkTests {
         #expect(speaker.spoken == [model.status])
     }
 
-    @Test("No Time Cook: says so out loud and on screen before the first digit")
+    @Test("No Time Cook: no number is guided, since one pressed first can start cooking, and it says to scan again")
     func noTimeCook() async {
         let speaker = FakeSpeaker()
-        let (model, _) = await scanned(map: panel(timeCook: false), speaker: speaker, next: Self.hangs)
+        let (model, finger) = await scanned(map: panel(timeCook: false), speaker: speaker, next: Self.hangs)
         model.sayAButton()
-        await until { model.listening }
-        let warning = try? #require(model.plan?.warning)
-        #expect(warning?.contains("Time Cook") == true)
-        #expect(speaker.spoken[1] == warning)
-        #expect(speaker.spoken[2] == "Step 1 of 4: 1")
-        #expect(model.planProgress == "Step 1 of 4: 1")
-        model.stop()
         await model.waitForWork()
+        #expect(finger.streamCount == 0)
+        #expect(model.plan == nil && !model.busy)
+        #expect(model.status == CookTimePlan.noClearKey(for: ["Time Cook"]))
+        #expect(model.status.hasSuffix("Try scanning again."))
+        #expect(speaker.spoken == [model.status])
     }
 
     @Test("The microphone failing doesn't end the plan, says so once, and Next still works")
