@@ -208,3 +208,18 @@ func timeCookTartIsNotTimeCook() {
     #expect(TargetMatcher().match("time cook", in: map) == nil)
     #expect(TargetMatcher().match("time", in: map) == nil)
 }
+
+@Test("\"Timer Time Cook TRRT\" isn't Timer (TestSet microwave-06 at 720x1280)")
+func timerTimeCookIsNotTimer() {
+    let map = only("Timer Time Cook TRRT")
+    #expect(TargetMatcher().match("timer", in: map) == nil)
+    #expect(TargetMatcher().match("kitchen timer", in: map) == nil)
+    #expect(TargetMatcher().match("time", in: map) == nil)   // already nil via the Time Cook rule
+}
+
+@Test("real Timer keys still match timer")
+func realTimerKeysStillMatch() {
+    #expect(TargetMatcher().match("timer", in: only("Timer Set/Off"))?.button.label == "Timer Set/Off")
+    #expect(TargetMatcher().match("timer", in: only("Kitchen Timer"))?.button.label == "Kitchen Timer")
+    #expect(TargetMatcher().match("kitchen timer", in: only("Kitchen Timer"))?.button.label == "Kitchen Timer")
+}

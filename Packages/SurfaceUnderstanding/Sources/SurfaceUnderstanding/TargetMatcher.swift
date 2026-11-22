@@ -188,6 +188,8 @@ public struct TargetMatcher: Sendable {
         if wanted.contains("stop") || wanted.contains("cancel"), have.contains("power") { return nil }
         // "Time Cook TART" or "Time Cook S7-07" isn't Time Cook.
         if Set(wanted) == ["time", "cook"], have.count > 2 { return nil }
+        // "Timer Time Cook TRRT" isn't Timer (TestSet microwave-06 at 720x1280).
+        if wanted == ["timer"], have.contains("cook") { return nil }
         return have
     }
 
