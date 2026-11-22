@@ -108,4 +108,15 @@ struct TaskPlannerTests {
         #expect(buttons.first?["id"] as? String == "abc")
         #expect(buttons.first?["label"] as? String == "1")
     }
+    
+    @Test("an empty answer falls back to the matcher, or keeps the server's sentence")
+    func emptyAnswer() async {
+        let planner = TaskPlanner(service: FakePlanService(table: [:]))
+        let start = await planner.plan("start", in: microwave)
+        #expect(start.steps.map(\.label) == ["Start/Pause"])
+
+        let weather = await planner.plan("what's the weather", in: microwave)
+        #expect(weather.steps.isEmpty)
+        #expect(weather.say == "I can't do that on this panel.")
+    }
 }
