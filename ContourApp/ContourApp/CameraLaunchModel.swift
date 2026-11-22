@@ -220,7 +220,20 @@ final class CameraLaunchModel {
         replaceWork {
             self.listening = true
             self.status = "Listening. Say the name of a button on the panel."
-            let heard = try await self.listen(map)
+            let heard: VoiceRequest.Heard
+            do {
+                heard = try await self.listen(map)
+            } catch is CancellationError {
+                return
+            } catch {
+                // Said out loud, VoiceOver or not. The camera, the panel and the
+                // buttons all still work.
+                guard !Task.isCancelled else { return }
+                self.listening = false
+                await self.announce("Voice isn't available. Choose a button below.")
+                self.error = error.localizedDescription
+                return
+            }
             self.listening = false
             try Task.checkCancellation()
             guard self.pipeline.panelReference?.photo.id == referenceID else { return }
@@ -401,13 +414,21 @@ final class CameraLaunchModel {
     private func waitForNext() async -> Bool {
         listening = true
         defer { listening = false }
+        var toldVoiceUnavailable = false
         while !Task.isCancelled {
             do {
                 if try await listenForNext() { return !Task.isCancelled }
             } catch is CancellationError {
                 return false
             } catch {
-                status = "Can't listen: \(error.localizedDescription) Use the button to move on."
+                let shown = "Can't listen: \(error.localizedDescription) Use the button to move on."
+                // Once, out loud: the screen alone is silent without VoiceOver. Neither
+                // says Next, because VoiceOver reads that button as Continue.
+                if !toldVoiceUnavailable {
+                    toldVoiceUnavailable = true
+                    await announce("Voice isn't available. Use the button to move on.", showing: shown)
+                }
+                status = shown
             }
             // The microphone has to reopen, so don't spin if it ends straight away.
             try? await Task.sleep(for: .seconds(1))

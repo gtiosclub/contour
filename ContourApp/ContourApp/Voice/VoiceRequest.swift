@@ -11,7 +11,6 @@ import AVFoundation
 import ContourCore
 import Foundation
 import Speech
-import UIKit
 import Synchronization
 
 enum VoiceRequestError: LocalizedError {
@@ -50,7 +49,7 @@ struct VoiceRequest {
     }
 
     /// Listens for "next" on a plan, and returns whether it came before `timeout`.
-    /// Whoever calls this has already finished saying "say next", so VoiceOver has
+    /// Whoever calls this has already finished saying "say next", so there's
     /// nothing to announce here.
     func listenForNext(timeout: Duration = .seconds(60)) async throws -> Bool {
         let text = try await transcribe(timeout: timeout, quiet: nil, announces: false) { text, _ in
@@ -59,11 +58,15 @@ struct VoiceRequest {
         return NextWord.isIn(text)
     }
 
-    /// The last thing heard before `isDone` said to stop, `quiet` passed with no new
-    /// words, or `timeout` passed. Silence before the first word never counts as quiet.
-    private func transcribe(timeout: Duration, quiet: Duration?, announces: Bool,
-                            until isDone: (String, Bool) -> Bool) async throws -> String {
-        try Task.checkCancellation()
+    /// Asks for the microphone and fetches the speech model now, so the first
+    /// request doesn't stop for an alert or a download in the middle of a plan.
+    /// If anything fails here, the request tries again and says what went wrong.
+    static func prepare() async {
+        _ = try? await transcriber()
+    }
+
+    /// Microphone permission, then the on-device English model, downloaded if needed.
+    private static func transcriber() async throws -> SpeechTranscriber {
         let allowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized: allowed = true
@@ -78,17 +81,47 @@ struct VoiceRequest {
         if let install = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
             try await install.downloadAndInstall()
         }
+        return transcriber
+    }
 
-        if announces { try await announceListening() }
+    /// The last thing heard before `isDone` said to stop, `quiet` passed with no new
+    /// words, or `timeout` passed. Silence before the first word never counts as quiet.
+    private func transcribe(timeout: Duration, quiet: Duration?, announces: Bool,
+                            until isDone: (String, Bool) -> Bool) async throws -> String {
+        try Task.checkCancellation()
+        let transcriber = try await Self.transcriber()
         try Task.checkCancellation()
         guard let microphone = AVCaptureDevice.default(for: .audio) else { throw VoiceRequestError.noMicrophone }
-        let input = try await CaptureInputSequenceProvider.providerWithSession(
-            from: microphone, compatibleWith: [transcriber]
-        )
+        // The app's own audio setup, not the one a capture session picks for itself:
+        // that one isn't undone afterwards, and could leave speech on the earpiece.
+        // The session only records sound. ARKit keeps the camera.
+        try AppAudioSession.activate()
+        let session = AVCaptureSession()
+        session.automaticallyConfiguresApplicationAudioSession = false
+        let input = try await CaptureInputSequenceProvider.provider(from: microphone, in: session,
+                                                                    compatibleWith: [transcriber])
+        let device = try AVCaptureDeviceInput(device: microphone)
+        session.beginConfiguration()
+        let added = session.canAddInput(device) && session.canAddOutput(input.captureAudioDataOutput)
+        if added {
+            session.addInput(device)
+            session.addOutput(input.captureAudioDataOutput)
+        }
+        session.commitConfiguration()
+        guard added else { throw VoiceRequestError.noMicrophone }
+        // Last, so the microphone opens as soon as this is said, and a setup that
+        // fails never says it's listening.
+        if announces { try await announceListening() }
         try Task.checkCancellation()
         let analyzer = SpeechAnalyzer(inputSequence: input.analyzerInputs, modules: [transcriber])
-        input.captureSession.startRunning()
-        defer { input.captureSession.stopRunning() }
+        session.startRunning()
+        defer { session.stopRunning() }
+        // This blocks until the microphone runs or fails. A failure is said now,
+        // not after the time limit as if nobody spoke.
+        guard session.isRunning else {
+            await analyzer.cancelAndFinishNow()
+            throw VoiceRequestError.noMicrophone
+        }
 
         // Stop listening at the time limit, after the quiet, or as soon as this
         // task is cancelled; any of these ends the results below.
@@ -132,33 +165,15 @@ struct VoiceRequest {
         return heard
     }
 
-    /// Finish VoiceOver's prompt before opening the microphone so recognition
-    /// cannot mistake our own instructions for the user's button name.
+    /// Says it's listening out loud, with VoiceOver on or off, and returns once
+    /// that's finished, so recognition can't take our own words for a button name.
     @MainActor
     private func announceListening() async throws {
-        guard UIAccessibility.isVoiceOverRunning else { return }
-        let message = "Listening. Say a button name after this announcement."
-        let pair = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
-        let observer = NotificationCenter.default.addObserver(
-            forName: UIAccessibility.announcementDidFinishNotification, object: nil, queue: .main
-        ) { notification in
-            if notification.userInfo?[UIAccessibility.announcementStringValueUserInfoKey] as? String == message {
-                pair.continuation.yield(())
-            }
-        }
-        defer {
-            NotificationCenter.default.removeObserver(observer)
-            pair.continuation.finish()
-        }
-        // VoiceOver can be disabled or interrupted while the prompt is speaking.
-        let timeout = Task {
-            try? await Task.sleep(for: .seconds(6))
-            pair.continuation.yield(())
-        }
-        defer { timeout.cancel() }
-        UIAccessibility.post(notification: .announcement, argument: message)
-        for await _ in pair.stream { break }
+        await Self.cue.speak("Listening. Say a button name.")
         try Task.checkCancellation()
     }
+
+    /// Kept for the app's life, so the voice is loaded after the first request.
+    private static let cue = PlanSpeaker()
 
 }

@@ -26,12 +26,9 @@ final class PlanSpeaker: NSObject, PlanSpeaking, AVSpeechSynthesizerDelegate {
     func speak(_ text: String) async {
         stop()
         guard !Task.isCancelled else { return }
-        // The same setup as VoiceExperienceEngine. After the microphone closes the
-        // session may be left routed to the earpiece, and the default category
-        // goes silent with the ringer switch.
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
-        try? session.setActive(true)
+        // The default category goes silent with the ringer switch. This is the
+        // microphone's setup too, so listening for next after this changes nothing.
+        try? AppAudioSession.activate()
         let next = AVSpeechUtterance(string: text)
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
