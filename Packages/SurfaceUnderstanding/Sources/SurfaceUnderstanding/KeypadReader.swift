@@ -62,16 +62,17 @@ struct KeypadReader: Sendable {
             let started = ContinuousClock.now
             let image = try photo.cgImage()
             let size = CGSize(width: image.width, height: image.height)
+            let enlargement = Self.enlargement(for: size)
 
             let panelTiles = Self.tiles(of: Self.box(of: panel, in: size), across: 3, fraction: 0.5)
             var words = try await Self.within(self.panelLimit) {
-                try await self.words(in: image, tiles: panelTiles, scale: 3)
+                try await self.words(in: image, tiles: panelTiles, scale: 3 * enlargement)
             }
             var stage = 1
             var grid = Self.keypad(in: words, size: size)
             if grid == nil, !Self.digits(in: words).isEmpty {
                 let frame = CGRect(origin: .zero, size: size)
-                words += try await self.words(in: image, tiles: Self.tiles(of: frame, across: 5, fraction: 0.333), scale: 3)
+                words += try await self.words(in: image, tiles: Self.tiles(of: frame, across: 5, fraction: 0.333), scale: 3 * enlargement)
                 stage = 2
                 grid = Self.keypad(in: words, size: size)
             }
@@ -85,7 +86,7 @@ struct KeypadReader: Sendable {
                 var start = Self.startWord(in: words, grid: grid)
                 if start == nil {
                     // Start is extra: crops that can't be read don't cost the digits.
-                    words += (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
+                    words += (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2 * enlargement)) ?? []
                     start = Self.startWord(in: words, grid: grid)
                 }
                 if let start {
@@ -97,7 +98,7 @@ struct KeypadReader: Sendable {
                 // Time Cook is extra too: no crop unless the read's own cap can spare it.
                 if label == nil, self.readLimit - started.duration(to: .now) > self.timeCookLimit * 2 {
                     let crop = (try? await Self.within(self.timeCookLimit) {
-                        try await self.words(in: image, tiles: grid.timeCookCrop(in: size), scale: 2)
+                        try await self.words(in: image, tiles: grid.timeCookCrop(in: size), scale: 2 * enlargement)
                     }) ?? []
                     label = Self.timeCookLabel(in: words + crop, grid: grid)
                 }
@@ -120,6 +121,17 @@ struct KeypadReader: Sendable {
                        width: box.width * fraction, height: box.height * fraction).integral
             }
         }
+    }
+
+    /// How much of the usual enlargement a frame of `size` gets. The tiles and crops
+    /// were measured on 720x1280 frames. The world tracking camera's are about
+    /// 1440x1920 with about the same view along the long side, so a key there is 1.5
+    /// times the pixels. Enlarged 2/3 as much, each tile reaches Vision at the size
+    /// it did on the measured frames, sharper, and costs about the same time. On
+    /// those frames scaled up 1.5 times and read at full enlargement, a read took
+    /// 0.92 s instead of 0.67 s, and the slowest ran out of time.
+    static func enlargement(for size: CGSize) -> Double {
+        min(1, 1280 / max(size.width, size.height))
     }
 
     /// The upright box around `quad`, kept on the image.
@@ -152,7 +164,7 @@ struct KeypadReader: Sendable {
             let cropped = image.cropping(to: tile),
             let space = CGColorSpace(name: CGColorSpace.sRGB),
             let context = CGContext(
-                data: nil, width: Int(Double(cropped.width) * scale), height: Int(Double(cropped.height) * scale),
+                data: nil, width: Int((Double(cropped.width) * scale).rounded()), height: Int((Double(cropped.height) * scale).rounded()),
                 bitsPerComponent: 8, bytesPerRow: 0, space: space,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )

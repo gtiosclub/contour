@@ -696,8 +696,8 @@ private let stuck: LabelReader.Recognizer = { _, _ in
     return []
 }
 
-private func blankPhoto() throws -> PanelPhoto {
-    let context = try #require(CGContext(data: nil, width: 300, height: 300, bitsPerComponent: 8, bytesPerRow: 0,
+private func blankPhoto(width: Int = 300, height: Int = 300) throws -> PanelPhoto {
+    let context = try #require(CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
                                          space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
     let image = try #require(context.makeImage())
@@ -705,7 +705,7 @@ private func blankPhoto() throws -> PanelPhoto {
     let destination = try #require(CGImageDestinationCreateWithData(out, "public.png" as CFString, 1, nil))
     CGImageDestinationAddImage(destination, image, nil)
     #expect(CGImageDestinationFinalize(destination))
-    return PanelPhoto(data: out as Data, pixelSize: PixelSize(width: 300, height: 300), timestamp: .distantPast)
+    return PanelPhoto(data: out as Data, pixelSize: PixelSize(width: width, height: height), timestamp: .distantPast)
 }
 
 private struct Boom: Error {}
@@ -810,6 +810,36 @@ func noDigitsStopsAfterTheFirstStage() async throws {
     #expect(calls.value == 9)
     #expect(reading.stage == 1)
     #expect(!reading.fit && !reading.added)
+}
+
+/// The width and height of each image recognition was handed.
+private final class ReadSizes: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sizes: [[Int]] = []
+    func add(_ image: CGImage) { lock.withLock { sizes.append([image.width, image.height]) } }
+    func take() -> [[Int]] { lock.withLock { defer { sizes = [] }; return sizes } }
+}
+
+@Test("a world tracking frame's tiles reach Vision at the size a 720x1280 frame's do")
+func bigFrameIsReadAtMeasuredSize() async throws {
+    let sizes = ReadSizes()
+    let reader = KeypadReader(recognizer: { image, _ in
+        sizes.add(image)
+        return []
+    })
+    // A 720x1280 frame is read as before: nine tiles of 360x640, each at 3x.
+    _ = try await reader.read(in: try blankPhoto(width: 720, height: 1280), panel: .fullFrame, adding: [])
+    #expect(sizes.take() == Array(repeating: [1080, 1920], count: 9))
+
+    // Bigger frames, against smaller ones of the same shape with a long side of 1280.
+    for (big, small) in [((1440, 1920), (960, 1280)), ((1080, 1920), (720, 1280)), ((1440, 2560), (720, 1280))] {
+        _ = try await reader.read(in: try blankPhoto(width: small.0, height: small.1), panel: .fullFrame, adding: [])
+        let expected = sizes.take()
+        _ = try await reader.read(in: try blankPhoto(width: big.0, height: big.1), panel: .fullFrame, adding: [])
+        #expect(sizes.take() == expected, "\(big)")
+    }
+    #expect(KeypadReader.enlargement(for: CGSize(width: 300, height: 300)) == 1)
+    #expect(abs(KeypadReader.enlargement(for: CGSize(width: 1440, height: 1920)) - 2.0 / 3) < 1e-9)
 }
 
 // MARK: - Vision
