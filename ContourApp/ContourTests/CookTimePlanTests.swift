@@ -29,6 +29,12 @@ private let noTimeCook = map([
     "Add 1 Min", "Add 30 Sec", "Popcorn", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Cancel/Off", "0", "Start/Pause",
 ])
 
+/// That panel with its Time Cook key.
+private let addOneMin = map([
+    "Time Cook", "Add 1 Min", "Add 30 Sec", "Popcorn", "1", "2", "3", "4", "5", "6", "7", "8", "9", "Cancel/Off", "0",
+    "Start/Pause",
+])
+
 private func plan(_ request: String, on panel: SurfaceMap = microwave01) throws -> CookTimePlan {
     guard case .plan(let plan) = try #require(CookTimePlan.make(for: request, in: panel)) else {
         Issue.record("no plan for \(request)")
@@ -118,26 +124,19 @@ struct CookTimePlanTests {
         #expect(plan.steps.map(\.name) == names)
         #expect(plan.steps.first?.button.label == "Time Cook")
         #expect(plan.steps.last?.button.label == "Start/Pause")
-        #expect(plan.warning == nil)
         for step in plan.steps.dropFirst().dropLast() { #expect(step.button.label == step.name) }
     }
 
-    @Test("a panel without Time Cook goes on without it and warns", arguments: [
-        ("cook for a minute and a half", ["1", "3", "0", "Start"]),
-        ("2 minutes", ["2", "0", "0", "Start"]),
-        ("30 seconds", ["3", "0", "Start"]),
-    ])
-    func withoutTimeCook(request: String, names: [String]) throws {
-        let plan = try plan(request, on: noTimeCook)
-        #expect(plan.steps.map(\.name) == names)
-        #expect(plan.warning?.contains("Time Cook") == true)
-        #expect(plan.warning?.contains("starts cooking") == true)
+    @Test("a panel without Time Cook gets no plan: with Express Cook, a number pressed first can start cooking",
+          arguments: ["cook for a minute and a half", "2 minutes", "30 seconds"])
+    func withoutTimeCook(request: String) throws {
+        #expect(try missing(request, on: noTimeCook) == CookTimePlan.noClearKey(for: ["Time Cook"]))
     }
 
     @Test("\"1\" means the key that says 1, never Add 1 Min")
     func digitIsExact() throws {
-        #expect(try plan("90 seconds", on: noTimeCook).steps[0].button.label == "1")
-        #expect(try missing("90 seconds", on: map(["Add 1 Min", "3", "0", "Start"])).contains("1"))
+        #expect(try plan("90 seconds", on: addOneMin).steps[1].button.label == "1")
+        #expect(try missing("90 seconds", on: map(["Time Cook", "Add 1 Min", "3", "0", "Start"])) == CookTimePlan.noClearKey(for: ["1"]))
     }
 
     @Test("a repeated digit is two steps on the same button")
@@ -156,22 +155,22 @@ struct CookTimePlanTests {
 
     @Test("a missing digit is named once, even when it's needed twice")
     func missingDigitOnce() throws {
-        let sentence = try missing("2 minutes", on: map(["2", "Start"]))
+        let sentence = try missing("2 minutes", on: map(["Time Cook", "2", "Start"]))
         #expect(sentence.contains("for 0 on this panel"))
     }
 
     @Test("a missing Start: nothing to guide to, and it says which")
     func missingStart() throws {
         let sentence = try missing("30 seconds", on: map(["Time Cook", "3", "0", "Delay Start"]))
-        #expect(sentence.contains("Start"))
-        #expect(try missing("30 seconds", on: map(["3", "Start"])).contains("0"))
-        #expect(try missing("30 seconds", on: map(["3"])).contains("0 and Start"))
+        #expect(sentence == CookTimePlan.noClearKey(for: ["Start"]))
+        #expect(try missing("30 seconds", on: map(["Time Cook", "3", "Start"])) == CookTimePlan.noClearKey(for: ["0"]))
+        #expect(try missing("30 seconds", on: map(["3"])) == CookTimePlan.noClearKey(for: ["Time Cook", "0", "Start"]))
     }
 
     @Test("two keys that both read as a digit, or as Start, would be a guess")
     func duplicates() throws {
-        #expect(try missing("30 seconds", on: map(["3", "3", "0", "Start"])).contains("for 3 on"))
-        #expect(try missing("30 seconds", on: map(["3", "0", "Start", "START"])).contains("Start"))
+        #expect(try missing("30 seconds", on: map(["Time Cook", "3", "3", "0", "Start"])).contains("for 3 on"))
+        #expect(try missing("30 seconds", on: map(["Time Cook", "3", "0", "Start", "START"])).contains("for Start on"))
     }
 
     @Test("only words exactly time and cook count as Time Cook", arguments: [
@@ -179,9 +178,7 @@ struct CookTimePlanTests {
         "Time tefrosF",
     ])
     func notTimeCook(label: String) throws {
-        let plan = try plan("30 seconds", on: map([label, "3", "0", "Start"]))
-        #expect(plan.steps.map(\.name) == ["3", "0", "Start"])
-        #expect(plan.warning != nil)
+        #expect(try missing("30 seconds", on: map([label, "3", "0", "Start"])) == CookTimePlan.noClearKey(for: ["Time Cook"]))
     }
 
     @Test("Time Cook in either order and any case", arguments: ["Time Cook", "Cook Time", "TIME COOK", "cook/time"])
@@ -189,20 +186,18 @@ struct CookTimePlanTests {
         let plan = try plan("30 seconds", on: map([label, "3", "0", "Start"]))
         #expect(plan.steps.first?.button.label == label)
         #expect(plan.steps.first?.name == "Time Cook")
-        #expect(plan.warning == nil)
     }
 
     @Test("two Time Cook keys would be a guess, so it's treated as missing, and says so")
     func twoTimeCooks() throws {
-        let plan = try plan("30 seconds", on: map(["Time Cook", "Cook Time", "3", "0", "Start"]))
-        #expect(plan.steps.map(\.name) == ["3", "0", "Start"])
-        #expect(plan.warning != nil)
+        #expect(try missing("30 seconds", on: map(["Time Cook", "Cook Time", "3", "0", "Start"]))
+                == CookTimePlan.noClearKey(for: ["Time Cook"]))
     }
 
     @Test("Start is called Start out loud, whatever a real scan read it as",
           arguments: ["Start", "START", "START sosec.", "Start Pause", "Start/Pause", "Start/+30 Sec"])
     func startName(label: String) throws {
-        let step = try #require(try plan("30 seconds", on: map(["3", "0", label])).steps.last)
+        let step = try #require(try plan("30 seconds", on: map(["Time Cook", "3", "0", label])).steps.last)
         #expect(step.name == "Start")
         #expect(step.button.label == label)
     }
@@ -218,6 +213,26 @@ struct CookTimePlanTests {
     @Test("what it says up front is the time and the keys, so a misheard time can be stopped")
     func saysTheTime() throws {
         #expect(try plan("90 seconds").say == "Cook for a minute and a half: Time Cook, 1, 3, 0, Start.")
+    }
+
+    @Test("the keys every cook time needs, in the order they're pressed")
+    func cookTimeKeys() {
+        #expect(CookTimePlan.cookTimeKeys == ["Time Cook", "1", "3", "0", "2", "Start"])
+        #expect(CookTimePlan.missingKeys(in: microwave01).isEmpty)
+        #expect(CookTimePlan.missingKeys(in: noTimeCook) == ["Time Cook"])
+        #expect(CookTimePlan.missingKeys(in: map(["Time Cook", "1", "3", "0", "Delay Start"])) == ["2", "Start"])
+        #expect(CookTimePlan.missingKeys(in: .empty) == CookTimePlan.cookTimeKeys)
+    }
+
+    @Test("no missing keys means every cook time makes a plan, and a missing key means one doesn't", arguments: [
+        microwave01, noTimeCook, addOneMin, map(["Time Cook", "1", "3", "0", "Start"]),
+        map(["Time Cook", "1", "2", "3", "0", "Start"]), map(["Time Cook", "1", "2", "3", "0", "0", "Start"]),
+        map(["Time Cook", "Cook Time", "1", "2", "3", "0", "Start"]), map(["1", "2", "3", "0", "Start"]), .empty,
+    ])
+    func missingKeysAgreeWithPlans(panel: SurfaceMap) {
+        let plans = CookTime.known.map { CookTimePlan.make(for: $0.spoken, in: panel) }
+        let allPlan = plans.allSatisfy { if case .plan = $0 { true } else { false } }
+        #expect(CookTimePlan.missingKeys(in: panel).isEmpty == allPlan)
     }
 
     @Test("a request with no cook time falls through to the one-button lookup", arguments: [

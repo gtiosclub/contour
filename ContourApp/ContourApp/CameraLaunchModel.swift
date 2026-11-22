@@ -277,7 +277,6 @@ final class CameraLaunchModel {
         planIndex = 0
         planReferenceID = referenceID
         await announce(plan.say)
-        if let warning = plan.warning { await announce(warning) }
         await walk(plan, from: 0, referenceID: referenceID)
     }
 

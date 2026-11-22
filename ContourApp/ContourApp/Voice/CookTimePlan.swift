@@ -45,6 +45,9 @@ nonisolated struct CookTime: Equatable {
         }
     }
 
+    /// Every cook time the phone plans by itself.
+    static var known: [CookTime] { times.map(\.time) }
+
     private static let times: [(time: CookTime, phrases: [String])] = [
         (CookTime(digits: "130", spoken: "a minute and a half"), [
             "a minutes and a half", "1 minutes and a half", "minutes and a half",
@@ -109,14 +112,13 @@ nonisolated struct CookTimePlan: Equatable {
     /// What can come of a request with a cook time in it.
     enum Outcome: Equatable {
         case plan(CookTimePlan)
-        /// A key we need isn't on the map, so there's nothing to guide to.
+        /// Nothing to guide to: a key we need isn't on the map, or the keys
+        /// aren't safe to press in that order. Says which.
         case missing(String)
     }
 
     var steps: [Step]
     var say: String
-    /// Said at the start and kept on screen: there's no Time Cook key to press first.
-    var warning: String?
 
     func progress(at index: Int) -> String {
         "Step \(index + 1) of \(steps.count): \(steps[index].name)"
@@ -124,37 +126,48 @@ nonisolated struct CookTimePlan: Equatable {
 
     /// The plan for `request` on `map`. `nil` if it has no cook time, so it can
     /// go on to the one-button lookup.
+    ///
+    /// Time Cook is always first. On a panel with Express Cook, like the demo
+    /// Magic Chef, a number pressed first can start cooking, so without a Time
+    /// Cook key there's no plan.
     static func make(for request: String, in map: SurfaceMap) -> Outcome? {
         guard let time = CookTime.parse(request) else { return nil }
-        let digits = time.digits.map(String.init)
-        let keys = digits.map { digit in
-            only(in: map) { $0.trimmingCharacters(in: .whitespacesAndNewlines) == digit }
+        let names = ["Time Cook"] + time.digits.map(String.init) + ["Start"]
+        let steps = names.compactMap { name in key(named: name, in: map).map { Step(name: name, button: $0) } }
+        guard steps.count == names.count else {
+            var missing: [String] = []
+            for name in names where key(named: name, in: map) == nil && !missing.contains(name) {
+                missing.append(name)
+            }
+            return .missing(noClearKey(for: missing))
         }
-        let start = TargetMatcher().match("start", in: map)?.button
-
-        var missing: [String] = []
-        for (digit, key) in zip(digits, keys) where key == nil && !missing.contains(digit) {
-            missing.append(digit)
-        }
-        if start == nil { missing.append("Start") }
-        guard missing.isEmpty, let start else { return .missing(noClearKey(for: missing)) }
-
-        var steps = zip(digits, keys).compactMap { digit, key in key.map { Step(name: digit, button: $0) } }
-        steps.append(Step(name: "Start", button: start))
-        let timeCook = only(in: map, where: isTimeCook)
-        if let timeCook { steps.insert(Step(name: "Time Cook", button: timeCook), at: 0) }
-
-        let names = steps.map(\.name).joined(separator: ", ")
-        return .plan(CookTimePlan(
-            steps: steps,
-            say: "Cook for \(time.spoken): \(names).",
-            warning: timeCook != nil ? nil : noTimeCook
-        ))
+        return .plan(CookTimePlan(steps: steps, say: "Cook for \(time.spoken): \(names.joined(separator: ", "))."))
     }
 
-    /// Said before the numbers when there's no Time Cook key to press first.
-    static let noTimeCook = "No Time Cook key found, so going straight to the numbers. "
-        + "On some microwaves, pressing a number starts cooking right away."
+    /// Every key the phone's cook times press, in the order they're pressed.
+    static let cookTimeKeys: [String] = {
+        var keys = ["Time Cook"]
+        for digit in CookTime.known.flatMap(\.digits).map(String.init) where !keys.contains(digit) {
+            keys.append(digit)
+        }
+        return keys + ["Start"]
+    }()
+
+    /// The keys in `cookTimeKeys` that `map` has no one clear key for. Empty
+    /// means every cook time the phone knows can be guided on it.
+    static func missingKeys(in map: SurfaceMap) -> [String] {
+        cookTimeKeys.filter { key(named: $0, in: map) == nil }
+    }
+
+    /// The one key a plan step called `name` goes to: Time Cook, Start, or the
+    /// key labelled with exactly that digit.
+    static func key(named name: String, in map: SurfaceMap) -> SurfaceMap.Button? {
+        switch name {
+        case "Time Cook": only(in: map, where: isTimeCook)
+        case "Start": TargetMatcher().match("start", in: map)?.button
+        default: only(in: map) { $0.trimmingCharacters(in: .whitespacesAndNewlines) == name }
+        }
+    }
 
     static func noClearKey(for names: [String]) -> String {
         "I can't find one clear key for \(names.formatted(.list(type: .and))) on this panel, "

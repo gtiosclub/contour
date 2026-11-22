@@ -585,17 +585,17 @@ struct OpenAIVoiceFlowTests {
         #expect(r.model.plan == nil)
     }
 
-    @Test("Numbers with no Time Cook key: the phone plan's warning comes before the first key")
-    func noTimeCookWarning() async {
+    @Test("Numbers with no Time Cook key: refused out loud, and nothing is guided")
+    func noTimeCookRefused() async {
         let server = FakeServer()
         server.labels = ["1", "0", "0", "Start/Pause"]
         let r = await rig(say: "heat up my coffee", map: panel(labels: Array("1234567890").map(String.init) + ["Start/Pause", "Beverage"]),
                           server: server)
         r.model.sayAButton()
         await r.model.waitForWork()
-        #expect(Array(r.speaker.spoken.prefix(4)) == [
-            "Asking OpenAI.", "Press 1, 0, 0, then Start.", CookTimePlan.noTimeCook, "Step 1 of 4: 1",
-        ])
+        #expect(r.speaker.spoken == ["Asking OpenAI.", CookTimePlan.noClearKey(for: ["Time Cook"])])
+        #expect(r.finger.streamCount == 0)
+        #expect(r.model.plan == nil)
     }
 
     @Test("No steps, no match: keeps the server's sentence and guides nowhere")
@@ -746,13 +746,12 @@ struct ServerStepsTests {
         let plan = try #require(plan(["Beverage", "Start/Pause"], in: map))
         #expect(plan.steps.map(\.name) == ["Beverage", "Start"])
         #expect(plan.say == "Press Beverage, then Start.")
-        #expect(plan.warning == nil)
     }
 
     @Test("One key, and several")
     func sentences() {
         #expect(plan(["Beverage"], in: map)?.say == "Press Beverage.")
-        #expect(plan(["1", "3", "0", "Start/Pause"], in: map)?.say == "Press 1, 3, 0, then Start.")
+        #expect(plan(["Time Cook", "1", "3", "0", "Start/Pause"], in: map)?.say == "Press Time Cook, 1, 3, 0, then Start.")
     }
 
     @Test("A key whose label is on the map twice is a guess, so the plan is refused", arguments: [
@@ -766,12 +765,18 @@ struct ServerStepsTests {
             "I can't find one clear key for \(name) on this panel, so I won't guess. Try scanning again."))
     }
 
-    @Test("Numbers with no Time Cook key get the phone plan's warning, and only then")
-    func noTimeCook() {
+    @Test("No number before Time Cook: with Express Cook, a number pressed first can start cooking")
+    func noNumberBeforeTimeCook() {
         let noTimeCook = panel(labels: Array("1234567890").map(String.init) + ["Start/Pause", "Beverage"])
-        #expect(plan(["1", "0", "0", "Start/Pause"], in: noTimeCook)?.warning == CookTimePlan.noTimeCook)
-        #expect(plan(["Beverage", "Start/Pause"], in: noTimeCook)?.warning == nil)
-        #expect(plan(["Time Cook", "1", "0", "0", "Start/Pause"], in: map)?.warning == nil)
+        func outcome(_ labels: [String], in map: SurfaceMap) -> CookTimePlan.Outcome {
+            CookTimePlan.make(serverSteps: labels.map { button($0, in: map) }, in: map)
+        }
+        #expect(outcome(["1", "0", "0", "Start/Pause"], in: noTimeCook) == .missing(CookTimePlan.noClearKey(for: ["Time Cook"])))
+        #expect(outcome(["Beverage", "2", "Start/Pause"], in: noTimeCook) == .missing(CookTimePlan.noClearKey(for: ["Time Cook"])))
+        #expect(outcome(["1", "0", "0", "Start/Pause"], in: map) == .missing(CookTimePlan.skipsTimeCook))
+        #expect(outcome(["1", "Time Cook", "0", "0", "Start/Pause"], in: map) == .missing(CookTimePlan.skipsTimeCook))
+        #expect(plan(["Beverage", "Start/Pause"], in: noTimeCook) != nil, "No numbers, nothing to refuse")
+        #expect(plan(["Time Cook", "1", "0", "0", "Start/Pause"], in: map) != nil)
     }
 }
 

@@ -640,12 +640,6 @@ struct LiveCameraView: View {
             Text(progress)
                 .font(.headline)
                 .glassForeground()
-            if let warning = experience.plan?.warning {
-                Text(warning)
-                    .font(.footnote)
-                    .glassForeground()
-                    .multilineTextAlignment(.center)
-            }
             Button { experience.next() } label: {
                 Text("Next")
                     .font(.title3.bold())
