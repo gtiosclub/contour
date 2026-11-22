@@ -19,7 +19,7 @@ final class PlanSpeaker: NSObject, PlanSpeaking, AVSpeechSynthesizerDelegate {
         synthesizer.delegate = self
         return synthesizer
     }()
-    private var utterance: ObjectIdentifier?
+    private var utterance: AVSpeechUtterance?
     private var finished: CheckedContinuation<Void, Never>?
     private var limit: Task<Void, Never>?
 
@@ -33,7 +33,7 @@ final class PlanSpeaker: NSObject, PlanSpeaking, AVSpeechSynthesizerDelegate {
         await withTaskCancellationHandler {
             await withCheckedContinuation { continuation in
                 finished = continuation
-                utterance = ObjectIdentifier(next)
+                utterance = next
                 synthesizer.speak(next)
                 // Speech can fail without calling back. Don't leave the plan waiting.
                 limit = Task { [weak self] in
@@ -57,19 +57,21 @@ final class PlanSpeaker: NSObject, PlanSpeaking, AVSpeechSynthesizerDelegate {
         finished = nil
     }
 
+    // The sentence itself goes to the main actor, not its address: kept alive
+    // until it's compared, a new sentence can't be made at the same address.
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        let id = ObjectIdentifier(utterance)
-        Task { @MainActor in self.done(id) }
+        nonisolated(unsafe) let utterance = utterance
+        Task { @MainActor in self.done(utterance) }
     }
 
     nonisolated func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
-        let id = ObjectIdentifier(utterance)
-        Task { @MainActor in self.done(id) }
+        nonisolated(unsafe) let utterance = utterance
+        Task { @MainActor in self.done(utterance) }
     }
 
     /// A late callback from a sentence that was cut off must not end the one after it.
-    private func done(_ id: ObjectIdentifier) {
-        guard id == utterance else { return }
+    private func done(_ ended: AVSpeechUtterance) {
+        guard ended === utterance else { return }
         limit?.cancel()
         limit = nil
         utterance = nil
