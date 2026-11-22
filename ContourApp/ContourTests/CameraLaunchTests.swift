@@ -418,6 +418,7 @@ struct CameraLaunchTests {
     func rescansUntilReady() async {
         let surface = ScanSequence([.success(missingTimeCook), .success(everyKey), .success(everyKey)])
         let model = makeModel(pipeline(surface: surface))
+        model.scanBudget = .seconds(600)
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()
@@ -435,6 +436,7 @@ struct CameraLaunchTests {
             .success(everyKey),
         ])
         let model = speakingModel(pipeline(surface: surface), speaker: speaker)
+        model.scanBudget = .seconds(600)
         await model.setActive(true).value
         model.scan()
         await model.waitForWork()

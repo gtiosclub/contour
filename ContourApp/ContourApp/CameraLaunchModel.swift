@@ -210,7 +210,8 @@ final class CameraLaunchModel {
     /// A scan takes up to this many photos, and no more once the next one would
     /// likely end after `scanBudget`.
     static let scanPhotos = 3
-    static let scanBudget: Duration = .seconds(6)
+    /// Tests that count photos raise this, so a slow machine can't cut them short.
+    var scanBudget: Duration = .seconds(6)
 
     func scan() {
         guard ready else { return }
@@ -277,7 +278,7 @@ final class CameraLaunchModel {
             }
             if best.map({ attempt.rank >= $0.rank }) ?? true { best = attempt }
             if best?.isEnough == true
-                || started.duration(to: .now) + photoStarted.duration(to: .now) > Self.scanBudget { break }
+                || started.duration(to: .now) + photoStarted.duration(to: .now) > scanBudget { break }
         }
         guard let best else { throw CancellationError() }
         if let reference = best.reference, pipeline.panelReference?.photo.id != reference.photo.id {

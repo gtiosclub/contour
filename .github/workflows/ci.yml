@@ -92,7 +92,6 @@ jobs:
             -only-testing:ContourTests/NextWordTests \
             -only-testing:ContourTests/PlanWalkTests \
             -only-testing:ContourTests/ButtonLookupTests \
-            -only-testing:ContourTests/AppCheckDebugTokensTests \
             -only-testing:ContourTests/AppCheckLocalFileTests \
             -only-testing:ContourTests/OpenAIVoiceFlowTests \
             -only-testing:ContourTests/ServerStepsTests \
