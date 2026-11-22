@@ -33,6 +33,7 @@ struct CookTimeTests {
         ("a half minute", 30),
         ("heat it for 30 seconds", 30),
         ("cook for 2 minutes", 120),
+        ("2 minutes and 30 seconds", 150),
     ])
     func variations(said: String, total: Int) throws {
         let time = try #require(CookTime(said))
@@ -87,6 +88,13 @@ struct CookTimeTests {
         "cook my pizza half a minute",
         // Too big to convert.
         "99999999999999999999 seconds", "999999999999999999:00",
+        // A second time after a cook word.
+        "cook for 2 minutes, cook for 30 seconds", "heat it for 1 minute. heat it for 30 seconds.",
+        "2 minutes please 30 seconds",
+        // A unit or a half with nothing to count.
+        "hour", "minute", "1:30 hours", "cook for a minute, please, and a half",
+        // Half seconds can't be typed.
+        "30 seconds and a half", "a second and a half",
     ])
     func untrustedTimes(said: String) {
         #expect(CookTime(said) == nil)

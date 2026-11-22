@@ -35,7 +35,8 @@ public struct CookTime: Hashable, Sendable {
         var lastUnit: Double?             // the unit just read, so "and a half" can follow
         var smallest = Double.infinity    // each unit must be smaller than the last
         var afterMinutes = false
-
+        var ended = false                 // a cook word came after a time
+        
         // A number that never got a unit is seconds right after minutes
         // ("2 min 30"). Anywhere else it means we can't trust the time.
         func settle() -> Bool {
@@ -51,6 +52,8 @@ public struct CookTime: Hashable, Sendable {
         while i < words.count {
             let word = words[i]
             let next = i + 1 < words.count ? words[i + 1] : ""
+            // Once a time has ended at a cook word, only more cook words or "and" may follow.
+            if ended, !Self.cookWords.contains(word), word != "and" { return nil }
             if let clock = word.wholeMatch(of: /(\d{1,2}):([0-5]\d)/) {
                 // "1:30" is the whole time: nothing can come before or after it.
                 guard total == 0, number == nil, !half, let m = Int(clock.1), let s = Int(clock.2) else { return nil }
@@ -83,21 +86,21 @@ public struct CookTime: Hashable, Sendable {
             } else if let unit = Self.units[word] {
                 var count = number
                 if count == nil, half { count = 0.5 }
-                if count == nil, Self.singular.contains(word) { count = 1 }
-                if let count {
-                    guard unit < smallest else { return nil }   // "2 minutes, no, 3 minutes"
-                    total += count * unit
-                    smallest = unit
-                    lastUnit = unit
-                }
-                afterMinutes = unit == 60 && count != nil
+                // A lone "minute" is one only in "minute and a half".
+                if count == nil, Self.singular.contains(word), next == "and", Self.halfAt(words, i + 2) { count = 1 }
+                guard let count else { return nil }          // a lone "hour", or "1:30 hours"
+                guard unit < smallest else { return nil }    // "2 minutes, no, 3 minutes"
+                total += count * unit
+                smallest = unit
+                lastUnit = unit
+                afterMinutes = unit == 60
                 number = nil
                 half = false
             }   else if Self.cookWords.contains(word) {
-                // "for", "please" and the like end a time: "and a half" can't follow now.
-                guard settle() else { return nil }
+                // A cook word after a time ends it: "2 minutes please 30 seconds" is two times.
+                guard !half, settle() else { return nil }
+                if total > 0 { ended = true }
                 number = nil
-                half = false
                 lastUnit = nil
                 afterMinutes = false
             } else if !["and", "a", "an"].contains(word) {
@@ -105,9 +108,11 @@ public struct CookTime: Hashable, Sendable {
             }
             i += 1
         }
-        guard settle() else { return nil }
+        guard !half, settle() else { return nil }      // a "half" that never got its unit
+        // A half second can't be typed: nil rather than round it.
+        guard total == total.rounded() else { return nil }
         // "a second" or "one sec" means wait, not cook.
-        let seconds = Int(total.rounded())
+        let seconds = Int(total)
         guard seconds > 1 else { return nil }
         self.init(totalSeconds: seconds)
     }
@@ -136,6 +141,13 @@ public struct CookTime: Hashable, Sendable {
     
     /// The only other words a local cook time may have. Anything else goes to the planner.
     private static let cookWords: Set = ["cook", "heat", "warm", "reheat", "microwave", "for", "it", "please"]
+    
+    /// "half", "a half" or "one half" starts at `j`.
+    private static func halfAt(_ words: [String], _ j: Int) -> Bool {
+        guard j < words.count else { return false }
+        if halves.contains(words[j]) { return true }
+        return ["a", "an", "one"].contains(words[j]) && j + 1 < words.count && halves.contains(words[j + 1])
+    }
 
     /// "1.5", "forty" or "one.5" as a number.
     private static func value(_ word: String) -> Double? {
