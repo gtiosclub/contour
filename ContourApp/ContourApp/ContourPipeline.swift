@@ -298,18 +298,18 @@ final class ContourPipeline {
         }
     }
 
+    /// The same rules as the camera screen, in `AppLifecycle`: the background, or
+    /// audio taken by a call or Siri, ends guidance. Control Center, the end of an
+    /// interruption and a route change don't.
     private func observeInterruptions() {
-        for name in [UIApplication.willResignActiveNotification, AVAudioSession.interruptionNotification] {
-            NotificationCenter.default.publisher(for: name)
-                .receive(on: RunLoop.main)
-                .sink { [weak self] _ in MainActor.assumeIsolated { self?.interruptGuidance() } }
-                .store(in: &lifecycleObservers)
-        }
-        NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)
+        NotificationCenter.default.publisher(for: UIApplication.didEnterBackgroundNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in MainActor.assumeIsolated { self?.interruptGuidance() } }
+            .store(in: &lifecycleObservers)
+        NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
             .receive(on: RunLoop.main)
             .sink { [weak self] notification in
-                guard let reason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
-                      AVAudioSession.RouteChangeReason(rawValue: reason) == .oldDeviceUnavailable else { return }
+                guard AppLifecycle.audioWasTaken(notification.userInfo) else { return }
                 MainActor.assumeIsolated { self?.interruptGuidance() }
             }
             .store(in: &lifecycleObservers)
