@@ -32,7 +32,9 @@ struct KeypadReader: Sendable {
     /// How long the panel tiles and the whole read may take before the answer is dropped.
     var panelLimit: Duration = .seconds(2)
     var readLimit: Duration = .seconds(4)
-    /// How long the one Time Cook crop may take. It's extra, so it can't cost the rest.
+    /// How long the three Start crops, and then the box under the 9, may take.
+    /// They're extra, so they can't cost the rest.
+    var startLimit: Duration = .seconds(1)
     var timeCookLimit: Duration = .milliseconds(300)
 
     /// A cap ran out, so the answer is no longer wanted.
@@ -62,16 +64,17 @@ struct KeypadReader: Sendable {
             let started = ContinuousClock.now
             let image = try photo.cgImage()
             let size = CGSize(width: image.width, height: image.height)
+            let enlargement = Self.enlargement(for: size)
 
             let panelTiles = Self.tiles(of: Self.box(of: panel, in: size), across: 3, fraction: 0.5)
             var words = try await Self.within(self.panelLimit) {
-                try await self.words(in: image, tiles: panelTiles, scale: 3)
+                try await self.words(in: image, tiles: panelTiles, scale: 3 * enlargement)
             }
             var stage = 1
             var grid = Self.keypad(in: words, size: size)
             if grid == nil, !Self.digits(in: words).isEmpty {
                 let frame = CGRect(origin: .zero, size: size)
-                words += try await self.words(in: image, tiles: Self.tiles(of: frame, across: 5, fraction: 0.333), scale: 3)
+                words += try await self.words(in: image, tiles: Self.tiles(of: frame, across: 5, fraction: 0.333), scale: 3 * enlargement)
                 stage = 2
                 grid = Self.keypad(in: words, size: size)
             }
@@ -81,29 +84,29 @@ struct KeypadReader: Sendable {
                 return Reading(buttons: buttons, digitsRead: digitsRead, stage: stage, fit: grid != nil, added: false)
             }
             var merged = Self.merging(keys, into: buttons)
-            if TargetMatcher().match("start", in: SurfaceMap(buttons: merged, confidence: 1)) == nil {
-                var start = Self.startWord(in: words, grid: grid)
-                if start == nil {
-                    // Start is extra: crops that can't be read don't cost the digits.
-                    words += (try? await self.words(in: image, tiles: grid.startCrops(in: size), scale: 2)) ?? []
-                    start = Self.startWord(in: words, grid: grid)
-                }
-                if let start {
-                    merged += Self.startButton(on: start, size: size, panel: panel)
-                }
+            let needsStart = TargetMatcher().match("start", in: SurfaceMap(buttons: merged, confidence: 1)) == nil
+            let needsTimeCook = !Self.hasTimeCook(merged)
+            // Start and Time Cook are extra: crops that can't be read in their own time
+            // don't cost the digits, and each is only read if the read's cap can spare
+            // that time twice over. Their caps race the read's, and a timer can fire
+            // late: a Start cap due 0.1 s before the read's lost to it in a test.
+            if needsStart, Self.startWord(in: words, grid: grid) == nil,
+               self.readLimit - started.duration(to: .now) > self.startLimit * 2 {
+                words += await self.extraWords(in: image, tiles: grid.startCrops(in: size), scale: 2 * enlargement,
+                                               within: self.startLimit)
             }
-            if !Self.hasTimeCook(merged) {
-                var label = Self.timeCookLabel(in: words, grid: grid)
-                // Time Cook is extra too: no crop unless the read's own cap can spare it.
-                if label == nil, self.readLimit - started.duration(to: .now) > self.timeCookLimit * 2 {
-                    let crop = (try? await Self.within(self.timeCookLimit) {
-                        try await self.words(in: image, tiles: grid.timeCookCrop(in: size), scale: 2)
-                    }) ?? []
-                    label = Self.timeCookLabel(in: words + crop, grid: grid)
-                }
-                if let label {
-                    merged = Self.addingTimeCook(on: label, to: merged, size: size, panel: panel)
-                }
+            // The box under the 9, for either key.
+            if needsTimeCook && Self.timeCookLabel(in: words, grid: grid) == nil
+                || needsStart && Self.startWord(in: words, grid: grid) == nil,
+               self.readLimit - started.duration(to: .now) > self.timeCookLimit * 2 {
+                words += await self.extraWords(in: image, tiles: grid.timeCookCrop(in: size), scale: 2 * enlargement,
+                                               within: self.timeCookLimit)
+            }
+            if needsStart, let start = Self.startWord(in: words, grid: grid) {
+                merged += Self.startButton(on: start, size: size, panel: panel)
+            }
+            if needsTimeCook, let label = Self.timeCookLabel(in: words, grid: grid) {
+                merged = Self.addingTimeCook(on: label, to: merged, size: size, panel: panel)
             }
             return Reading(buttons: merged, digitsRead: digitsRead, stage: stage, fit: true, added: true)
         }
@@ -120,6 +123,17 @@ struct KeypadReader: Sendable {
                        width: box.width * fraction, height: box.height * fraction).integral
             }
         }
+    }
+
+    /// How much of the usual enlargement a frame of `size` gets. The tiles and crops
+    /// were measured on 720x1280 frames. The world tracking camera's are about
+    /// 1440x1920 with about the same view along the long side, so a key there is 1.5
+    /// times the pixels. Enlarged 2/3 as much, each tile reaches Vision at the size
+    /// it did on the measured frames, sharper, and costs about the same time. On
+    /// those frames scaled up 1.5 times and read at full enlargement, a read took
+    /// 0.92 s instead of 0.67 s, and the slowest ran out of time.
+    static func enlargement(for size: CGSize) -> Double {
+        min(1, 1280 / max(size.width, size.height))
     }
 
     /// The upright box around `quad`, kept on the image.
@@ -147,12 +161,17 @@ struct KeypadReader: Sendable {
         return words
     }
 
+    /// The words in `tiles`, or none if they can't be read within `limit`.
+    private func extraWords(in image: CGImage, tiles: [CGRect], scale: Double, within limit: Duration) async -> [LabelReader.Word] {
+        (try? await Self.within(limit) { try await self.words(in: image, tiles: tiles, scale: scale) }) ?? []
+    }
+
     private static func enlarged(_ image: CGImage, tile: CGRect, by scale: Double) throws -> CGImage {
         guard
             let cropped = image.cropping(to: tile),
             let space = CGColorSpace(name: CGColorSpace.sRGB),
             let context = CGContext(
-                data: nil, width: Int(Double(cropped.width) * scale), height: Int(Double(cropped.height) * scale),
+                data: nil, width: Int((Double(cropped.width) * scale).rounded()), height: Int((Double(cropped.height) * scale).rounded()),
                 bitsPerComponent: 8, bytesPerRow: 0, space: space,
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
             )
@@ -278,7 +297,8 @@ struct KeypadReader: Sendable {
         }
 
         /// The box under the 9 where the one microwave we have frames of prints Time
-        /// Cook. Elsewhere it reads nothing useful, and that only costs the one read.
+        /// Cook, and where many keypads have Start. Read for either key. Elsewhere it
+        /// reads nothing useful, and that only costs the one read.
         func timeCookCrop(in size: CGSize) -> [CGRect] {
             let centre = point(column: 2, row: 3.9)
             let width = 2.2 * hypot(columnStep.dx, columnStep.dy), height = 1.8 * hypot(rowStep.dx, rowStep.dy)
