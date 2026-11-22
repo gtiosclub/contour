@@ -851,7 +851,7 @@ private func accurateWorks(on photo: PanelPhoto) async throws -> Bool {
 }
 
 /// A busy machine shouldn't fail these on time. The caps have their own tests.
-private let unhurried = KeypadReader(panelLimit: .seconds(60), readLimit: .seconds(60), timeCookLimit: .seconds(20))
+private let unhurried = KeypadReader(panelLimit: .seconds(60), readLimit: .seconds(60), startLimit: .seconds(20), timeCookLimit: .seconds(20))
 
 @Test("a generated keypad gets ten keys on the right digits",
       .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
@@ -929,7 +929,7 @@ func cropCutsOffDelay() async throws {
         case 11: return try await LabelReader.recognize(start, level: level)
         default: return []
         }
-    }, panelLimit: .seconds(60), readLimit: .seconds(60))
+    }, panelLimit: .seconds(60), readLimit: .seconds(60), startLimit: .seconds(20))
 
     let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
     #expect(calls.value == 13)
@@ -1038,6 +1038,28 @@ func stuckTimeCookCropKeepsTheDigits() async throws {
     #expect(started.duration(to: .now) < .seconds(15))
 }
 
+@Test("Start crops that are stuck don't cost the digits",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func stuckStartCropsKeepTheDigits() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    // Nine panel tiles, then the first Start crop and the box under the 9 never
+    // come back. The read has 10 s, so the nine tiles fit on a busy machine.
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        return calls.value <= 9 ? try await LabelReader.recognize(image, level: level) : try await stuck(image, level)
+    }, panelLimit: .seconds(10), readLimit: .seconds(10), startLimit: .milliseconds(100), timeCookLimit: .milliseconds(100))
+    let started = ContinuousClock.now
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(reading.added)
+    #expect(reading.buttons.compactMap(\.label).sorted() == (0...9).map(String.init))
+    #expect(started.duration(to: .now) < .seconds(10))
+}
+
 @Test("no Time Cook crop when the read's cap can't spare it",
       .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
       TextRecognitionCheck.timeLimit)
@@ -1054,6 +1076,54 @@ func noTimeCookCropWithoutTheTime() async throws {
 
     #expect(calls.value == 12)
     #expect(reading.added)
+}
+
+@Test("no Start crops when the read's cap can't spare them, but the box under the 9 is still read",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func noStartCropsWithoutTheTime() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        return calls.value <= 9 ? try await LabelReader.recognize(image, level: level) : []
+    }, panelLimit: .seconds(60), readLimit: .seconds(60), startLimit: .seconds(31), timeCookLimit: .seconds(20))
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(calls.value == 10)
+    #expect(reading.added)
+}
+
+@Test("a Start the Start crops missed counts when the Time Cook crop reads it",
+      .enabled(if: TextRecognitionCheck.works, TextRecognitionCheck.skipReason),
+      TextRecognitionCheck.timeLimit)
+func startInTheTimeCookCrop() async throws {
+    let (photo, _) = try SyntheticPanel.keypadPhoto(below: nil)
+    guard try await accurateWorks(on: photo) else { return }
+
+    // Nine panel tiles, three Start crops that read nothing, then the Time Cook
+    // crop, which reads a Start like the one printed under the 9.
+    let start = try #require(try SyntheticPanel.keypadPhoto().photo.cgImage().cropping(to: CGRect(x: 360, y: 686, width: 180, height: 140)))
+    let calls = CallCount()
+    let reader = KeypadReader(recognizer: { image, level in
+        calls.add()
+        switch calls.value {
+        case 1...9: return try await LabelReader.recognize(image, level: level)
+        case 13: return try await LabelReader.recognize(start, level: level)
+        default: return []
+        }
+    }, panelLimit: .seconds(60), readLimit: .seconds(60), timeCookLimit: .seconds(20))
+    let reading = try await reader.read(in: photo, panel: .fullFrame, adding: [])
+
+    #expect(calls.value == 13)
+    #expect(reading.added)
+    let found = try #require(TargetMatcher().match("start", in: SurfaceMap(buttons: reading.buttons, confidence: 1))?.button)
+    // Under the 9 (450, 560) and below Timer (450, 630).
+    #expect(abs(found.bounds.center.x - 450.0 / 720) < 0.05)
+    #expect(found.bounds.center.y > 630.0 / 1280 && found.bounds.center.y < 780.0 / 1280)
+    #expect(!reading.buttons.contains { $0.label == "Time Cook" })
 }
 
 // MARK: - Recorded camera frames
