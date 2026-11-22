@@ -159,6 +159,16 @@ nonisolated struct CookTimePlan: Equatable {
         cookTimeKeys.filter { key(named: $0, in: map) == nil }
     }
 
+    /// Whether `map` has one clear key for every step of at least one cook time
+    /// the phone knows, so a minute and a half still works when only the 2 for
+    /// 2:00 wasn't read.
+    static func canGuideACookTime(on map: SurfaceMap) -> Bool {
+        let missing = missingKeys(in: map)
+        return CookTime.known.contains { time in
+            !(["Time Cook", "Start"] + time.digits.map(String.init)).contains(where: missing.contains)
+        }
+    }
+
     /// The one key a plan step called `name` goes to: Time Cook, Start, or the
     /// key labelled with exactly that digit.
     static func key(named name: String, in map: SurfaceMap) -> SurfaceMap.Button? {

@@ -129,8 +129,10 @@ final class CameraLaunchModel {
     /// has to hold for those too. While the text model is still loading, a scan
     /// gets no digit keys wherever the phone is, so then it says to wait.
     nonisolated static func readyStatus(for map: SurfaceMap, warmingUp: Bool = false) -> String {
+        guard !CookTimePlan.canGuideACookTime(on: map) else {
+            return "Panel ready. Cook times ready. Say a button name or choose one below."
+        }
         let missing = CookTimePlan.missingKeys(in: map)
-        guard !missing.isEmpty else { return "Panel ready. Cook times ready. Say a button name or choose one below." }
         let ready = "Panel ready. Say a button name or choose one below. "
         if warmingUp { return ready + "Cook times are still getting ready. Scan again in a moment." }
         return ready + "Cook times not ready, missing \(spoken(missing)). "
@@ -318,7 +320,7 @@ final class CameraLaunchModel {
             #endif
             try Task.checkCancellation()
             return ScanAttempt(reference: pipeline.panelReference, guidable: !map.buttons.isEmpty && pipeline.canGuide,
-                               missing: CookTimePlan.missingKeys(in: map), buttons: map.buttons.count,
+                               missing: CookTimePlan.canGuideACookTime(on: map) ? [] : CookTimePlan.missingKeys(in: map), buttons: map.buttons.count,
                                warmingUp: loading)
         } catch {
             guard let problem = ScanProblem.after(error) else { throw CancellationError() }

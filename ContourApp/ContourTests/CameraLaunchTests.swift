@@ -293,7 +293,7 @@ struct CameraLaunchTests {
         #expect(!pipeline.guidanceArrived)
     }
 
-    @Test("The ready message says whether every cook time can be guided, and what's missing")
+    @Test("The ready message says whether a cook time can be guided, and what's missing")
     func readyStatus() {
         let choose = "Say a button name or choose one below."
         let advice = " If this panel has them, hold the phone about a foot away and scan again."
@@ -305,6 +305,8 @@ struct CameraLaunchTests {
         #expect(CameraLaunchModel.readyStatus(for: all) == "Panel ready. Cook times ready. \(choose)")
         #expect(CameraLaunchModel.readyStatus(for: map("Start", "5"))
                 == "Panel ready. \(choose) Cook times not ready, missing Time Cook and the number keys.\(advice)")
+        // A minute and a half works without the 2, so a missing 2 isn't a reason to scan again.
+        #expect(CameraLaunchModel.readyStatus(for: map("Time Cook", "1", "3", "0", "Start")) == "Panel ready. Cook times ready. \(choose)")
         // One stray digit used to hide that the cook times couldn't be guided.
         #expect(CameraLaunchModel.readyStatus(for: map("Time Cook", "1", "Start"))
                 == "Panel ready. \(choose) Cook times not ready, missing \(["3", "0", "2"].formatted(.list(type: .and))).\(advice)")

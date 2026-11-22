@@ -222,6 +222,11 @@ struct CookTimePlanTests {
         #expect(CookTimePlan.missingKeys(in: noTimeCook) == ["Time Cook"])
         #expect(CookTimePlan.missingKeys(in: map(["Time Cook", "1", "3", "0", "Delay Start"])) == ["2", "Start"])
         #expect(CookTimePlan.missingKeys(in: .empty) == CookTimePlan.cookTimeKeys)
+        #expect(CookTimePlan.canGuideACookTime(on: microwave01))
+        #expect(CookTimePlan.canGuideACookTime(on: map(["Time Cook", "1", "3", "0", "Start"])), "1:30 and 0:30 need no 2")
+        #expect(!CookTimePlan.canGuideACookTime(on: map(["Time Cook", "1", "3", "0", "Delay Start"])), "No Start")
+        #expect(!CookTimePlan.canGuideACookTime(on: noTimeCook))
+        #expect(!CookTimePlan.canGuideACookTime(on: .empty))
     }
 
     @Test("no missing keys means every cook time makes a plan, and a missing key means one doesn't", arguments: [
