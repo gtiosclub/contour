@@ -69,14 +69,35 @@ public enum MockGuidance {
         )
     }
 
-    /// Half-sizes of the oval that counts as arrived on `button`, in panel units:
-    /// 45% of each side, so a key's zone stays inside the key and a neighbour's
-    /// center stays out of it. The floor keeps a thin word box holdable and the
-    /// cap stops an oversized box swallowing the panel. Guesses from one
-    /// microwave, simulated only; rough multi-step branch, not for merging.
+    /// Every number behind the arrival oval, in panel units, so they can be tuned
+    /// on a real microwave in one place. Guesses from one microwave, simulated
+    /// only; rough multi-step branch, not for merging.
+    ///
+    /// The other numbers that decide arrival live in ContourFeedback, which can't
+    /// see this package: the 0.01 dead zone (`deadZone` in
+    /// ExperienceDirectionInstruction.swift, where "Move slowly" replaces a
+    /// direction), and the 1.25 s hold and 0.5 s dropout limit (`duration` and
+    /// `maximumDropout` in GuidanceArrivalHold.swift). The dead zone is per axis
+    /// and in panel diagonals, so 0.01 is a square of 0.014 panel units either side
+    /// of the center. Where that square pokes out of a small oval (both half-sizes
+    /// under about 0.02), a finger just outside the oval hears "Move slowly" with
+    /// no direction to follow.
+    public enum ArrivalTuning {
+        /// Each half of the oval as a share of the key's width or height. Under
+        /// 0.5, a key's oval stays inside the key and off its neighbour's center.
+        public static let share = 0.45
+        /// The smallest half-size, so a thin word box is still holdable.
+        public static let floor = 0.015
+        /// The largest half-sizes, so an oversized box can't swallow the panel.
+        public static let widthCap = 0.12
+        public static let heightCap = 0.05
+    }
+
+    /// Half-sizes of the oval that counts as arrived on `button`, in panel units.
+    /// See `ArrivalTuning`.
     public static func arrivalZone(for button: SurfaceMap.Button) -> (x: Double, y: Double) {
-        (x: min(max(0.45 * button.bounds.width, 0.015), 0.12),
-         y: min(max(0.45 * button.bounds.height, 0.015), 0.05))
+        (x: min(max(ArrivalTuning.share * button.bounds.width, ArrivalTuning.floor), ArrivalTuning.widthCap),
+         y: min(max(ArrivalTuning.share * button.bounds.height, ArrivalTuning.floor), ArrivalTuning.heightCap))
     }
 
     /// Whether `fingertip` is inside `button`'s arrival oval.

@@ -52,7 +52,8 @@ struct ExperienceDirectionInstruction: Sendable {
         // zero. Never switch merely because the other axis becomes larger.
         // This tolerance uses distance-scaled offsets, not unit-vector components.
         // Rough multi-step branch: 0.02 left people on "Move slowly" outside the
-        // smaller arrival oval, with no direction to follow.
+        // smaller arrival oval, with no direction to follow. Tune it together
+        // with the oval: see MockGuidance.ArrivalTuning in ContourMocks.
         let deadZone = 0.01
         let horizontal: Direction = remaining.x >= 0 ? .right : .left
         let vertical: Direction = remaining.y >= 0 ? .down : .up
