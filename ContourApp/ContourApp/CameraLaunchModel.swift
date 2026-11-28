@@ -15,7 +15,9 @@ final class CameraLaunchModel {
     private(set) var listening = false
     private(set) var guiding = false
     private(set) var scanning = false
-    private let listen: @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard
+    private(set) var voiceTranscript = ""
+    private(set) var voiceLevel = 0.0
+    private let listen: VoiceRequest.Listener
     private var knownReferenceID: UUID?
     private var active = false
     private var work: Task<Void, Never>?
@@ -24,11 +26,18 @@ final class CameraLaunchModel {
     private var lifecycleID = UUID()
 
     init(camera: CameraService, pipeline: ContourPipeline,
-         listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard = { try await VoiceRequest().listen(for: $0) }) {
+         listenWithUpdates: @escaping VoiceRequest.Listener = { map, report in
+             try await VoiceRequest().listen(for: map, onProgress: report)
+         }) {
         self.camera = camera
         self.pipeline = pipeline
-        self.listen = listen
+        self.listen = listenWithUpdates
         knownReferenceID = pipeline.panelReference?.photo.id
+    }
+
+    convenience init(camera: CameraService, pipeline: ContourPipeline,
+                     listen: @escaping @MainActor (SurfaceMap) async throws -> VoiceRequest.Heard) {
+        self.init(camera: camera, pipeline: pipeline, listenWithUpdates: { map, _ in try await listen(map) })
     }
 
     /// Share visual instructions with the same policy that drives speech/haptics.
@@ -101,6 +110,8 @@ final class CameraLaunchModel {
         (pipeline.feedback as? LiveFeedbackEngine)?.stop()
         busy = false
         listening = false
+        voiceTranscript = ""
+        voiceLevel = 0
         guiding = false
         scanning = false
         let cleanup = Task {
@@ -148,20 +159,36 @@ final class CameraLaunchModel {
         guard ready, let map, pipeline.canGuide else { return }
         let referenceID = pipeline.panelReference?.photo.id
         replaceWork {
+            let voiceRequestID = self.requestID
             self.listening = true
-            self.status = "Listening. Say the name of a button on the panel."
-            let heard = try await self.listen(map)
-            self.listening = false
+            self.status = "Listening..."
+            let heard = try await self.listen(map) { update in
+                guard self.requestID == voiceRequestID, self.listening, !Task.isCancelled else { return }
+                switch update {
+                case .level(let level):
+                    self.voiceLevel = level
+                case .transcript(let text):
+                    self.voiceTranscript = text
+                }
+            }
             try Task.checkCancellation()
-            guard self.pipeline.panelReference?.photo.id == referenceID else { return }
+            self.listening = false
+            self.voiceLevel = 0
+            guard self.pipeline.panelReference?.photo.id == referenceID else {
+                self.voiceTranscript = ""
+                return
+            }
             guard !heard.text.isEmpty else {
+                self.voiceTranscript = ""
                 self.status = "Didn't hear anything. Try speaking again or choose a button below."
                 return
             }
             guard let button = heard.button else {
+                self.voiceTranscript = ""
                 self.status = "No button matching “\(heard.text)”. Try again or choose a button below."
                 return
             }
+            if self.voiceTranscript.isEmpty { self.voiceTranscript = heard.text }
             await self.guide(button, referenceID: referenceID)
         }
     }
@@ -194,7 +221,15 @@ final class CameraLaunchModel {
             await cleanup.value
             guard requestID == id, !Task.isCancelled, active else { return }
             defer {
-                if requestID == id { busy = false; listening = false; guiding = false }
+                if requestID == id {
+                    if listening {
+                        voiceTranscript = ""
+                        voiceLevel = 0
+                    }
+                    busy = false
+                    listening = false
+                    guiding = false
+                }
             }
             do { try await operation() }
             catch is CancellationError { }

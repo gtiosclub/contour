@@ -123,6 +123,37 @@ struct CameraLaunchTests {
         #expect(model.status.contains("Panel ready"))
     }
 
+    @Test("Voice progress appears during listening and late updates are ignored after Stop")
+    func liveVoiceProgress() async {
+        let gate = ListeningGate()
+        let model = CameraLaunchModel(camera: CameraService(), pipeline: pipeline(),
+                                      listenWithUpdates: { _, report in
+            report(.transcript("Sta"))
+            report(.level(0.65))
+            gate.started()
+            do { try await Task.sleep(for: .seconds(60)) }
+            catch {
+                report(.transcript("Stale result"))
+                report(.level(1))
+                throw error
+            }
+            return VoiceRequest.Heard(text: "", button: nil)
+        })
+        await model.setActive(true).value
+        model.scan()
+        await model.waitForWork()
+        model.sayAButton()
+        await gate.waitForStart()
+        #expect(model.listening && model.displayStatus == "Listening...")
+        #expect(model.voiceTranscript == "Sta")
+        #expect(model.voiceLevel == 0.65)
+
+        model.stop()
+        await model.waitForWork()
+        #expect(!model.listening && model.voiceTranscript.isEmpty)
+        #expect(model.voiceLevel == 0)
+    }
+
     @Test("Backgrounding cancels listening and foregrounding allows another request")
     func cancelAndResume() async {
         let gate = ListeningGate()

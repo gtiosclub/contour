@@ -28,6 +28,7 @@ import ContourUI
 import Observation
 import SurfaceUnderstanding
 import SwiftUI
+import Synchronization
 import Tracking
 
 /// Holds one implementation of each protocol and runs a guidance session.
@@ -54,6 +55,9 @@ final class ContourPipeline {
     private(set) var hybridStatus: HybridTrackingDiagnostics?
     let guidanceStatus = GuidanceStatusDisplay()
     private(set) var guidanceArrived = false
+    private(set) var guidancePreviewID: UInt64?
+    @ObservationIgnored private(set) var guidanceTargetFrame: GuidanceTargetFrame?
+    @ObservationIgnored private var guidanceSamples: GuidanceCameraSamples?
     @ObservationIgnored private var lifecycleObservers: Set<AnyCancellable> = []
     private var generation: UInt64 = 0
     private var guidanceTask: Task<Void, Never>?
@@ -139,14 +143,16 @@ final class ContourPipeline {
         let options = FeatureTrackingOptions()
         // The live factory supports every method; use it for the initial session
         // as well as later settings changes and independent diagnostics.
-        return ContourPipeline(
+        let samples = GuidanceCameraSamples()
+        let pipeline = ContourPipeline(
             surfaceUnderstanding: LiveSurfaceUnderstanding(),
             tracking: GuidanceSessionFactories.productionSource(camera: camera, method: method,
-                options: options),
-            feedback: LiveFeedbackEngine(),
-            liveComponents: Set(Component.allCases), sessionFactory: GuidanceSessionFactories.production,
+                options: options, onSample: { samples.set($0) }),
+            feedback: LiveFeedbackEngine(), liveComponents: Set(Component.allCases), sessionFactory: GuidanceSessionFactories.production,
             sessionCamera: camera, trackingMethod: method, featureOptions: options
         )
+        pipeline.guidanceSamples = samples
+        return pipeline
     }
 
     /// Independent UI work supplies scripted sessions; assembly supplies the
@@ -154,10 +160,13 @@ final class ContourPipeline {
     static func live(camera: any CameraFrameSource, sessionFactory: @escaping GuidanceSessionFactory,
                      method: PanelTrackingMethod = .hybrid,
                      options: FeatureTrackingOptions = FeatureTrackingOptions()) throws -> ContourPipeline {
-        ContourPipeline(surfaceUnderstanding: LiveSurfaceUnderstanding(),
-            tracking: try sessionFactory(camera, method, options, nil),
+        let samples = GuidanceCameraSamples()
+        let pipeline = ContourPipeline(surfaceUnderstanding: LiveSurfaceUnderstanding(),
+            tracking: try sessionFactory(camera, method, options, { samples.set($0) }),
             feedback: LiveFeedbackEngine(), liveComponents: Set(Component.allCases), sessionFactory: sessionFactory,
             sessionCamera: camera, trackingMethod: method, featureOptions: options)
+        pipeline.guidanceSamples = samples
+        return pipeline
     }
 
     // MARK: Session
@@ -245,13 +254,15 @@ final class ContourPipeline {
             if let sessionCamera {
                 // A new factory call owns a new tracker. Diagnostics makes its
                 // own call with these settings and never shares this session.
-                let candidate = try sessionFactory(sessionCamera, trackingMethod, featureOptions, nil)
+                let samples = GuidanceCameraSamples()
+                let candidate = try sessionFactory(sessionCamera, trackingMethod, featureOptions, { samples.set($0) })
                 if let reference { await candidate.use(reference) }
                 guard generation == request, !Task.isCancelled else {
                     await candidate.stop()
                     return
                 }
                 tracking = candidate
+                guidanceSamples = samples
             } else if let reference, let live = tracking as? any GuidanceTrackingSession {
                 await live.use(reference)
                 guard generation == request, !Task.isCancelled else { return }
@@ -282,6 +293,7 @@ final class ContourPipeline {
     }
 
     private func cancelGuidance() async {
+        clearGuidancePreview()
         let request = generation
         let old = guidanceTask
         // Also clear completed arrival effects when there is no running task.
@@ -321,6 +333,7 @@ final class ContourPipeline {
         let retiring = tracking as? any GuidanceTrackingSession
         retiringGuidance = true
         guidanceTask?.cancel()
+        clearGuidancePreview()
         (feedback as? LiveFeedbackEngine)?.stop()
         guidanceStatus.reset(to: .stopped)
         Task {
@@ -359,6 +372,8 @@ final class ContourPipeline {
         trackingError = nil
         guidanceStatus.reset()
         let source = tracking
+        guidanceSamples?.set(nil)
+        guidancePreviewID = session
         let task = Task { await self.runGuidance(to: target, session: session, source: source) }
         guidanceTask = task
         guidanceGeneration = session
@@ -373,14 +388,28 @@ final class ContourPipeline {
         }
     }
 
+    private func clearGuidancePreview() {
+        guidancePreviewID = nil
+        guidanceTargetFrame = nil
+        guidanceSamples?.set(nil)
+    }
+
     private func runGuidance(to target: SurfaceMap.Button, session: UInt64,
                              source: any TrackingSource) async {
+        defer {
+            if guidancePreviewID == session { clearGuidancePreview() }
+        }
         var announced: OutcomeSignal?
         var loss = GuidanceLossEpisode()
         var arrivalHold = GuidanceArrivalHold()
         var arrived = false
         for await frame in source.frames() {
             if Task.isCancelled || generation != session { break }
+            if let sample = guidanceSamples?.get(), sample.frame.timestamp >= frame.timestamp {
+                guidanceTargetFrame = GuidanceTargetFrame(sample: sample, target: target, sessionID: session)
+            } else {
+                guidanceTargetFrame = nil
+            }
             if let live = source as? any GuidanceTrackingSession {
                 let failure = await live.registrationError()
                 let status = await live.hybridStatus()
@@ -433,6 +462,19 @@ final class ContourPipeline {
             // running.
             await feedback.present(GuidanceState(timestamp: Date(), vector: nil))
         }
+    }
+}
+
+/// Tracking writes on its worker actor. The app only retains the newest sample.
+private nonisolated final class GuidanceCameraSamples: Sendable {
+    private let latest = Mutex<LiveTrackingSample?>(nil)
+
+    func set(_ sample: LiveTrackingSample?) {
+        latest.withLock { $0 = sample }
+    }
+
+    func get() -> LiveTrackingSample? {
+        latest.withLock { $0 }
     }
 }
 

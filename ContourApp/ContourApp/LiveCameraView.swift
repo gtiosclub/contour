@@ -5,7 +5,6 @@
 //  Created by Evan on 9/26/26.
 //
 
-import AVFoundation
 import ContourCore
 import ContourFeedback
 import SwiftUI
@@ -23,12 +22,7 @@ struct LiveCameraView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var didLaunch = false
     @State private var cameraLaunchUnavailable = false
-    @State private var launchProgress: CGFloat = 0
-    @State private var primaryDetached = false
-    @State private var headerIsRegular = false
     @State private var headerBounds: CGRect = .zero
-    @State private var selectionVisible = false
-    @State private var selectionProgress: CGFloat = 0
     @State private var displayedButtons: [SurfaceMap.Button] = []
     @State private var displayedReferenceID: UUID?
     @State private var scanWasInFlight = false
@@ -36,21 +30,18 @@ struct LiveCameraView: View {
     @State private var panelDetent: PanelDetent = .collapsed
     @State private var namedRowHeight: CGFloat = 52
     @State private var allControlsHeight: CGFloat = 140
+    @State private var dockActionsHeight: CGFloat = 110
     // Keep the last finger-driven height until the snap transaction commits.
     // GestureState resets before onEnded and used to briefly reopen the panel.
     @State private var panelDragHeight: CGFloat?
     @State private var panelDragStartHeight: CGFloat?
-    @State private var selectionLabelVisible = false
-    @State private var selectionMotionID = UUID()
     @State private var headerActionsBounds: CGRect = .zero
-    @State private var headerSeparationProgress: CGFloat = 0
 
     private enum PanelLayout {
         // Three stops: Display buttons, named buttons (default expansion), then all buttons.
-        static let collapsedWidth: CGFloat = 180
-        static let collapsedHeight: CGFloat = 56
+        static let primaryDiameter: CGFloat = 80
+        static let accessoryDiameter: CGFloat = 62
         static let edgeInset: CGFloat = 8
-        static let buttonGap: CGFloat = 24
         static let grabberHeight: CGFloat = 32
     }
 
@@ -88,12 +79,8 @@ struct LiveCameraView: View {
     }
 
     private enum MotionTiming {
-        // Delay in seconds before the primary button separates from the header.
-        static let launchDelaySeconds: Double = 1
-        // Shared duration in seconds for glass separation, expansion, and collapse.
+        // Shared timing for glass transitions.
         static let animationDurationSeconds: Double = 0.45
-        // Delay after separation before the header changes from clear to regular.
-        static let headerMaterialDelaySeconds: Double = 0.5
     }
 
     private struct SelectionAnimationKey: Equatable {
@@ -104,24 +91,16 @@ struct LiveCameraView: View {
         let reduceMotion: Bool
     }
 
-    private struct HeaderAnimationKey: Equatable {
-        let available: Bool
-        let reduceMotion: Bool
-    }
-
     private var glassAnimation: Animation? {
         reduceMotion ? nil : .smooth(duration: MotionTiming.animationDurationSeconds)
     }
 
-    /// Match the primary button's clear material while attached; only the header
-    /// becomes regular after separation and its material delay. All header elements share this phase.
-    private var headerGlass: Glass {
-        headerIsRegular ? .regular : .clear
-    }
+    /// Header controls share the same material as the status card.
+    private let headerGlass: Glass = .regular
 
     private var selectionAnimationKey: SelectionAnimationKey {
         SelectionAnimationKey(
-            referenceID: primaryDetached
+            referenceID: didLaunch
                 ? (experience.scanning ? displayedReferenceID
                    : pipeline.canGuide && !(experience.map?.buttons.isEmpty ?? true)
                        ? pipeline.panelReference?.photo.id : nil)
@@ -133,27 +112,30 @@ struct LiveCameraView: View {
     @State private var showDeveloperTools = false
     #endif
 
-    private var primaryTitle: String {
-        if experience.busy { return "Stop" }
-        if !experience.ready { return "Retry camera" }
-        return hasSelectionContent ? "Say a button" : "Scan panel"
+    private var canRetryCamera: Bool {
+        cameraLaunchUnavailable || (!experience.ready && (didLaunch || experience.error != nil))
     }
 
-    // A simulator caption alone is not content: keep the lower glass absent
-    // until scanning (or a prepared reference) produces something actionable.
-    private var hasSelectionContent: Bool {
-        experience.hasSelectionContent
+    private var primaryAction: (title: String, symbol: String, hint: String) {
+        if experience.busy {
+            return ("Stop", "stop.fill", "Cancels the current scan, microphone, or guidance.")
+        }
+        if canRetryCamera {
+            return ("Retry camera", "arrow.clockwise", "Tries to start the camera again.")
+        }
+        if didLaunch && experience.hasSelectionContent {
+            return ("Say a button", "microphone.fill", "Listens for a button name for up to eight seconds.")
+        }
+        return ("Scan panel", "camera.viewfinder", "Photographs and identifies the panel's buttons.")
     }
 
     private var orderedButtons: [SurfaceMap.Button] {
-        // SurfaceMap explicitly has no reading-order guarantee.
-        (experience.map?.buttons ?? []).enumerated().sorted { lhs, rhs in
-            let left = lhs.element.bounds.origin
-            let right = rhs.element.bounds.origin
-            if left.y != right.y { return left.y < right.y }
-            if left.x != right.x { return left.x < right.x }
-            return lhs.offset < rhs.offset
-        }.map(\.element)
+        // Stable sorting preserves map order for buttons at the same origin.
+        (experience.map?.buttons ?? []).sorted {
+            let lhs = $0.bounds.origin
+            let rhs = $1.bounds.origin
+            return (lhs.y, lhs.x) < (rhs.y, rhs.x)
+        }
     }
 
     private func readableLabel(for button: SurfaceMap.Button) -> String? {
@@ -179,8 +161,8 @@ struct LiveCameraView: View {
     }
 
     private var canRescan: Bool {
-        // The center button already handles first scan, empty results and unclear outlines.
-        primaryDetached && experience.ready && hasSelectionContent && !experience.busy
+        // The primary button already handles first scan, empty results and unclear outlines.
+        didLaunch && experience.ready && experience.hasSelectionContent && !experience.busy
             && !experience.scanning && !experience.listening && !experience.guiding
     }
 
@@ -190,9 +172,9 @@ struct LiveCameraView: View {
         static let spacing: CGFloat = 8
         static var width: CGFloat {
             #if DEBUG
-            buttonSize * 3 + spacing * 2
-            #else
             buttonSize * 2 + spacing
+            #else
+            buttonSize
             #endif
         }
     }
@@ -213,22 +195,13 @@ struct LiveCameraView: View {
             .labelStyle(.iconOnly)
             .font(.title3)
             .glassForeground()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Keep all controls alive and animate their positions for native proximity morphing.
-    /// Native glass button styles own the only material and the foreground artwork.
     private var headerActions: some View {
         let diameter = HeaderActionsLayout.buttonSize
-        let centerY = diameter / 2
-        let step = diameter + HeaderActionsLayout.spacing
         let sourceX = HeaderActionsLayout.width - diameter / 2
-        #if DEBUG
-        let settingsX = sourceX - step
-        #else
-        let settingsX = sourceX
-        #endif
-        let rescanX = settingsX - step * headerSeparationProgress
-        let rescanReady = canRescan && headerSeparationProgress == 1
+        let settingsX = diameter / 2
 
         return GlassEffectContainer(spacing: HeaderActionsLayout.spacing) {
             ZStack {
@@ -241,192 +214,37 @@ struct LiveCameraView: View {
                     }
                 } label: {
                     headerActionLabel("Developer tools", symbol: "wrench.and.screwdriver")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .buttonStyle(.glass(headerGlass))
-                .buttonBorderShape(.circle)
-                .buttonSizing(.flexible)
-                .frame(width: diameter, height: diameter)
-                .glassEffectID("developer-tools", in: headerActionsNamespace)
-                .glassEffectTransition(.identity)
-                .position(x: sourceX, y: centerY)
+                .headerGlassControl(headerGlass, id: "developer-tools", in: headerActionsNamespace,
+                                    diameter: diameter, x: sourceX)
                 .accessibilityHint("Stops current work and opens the developer tools.")
                 #endif
 
                 Button { showFeedbackSettings = true } label: {
                     headerActionLabel("Feedback settings", symbol: "slider.horizontal.3")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .buttonStyle(.glass(headerGlass))
-                .buttonBorderShape(.circle)
-                .buttonSizing(.flexible)
-                .frame(width: diameter, height: diameter)
-                .glassEffectID("feedback-settings", in: headerActionsNamespace)
-                .glassEffectTransition(.identity)
-                .position(x: settingsX, y: centerY)
+                .headerGlassControl(headerGlass, id: "feedback-settings", in: headerActionsNamespace,
+                                    diameter: diameter, x: settingsX)
                 .accessibilityHint("Adjusts sound, voice, and vibration feedback.")
-
-                // Rescan separates leftward from Settings using the shared native glass container.
-                Button {
-                    guard rescanReady else { return }
-                    scanPanel()
-                } label: {
-                    headerActionLabel("Scan again", symbol: "arrow.clockwise")
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .opacity(headerSeparationProgress)
-                }
-                .buttonStyle(.glass(headerGlass))
-                .buttonBorderShape(.circle)
-                .buttonSizing(.flexible)
-                .frame(width: diameter, height: diameter)
-                .glassEffectID("rescan", in: headerActionsNamespace)
-                .glassEffectTransition(.identity)
-                .position(x: rescanX, y: centerY)
-                .allowsHitTesting(rescanReady)
-                .accessibilityHidden(!rescanReady)
-                .accessibilityHint("Scans a new panel.")
             }
         }
         .frame(width: HeaderActionsLayout.width, height: diameter)
         .accessibilitySortPriority(3)
     }
 
-    var body: some View {
+    private var cameraControls: some View {
         GeometryReader { geo in
-            let buttonSize = min(210, geo.size.height * 0.5)
-            // Translate the full screen's center into this safe-area coordinate space.
-            let fullHeight = geo.size.height + geo.safeAreaInsets.top + geo.safeAreaInsets.bottom
-            let buttonCenterY = fullHeight / 2 - geo.safeAreaInsets.top
-            let panelTopLimit = buttonCenterY + buttonSize / 2 + PanelLayout.buttonGap
-            let statusHeight = max(0, buttonCenterY - buttonSize / 2 - 24 - 8)
-            let primarySize = 56 + (buttonSize - 56) * launchProgress
-            // Keep the waiting circle fully inside the header instead of touching
-            // its lower edge, where the native button's material could protrude.
-            let sourceCenterY = headerBounds.isEmpty ? min(160, statusHeight) / 2 + 8 : headerBounds.midY
-            let dockY = min(buttonCenterY, sourceCenterY)
-            let primaryX = geo.size.width / 2 // The card and button share this fixed centerline.
-            let primaryY = dockY + (buttonCenterY - dockY) * launchProgress
-            let panelWidth = max(0, geo.size.width - PanelLayout.edgeInset * 2)
-            // Extend below the safe area, leaving the same inset from the physical edges.
-            let panelBottom = geo.size.height + geo.safeAreaInsets.bottom - PanelLayout.edgeInset
-            let maximumPanelHeight = max(0, panelBottom - panelTopLimit)
-            let bottomPadding = max(16, geo.safeAreaInsets.bottom)
-            let namedButtons = displayedButtons.filter { readableLabel(for: $0) != nil }
-            let unlabelledButtons = displayedButtons.filter { readableLabel(for: $0) == nil }
-            let namedPanelHeight = min(maximumPanelHeight,
-                                       namedRowHeight + PanelLayout.grabberHeight + bottomPadding)
-            let allPanelHeight = min(maximumPanelHeight,
-                                     max(namedPanelHeight, allControlsHeight + PanelLayout.grabberHeight + bottomPadding))
-            let collapsedHeight = min(PanelLayout.collapsedHeight, maximumPanelHeight)
-            let restingHeight = panelDetent == .collapsed ? collapsedHeight
-                : panelDetent == .named ? namedPanelHeight : allPanelHeight
-            let panelHeight = min(allPanelHeight,
-                                  max(collapsedHeight, panelDragHeight ?? restingHeight))
-            let expansion = min(1, max(0, (panelHeight - collapsedHeight)
-                                          / max(1, namedPanelHeight - collapsedHeight)))
-            let collapsedWidth = min(PanelLayout.collapsedWidth, panelWidth)
-            let targetWidth = collapsedWidth + (panelWidth - collapsedWidth) * expansion
-            let targetBottom = panelBottom - bottomPadding * (1 - expansion)
-            let selectionWidth = 56 + (targetWidth - 56) * selectionProgress
-            let selectionHeight = 56 + (panelHeight - 56) * selectionProgress
-            let selectionDockY = buttonCenterY + buttonSize / 2 - 28
-            let selectionY = selectionDockY
-                + (targetBottom - panelHeight / 2 - selectionDockY) * selectionProgress
-            // Resolve screen-relative corners with the system's concentric geometry.
-            let panelShape = ConcentricRectangle(corners: .concentric(
-                minimum: .fixed(28 + 4 * selectionProgress)), isUniform: true)
-
-            let selectionReady = selectionProgress == 1 && hasSelectionContent
-                && !experience.scanning && displayedReferenceID == pipeline.panelReference?.photo.id
-            // Hiding the label during a drag must not disable the gesture mid-touch.
-            let selectionInputReady = selectionReady && (selectionLabelVisible || panelDragHeight != nil)
-
+            let statusHeight = max(0, (geo.size.height + geo.safeAreaInsets.bottom - geo.safeAreaInsets.top) / 2
+                                   - min(210, geo.size.height * 0.5) / 2 - 32)
             ZStack {
-                // The primary control uses native button glass. The lower shell keeps
-                // its verified explicit glass effect and separate foreground unchanged.
-                GlassEffectContainer(spacing: 12) {
-                    ZStack {
-                        if !headerBounds.isEmpty {
-                            Color.clear
-                                .frame(width: headerBounds.width, height: headerBounds.height)
-                                .glassEffect(headerGlass, in: .rect(cornerRadius: 32))
-                                .glassEffectID("status", in: glassNamespace)
-                                .position(x: headerBounds.midX, y: headerBounds.midY)
-                                .allowsHitTesting(false)
-                                .accessibilityHidden(true)
-                        }
-
-                        Button {
-                            if experience.busy { experience.stop() }
-                            else if !experience.ready { experience.setActive(true) }
-                            else if !hasSelectionContent { scanPanel() }
-                            else { experience.sayAButton() }
-                        } label: {
-                            // Hidden text must not impose its full intrinsic size on the docked circle.
-                            Text(primaryDetached ? primaryTitle : "")
-                                .font(.title.bold())
-                                .glassForeground()
-                                .multilineTextAlignment(.center)
-                                .padding(24 * launchProgress)
-                                .contentTransition(.identity)
-                                .transaction { $0.animation = nil }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                                .opacity(primaryDetached ? 1 : 0)
-                        }
-                        .buttonStyle(.glass(.clear))
-                        .buttonBorderShape(.circle)
-                        .buttonSizing(.flexible)
-                        .frame(width: primarySize, height: primarySize)
-                        .glassEffectID("primary", in: glassNamespace)
-                        .glassEffectTransition(.identity)
-                        .opacity(headerBounds.isEmpty ? 0 : 1)
-                        .contentShape(Circle())
-                        .accessibilityLabel(primaryTitle)
-                        .accessibilityHint(experience.busy ? "Cancels the current scan, microphone, or guidance."
-                                           : !experience.ready ? "Tries to start the camera again."
-                                           : !hasSelectionContent ? "Photographs and identifies the panel's buttons."
-                                           : "Listens for a button name for up to eight seconds.")
-                        .accessibilitySortPriority(2)
-                        .allowsHitTesting(primaryDetached)
-                        .accessibilityHidden(!primaryDetached)
-                        .position(x: primaryX, y: primaryY)
-                        .zIndex(1)
-
-                        if selectionVisible {
-                            // Keep this button and its material alive at every detent.
-                            // Replacing a styled button with a decorative glass view caused
-                            // an extra native hierarchy transition and a visible flash.
-                            Button {
-                                guard panelDetent == .collapsed, panelDragHeight == nil else { return }
-                                animateSelection { panelDetent = defaultExpandedDetent }
-                            } label: {
-                                Color.clear
-                                    .frame(width: selectionWidth, height: selectionHeight)
-                                    .glassEffect(.clear, in: panelShape)
-                                    .glassEffectID("selection", in: glassNamespace)
-                                    .glassEffectTransition(.identity)
-                                    .contentShape(panelShape)
-                            }
-                            // Avoid a second button-style material over the morphing shell.
-                            .buttonStyle(.plain)
-                            .contentShape(panelShape)
-                            .simultaneousGesture(panelResizeGesture(
-                                restingHeight: restingHeight, collapsedHeight: collapsedHeight,
-                                allHeight: allPanelHeight))
-                            .disabled(!selectionReady)
-                            .allowsHitTesting(selectionInputReady && panelDetent == .collapsed)
-                            .accessibilityHidden(!selectionInputReady || panelDetent != .collapsed)
-                            .accessibilityLabel("Display buttons")
-                            .accessibilityHint("Tap or drag up to expand the detected button list.")
-                            .position(x: primaryX, y: selectionY)
-                            .transition(.identity)
-                        }
-                    }
-                    .frame(width: geo.size.width, height: geo.size.height)
+                if !headerBounds.isEmpty {
+                    Color.clear
+                        .frame(width: headerBounds.width, height: headerBounds.height)
+                        .glassEffect(headerGlass, in: .rect(cornerRadius: 32))
+                        .position(x: headerBounds.midX, y: headerBounds.midY)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
-
-                // Header controls use native button styling independently of the
-                // decorative status/primary/menu material container above.
                 if !headerActionsBounds.isEmpty {
                     headerActions
                         .position(x: headerActionsBounds.midX, y: headerActionsBounds.midY)
@@ -442,203 +260,280 @@ struct LiveCameraView: View {
                 .padding(.top, 8)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
 
-                if selectionVisible {
-                    VStack(spacing: 0) {
-                        panelGrabber(restingHeight: restingHeight, collapsedHeight: collapsedHeight,
-                                     allHeight: allPanelHeight)
-                        selectionControls(namedButtons: namedButtons,
-                                          unlabelledButtons: unlabelledButtons,
-                                          showUnlabelled: panelDetent == .all || (panelDragHeight != nil
-                                              && (namedButtons.isEmpty || panelHeight > namedPanelHeight)))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
-                                allControlsHeight = $0
-                            }
-                    }
-                    .padding(.horizontal, 20)
-                    .frame(width: panelWidth, alignment: .top)
-                    .frame(width: selectionWidth, height: selectionHeight, alignment: .top)
-                    .clipShape(panelShape)
-                    // Geometry drives the crossfade during a drag; the same values
-                    // animate to their endpoints when the panel snaps to a detent.
-                    .opacity(expansion * selectionProgress)
-                    .allowsHitTesting(selectionReady && panelDetent != .collapsed)
-                    .disabled(!selectionReady)
-                    .accessibilityHidden(!selectionReady || panelDetent == .collapsed)
-                    .position(x: primaryX, y: selectionY)
-                    .transition(.identity)
-
-                    Text("Display buttons")
-                        .font(.headline)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .glassForeground()
-                        .frame(width: selectionWidth, height: selectionHeight)
-                        .clipShape(panelShape)
-                        .opacity(selectionLabelVisible ? 1
-                                 : panelDragHeight != nil && selectionReady ? 1 - expansion : 0)
-                        .position(x: primaryX, y: selectionY)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                        .transition(.identity)
-                }
+                bottomControls(in: geo)
             }
             .frame(width: geo.size.width, height: geo.size.height)
             .coordinateSpace(name: "launch-controls-layout")
         }
-        .background { cameraBackground }
-        .buttonStyle(.glass)
-        .preferredColorScheme(.dark)
-        #if DEBUG
-        .sheet(isPresented: $showDeveloperTools) {
-            NavigationStack { DebugMenu(camera: camera, pipeline: pipeline) }
-        }
-        #endif
-        .sheet(isPresented: $showFeedbackSettings) { FeedbackSettingsView() }
-        .sheet(isPresented: $showMessageDetails) {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(experience.displayStatus)
-                        if experience.guiding {
-                            GuidanceStatusRow(snapshot: pipeline.guidanceStatus.current)
+    }
+
+    private func bottomControls(in geo: GeometryProxy) -> some View {
+        let gap: CGFloat = 12
+        let inset = PanelLayout.edgeInset
+        let bottom = geo.size.height + geo.safeAreaInsets.bottom - inset
+        // The tray already ends one inset above the screen edge.
+        let bottomPadding = max(0, geo.safeAreaInsets.bottom - inset) + 4
+        let width = max(0, geo.size.width - 2 * inset)
+        let hasChoices = !displayedButtons.isEmpty
+        let choicesReady = experience.hasSelectionContent && !experience.scanning
+            && displayedReferenceID == pipeline.panelReference?.photo.id
+        let grabberHeight = hasChoices ? PanelLayout.grabberHeight : 0
+        let available = max(0, bottom - headerBounds.maxY - dockActionsHeight - bottomPadding - gap - grabberHeight)
+        let namedHeight = min(available, namedRowHeight + 16)
+        let allHeight = min(available, max(namedHeight, allControlsHeight + 16))
+        let canDisplayButtons = choicesReady && allHeight > 0
+        let restingHeight = panelDetent == .collapsed ? 0 : panelDetent == .named ? namedHeight : allHeight
+        let height = hasChoices ? min(allHeight, max(0, panelDragHeight ?? restingHeight)) : 0
+        let expansion = min(1, height / max(1, namedHeight))
+        let panelShape = ConcentricRectangle(corners: .concentric(minimum: .fixed(32)), isUniform: true)
+
+        return VStack(spacing: 0) {
+            if hasChoices {
+                panelGrabber(restingHeight: restingHeight, collapsedHeight: 0, allHeight: allHeight)
+                    .opacity(canDisplayButtons ? 1 : 0)
+                    .allowsHitTesting(canDisplayButtons)
+                    .accessibilityHidden(!canDisplayButtons)
+
+                let named = displayedButtons.filter { readableLabel(for: $0) != nil }
+                let unlabelled = displayedButtons.filter { readableLabel(for: $0) == nil }
+                let showsUnlabelled = !unlabelled.isEmpty
+                    && (panelDetent == .all || named.isEmpty || height > namedHeight)
+                ScrollView(.vertical) {
+                    selectionControls(namedButtons: named, unlabelledButtons: unlabelled,
+                                      showUnlabelled: showsUnlabelled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                            allControlsHeight = $0
                         }
-                        if let error = experience.error { Text(error).foregroundStyle(.red) }
+                        // Keep the full detent measured without scrolling into its hidden row.
+                        .frame(height: showsUnlabelled ? nil : namedRowHeight, alignment: .top)
+                }
+                .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+                .padding(.horizontal, 20)
+                .frame(width: width, height: height, alignment: .top)
+                .clipped()
+                .contentShape(.interaction, Rectangle())
+                .opacity(expansion)
+                .disabled(!choicesReady)
+                .allowsHitTesting(height > 0 && choicesReady)
+                .accessibilityHidden(height == 0 || !choicesReady)
+            }
+
+            dockActions(width: width, restingHeight: restingHeight, allHeight: allHeight,
+                        showsDisplayButton: hasChoices && panelDetent == .collapsed,
+                        canDisplayButtons: canDisplayButtons)
+                .padding(.top, 10)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { dockActionsHeight = $0 }
+        }
+        .padding(.bottom, bottomPadding)
+        .frame(width: width)
+        .background {
+            Color.clear
+                .glassEffect(.clear, in: panelShape)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+        .frame(width: geo.size.width, height: geo.size.height, alignment: .bottom)
+        .offset(y: geo.safeAreaInsets.bottom - inset)
+    }
+
+    private func dockActions(width: CGFloat, restingHeight: CGFloat, allHeight: CGFloat,
+                             showsDisplayButton: Bool, canDisplayButtons: Bool) -> some View {
+        let slotWidth = min(96, width / 3)
+        let mainDiameter = min(PanelLayout.primaryDiameter, slotWidth)
+        let sideDiameter = min(PanelLayout.accessoryDiameter, slotWidth)
+        let glassSpacing = max(0, slotWidth - (mainDiameter + sideDiameter) / 2)
+        let centerX = width / 2
+        let centerY = mainDiameter / 2
+        let main = primaryAction
+        let showsRescan = canRescan
+        let rescanX = showsRescan ? centerX - slotWidth : centerX
+        let rescanDiameter = showsRescan ? sideDiameter : min(1, sideDiameter)
+
+        return VStack(spacing: 5) {
+            GlassEffectContainer(spacing: glassSpacing) {
+                ZStack {
+                    // Keep the rescan glass alive as its circle moves into and out of the main circle.
+                    Color.clear
+                        .frame(width: rescanDiameter, height: rescanDiameter)
+                        .glassEffect(.regular, in: Circle())
+                        .glassEffectID("rescan", in: glassNamespace)
+                        .position(x: rescanX, y: centerY)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+
+                    dockAction(title: main.title, symbol: main.symbol, id: "primary",
+                               diameter: mainDiameter, hint: main.hint) {
+                        if experience.busy { experience.stop() }
+                        else if canRetryCamera { experience.setActive(true) }
+                        else if !experience.ready { return }
+                        else if !experience.hasSelectionContent { scanPanel() }
+                        else { experience.sayAButton() }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(24)
-                }
-                .navigationTitle(primaryTitle)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showMessageDetails = false }
-                            .buttonStyle(.glass)
+                    .disabled(!didLaunch && !canRetryCamera)
+                    .accessibilitySortPriority(2)
+                    .position(x: centerX, y: centerY)
+
+                    if showsDisplayButton {
+                        dockAction(title: "Display buttons", symbol: "square.grid.3x3.square", id: "selection",
+                                   diameter: sideDiameter,
+                                   hint: "Tap or drag up to show the list of detected buttons.") {
+                            guard panelDragStartHeight == nil, panelDetent == .collapsed else { return }
+                            animateSelection { panelDetent = defaultExpandedDetent }
+                        }
+                        // Keep the source circle alive until an interactive drag commits its detent.
+                        .simultaneousGesture(
+                            panelResizeGesture(restingHeight: restingHeight, collapsedHeight: 0, allHeight: allHeight),
+                            isEnabled: canDisplayButtons
+                        )
+                        .disabled(!canDisplayButtons)
+                        .position(x: centerX + slotWidth, y: centerY)
                     }
                 }
+                .frame(width: width, height: mainDiameter)
             }
+            .overlay(alignment: .topLeading) {
+                Button {
+                    guard canRescan else { return }
+                    withAnimation(glassAnimation) { scanPanel() }
+                } label: {
+                    dockSymbol("arrow.clockwise", diameter: sideDiameter)
+                        .frame(width: sideDiameter, height: sideDiameter)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Scan again")
+                .accessibilityHint("Scans a new panel.")
+                .opacity(showsRescan ? 1 : 0)
+                .allowsHitTesting(showsRescan)
+                .accessibilityHidden(!showsRescan)
+                .position(x: rescanX, y: centerY)
+            }
+
+            // Reserve the same caption space even when a side action is hidden.
+            HStack(alignment: .top, spacing: 0) {
+                dockCaption("Scan again", width: slotWidth)
+                    .opacity(showsRescan ? 1 : 0)
+                ZStack(alignment: .top) {
+                    // Measure the other action titles so a wrapping caption cannot move the circles.
+                    ForEach(["Scan panel", "Say a button", "Retry camera", "Stop"], id: \.self) { title in
+                        dockCaption(title, width: slotWidth).hidden()
+                    }
+                    dockCaption(main.title, width: slotWidth)
+                }
+                dockCaption("Display buttons", width: slotWidth)
+                    .opacity(showsDisplayButton ? 1 : 0)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
-        .onAppear { statusFocused = true }
-        .task { await pipeline.guidanceStatus.run() }
-        .task(id: experience.ready) {
-            cameraLaunchUnavailable = false
-            guard experience.ready, !didLaunch else { return }
-            // ready follows permission/configuration/start. Live camera mode must
-            // also have a running session before the launch countdown begins.
-            guard !experience.usesCamera || (camera.status.error == nil && !camera.status.isInterrupted) else {
-                cameraLaunchUnavailable = true
-                return
+        .animation(glassAnimation, value: showsRescan)
+        .animation(glassAnimation, value: showsDisplayButton)
+    }
+
+    private func dockAction(title: String, symbol: String, id: String, diameter: CGFloat,
+                            hint: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            dockSymbol(symbol, diameter: diameter)
+        }
+        .buttonStyle(.glass(.regular))
+        .buttonBorderShape(.circle)
+        .buttonSizing(.flexible)
+        .frame(width: diameter, height: diameter)
+        .glassEffectID(id, in: glassNamespace)
+        .glassEffectTransition(.matchedGeometry)
+        .accessibilityLabel(title)
+        .accessibilityHint(hint)
+    }
+
+    private func dockSymbol(_ symbol: String, diameter: CGFloat) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: diameter * 0.40, weight: .semibold))
+            .glassForeground()
+            .contentTransition(.identity)
+            .transaction { $0.animation = nil }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func dockCaption(_ title: String, width: CGFloat) -> some View {
+        Text(title)
+            .font(.caption.weight(.semibold))
+            .glassForeground()
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .contentTransition(.identity)
+            .transaction { $0.animation = nil }
+            .frame(width: width)
+    }
+
+    var body: some View {
+        cameraControls
+            .background { cameraBackground }
+            .buttonStyle(.glass)
+            .preferredColorScheme(.dark)
+            #if DEBUG
+            .sheet(isPresented: $showDeveloperTools) {
+                NavigationStack { DebugMenu(camera: camera, pipeline: pipeline) }
             }
-            didLaunch = true
-            // Cancellation and Reduce Motion must always leave a usable button.
-            defer {
-                if launchProgress != 1 || !primaryDetached {
-                    launchProgress = 1
-                    primaryDetached = true
+            #endif
+            .sheet(isPresented: $showFeedbackSettings) { FeedbackSettingsView() }
+            .sheet(isPresented: $showMessageDetails) { messageDetails }
+            .onAppear { statusFocused = true }
+            .task { await pipeline.guidanceStatus.run() }
+            .task(id: experience.ready) { updateCameraLaunch() }
+            .task(id: selectionAnimationKey) { updateButtonPanel() }
+            .onChange(of: experience.status) { _, message in
+                // State transitions only; tracking's per-frame output stays in the feedback engine.
+                // VoiceRequest announces listening before it opens the microphone.
+                if !experience.listening && !(pipeline.guidanceArrived
+                    && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
+                    UIAccessibility.post(notification: .announcement, argument: message)
                 }
             }
-            guard !reduceMotion else { return }
-            await Task.yield()
-            do { try await Task.sleep(for: .seconds(MotionTiming.launchDelaySeconds)) }
-            catch { return }
-            // Keep both glass identities stable. Native container spacing
-            // controls merging as the button moves vertically out of the card.
-            withAnimation(glassAnimation) { launchProgress = 1 }
-            do { try await Task.sleep(for: .seconds(MotionTiming.animationDurationSeconds)) }
-            catch { return }
-            withAnimation(glassAnimation) { primaryDetached = true }
-        }
-        .task(id: primaryDetached) {
-            guard primaryDetached, !headerIsRegular else { return }
-            do { try await Task.sleep(for: .seconds(MotionTiming.headerMaterialDelaySeconds)) }
-            catch { return }
-            withAnimation(glassAnimation) { headerIsRegular = true }
-        }
-        .task(id: HeaderAnimationKey(available: canRescan, reduceMotion: reduceMotion)) {
-            withAnimation(glassAnimation) {
-                headerSeparationProgress = canRescan ? 1 : 0
+            .onChange(of: experience.error) { _, error in
+                if let error { UIAccessibility.post(notification: .announcement, argument: error) }
             }
+            .onChange(of: pipeline.panelReference?.photo.id) {
+                experience.referenceChanged()
+            }
+    }
+
+    private func updateCameraLaunch() {
+        cameraLaunchUnavailable = false
+        guard experience.ready, !didLaunch else { return }
+        // ready follows permission/configuration/start. Live camera mode must
+        // also have a running session before showing the bottom controls.
+        guard !experience.usesCamera || (camera.status.error == nil && !camera.status.isInterrupted) else {
+            cameraLaunchUnavailable = true
+            return
         }
-        .task(id: selectionAnimationKey) {
-            let key = selectionAnimationKey
-            if key.scanning {
-                // Detection temporarily clears the pipeline reference. Keep the old
-                // presentation until the scan finishes; selectionReady disables it.
-                scanWasInFlight = true
-                return
-            }
-            // replaceWork can await cleanup before scanning becomes true.
-            if scanWasInFlight && key.working { return }
-            if scanWasInFlight {
-                scanWasInFlight = false
-            }
-            selectionMotionID = UUID() // Invalidate callbacks from a superseded reference.
-            if primaryDetached, hasSelectionContent, let referenceID = pipeline.panelReference?.photo.id {
-                let needsEntrance = !selectionVisible || selectionProgress == 0
+        didLaunch = true
+    }
+
+    private func updateButtonPanel() {
+        if experience.scanning {
+            scanWasInFlight = true
+            return
+        }
+        if scanWasInFlight && experience.busy { return }
+        scanWasInFlight = false
+        withAnimation(glassAnimation) {
+            if didLaunch, experience.hasSelectionContent, let referenceID = pipeline.panelReference?.photo.id {
                 displayedButtons = orderedButtons
                 displayedReferenceID = referenceID
-                if needsEntrance {
-                    panelDetent = .collapsed
-                    selectionLabelVisible = false
-                    selectionVisible = true
-                    if !reduceMotion {
-                        do { try await Task.sleep(for: .seconds(1.0 / 60)) }
-                        catch { return }
-                    }
-                    guard !Task.isCancelled else { return }
-                    // The fixed-size foreground label fades in with the native separation.
-                    animateSelection { selectionProgress = 1 }
-                } else {
-                    // A successful rescan updates the existing menu without replaying entry.
-                    if panelDetent == .named && !hasNamedButtons {
-                        animateSelection { panelDetent = defaultExpandedDetent }
-                    }
-                }
+                if panelDetent == .named && !hasNamedButtons { panelDetent = defaultExpandedDetent }
             } else {
-                animateSelection {
-                    panelDragHeight = nil
-                    panelDragStartHeight = nil
-                    panelDetent = .collapsed
-                    selectionProgress = 0
-                } completion: {
-                    selectionVisible = false
-                    displayedButtons = []
-                    displayedReferenceID = nil
-                }
+                displayedButtons = []
+                displayedReferenceID = nil
+                panelDetent = .collapsed
+                panelDragHeight = nil
+                panelDragStartHeight = nil
             }
-        }
-        .onChange(of: reduceMotion) { _, reduce in
-            if reduce, didLaunch { launchProgress = 1; primaryDetached = true }
-        }
-        .onChange(of: experience.status) { _, message in
-            // State transitions only; tracking's per-frame output stays in the feedback engine.
-            // VoiceRequest announces listening before it opens the microphone.
-            if !experience.listening && !(pipeline.guidanceArrived
-                && (pipeline.feedback as? LiveFeedbackEngine)?.voiceEnabled == true) {
-                UIAccessibility.post(notification: .announcement, argument: message)
-            }
-        }
-        .onChange(of: experience.error) { _, error in
-            if let error { UIAccessibility.post(notification: .announcement, argument: error) }
-        }
-        .onChange(of: pipeline.panelReference?.photo.id) {
-            experience.referenceChanged()
         }
     }
 
-    /// Keep material geometry and foreground crossfades in one transaction.
-    /// Labels have a fixed single-line layout, so entry no longer needs a delayed reveal.
-    private func animateSelection(_ updates: () -> Void, completion: (() -> Void)? = nil) {
-        let motionID = UUID()
-        selectionMotionID = motionID
-        withAnimation(glassAnimation, completionCriteria: .logicallyComplete) {
-            updates()
-            selectionLabelVisible = selectionProgress == 1 && panelDetent == .collapsed
-                && hasSelectionContent && !experience.scanning
-        } completion: {
-            guard selectionMotionID == motionID else { return }
-            completion?()
-        }
+    private func animateSelection(_ updates: () -> Void) {
+        withAnimation(glassAnimation, updates)
     }
 
     private func movePanel(up: Bool) {
@@ -664,8 +559,6 @@ struct LiveCameraView: View {
                 transaction.disablesAnimations = true
                 withTransaction(transaction) {
                     if panelDragStartHeight == nil {
-                        selectionMotionID = UUID()
-                        selectionLabelVisible = false
                         panelDragStartHeight = restingHeight
                     }
                     panelDragHeight = min(allHeight, max(collapsedHeight,
@@ -720,7 +613,9 @@ struct LiveCameraView: View {
             }
             .accessibilityLabel("Button panel size")
             .accessibilityValue(panelDetent.accessibilityName)
-            .accessibilityHint("Swipe up for more buttons or down to collapse.")
+            .accessibilityHint(panelDetent == .collapsed
+                               ? "Swipe up to show the detected buttons."
+                               : "Swipe up for more buttons or down to collapse.")
             .accessibilityAdjustableAction { direction in
                 switch direction {
                 case .increment: movePanel(up: true)
@@ -746,26 +641,30 @@ struct LiveCameraView: View {
             .disabled(experience.busy || !experience.ready)
     }
 
+    private func buttonRow<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 12, content: content)
+                .padding(.vertical, 4)
+        }
+        .scrollClipDisabled()
+        .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        .scrollIndicators(.visible)
+    }
+
     private func selectionControls(namedButtons: [SurfaceMap.Button],
                                    unlabelledButtons: [SurfaceMap.Button], showUnlabelled: Bool) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             if !namedButtons.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 12) {
-                        ForEach(namedButtons) { button in
-                            selectionButton(button) {
-                                Text(readableLabel(for: button) ?? "")
-                                    .glassForeground()
-                                    .fixedSize(horizontal: true, vertical: false)
-                                    .frame(minHeight: 32)
-                            }
+                buttonRow {
+                    ForEach(namedButtons) { button in
+                        selectionButton(button) {
+                            Text(readableLabel(for: button) ?? "")
+                                .glassForeground()
+                                .fixedSize(horizontal: true, vertical: false)
+                                .frame(minHeight: 32)
                         }
                     }
-                    .padding(.vertical, 4)
                 }
-                .scrollClipDisabled()
-                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                .scrollIndicators(.visible)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { namedRowHeight = $0 }
             }
 
@@ -776,23 +675,17 @@ struct LiveCameraView: View {
                         .glassForeground()
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityHint("Ordered top to bottom, then left to right.")
-                    ScrollView(.horizontal) {
-                        HStack(spacing: 12) {
-                            ForEach(Array(unlabelledButtons.enumerated()), id: \.element.id) { index, button in
-                                selectionButton(button, hint: "Starts finger guidance to this button. The number identifies its place in this list.") {
-                                    Text("\(index + 1)")
-                                        .font(.headline.monospacedDigit())
-                                        .glassForeground()
-                                        .frame(minWidth: 32, minHeight: 32)
-                                }
-                                .accessibilityLabel("Unlabelled button \(index + 1), \(positionDescription(for: button))")
+                    buttonRow {
+                        ForEach(Array(unlabelledButtons.enumerated()), id: \.element.id) { index, button in
+                            selectionButton(button, hint: "Starts finger guidance to this button. The number identifies its place in this list.") {
+                                Text("\(index + 1)")
+                                    .font(.headline.monospacedDigit())
+                                    .glassForeground()
+                                    .frame(minWidth: 32, minHeight: 32)
                             }
+                            .accessibilityLabel("Unlabelled button \(index + 1), \(positionDescription(for: button))")
                         }
-                        .padding(.vertical, 4)
                     }
-                    .scrollClipDisabled()
-                    .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
-                    .scrollIndicators(.visible)
                 }
                 .opacity(showUnlabelled ? 1 : 0)
                 .allowsHitTesting(showUnlabelled)
@@ -800,6 +693,38 @@ struct LiveCameraView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var transcriptText: Text {
+        Text(verbatim: "“\(experience.voiceTranscript)”")
+            .font(.callout)
+    }
+
+    private var messageDetails: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(experience.displayStatus)
+                    if !experience.voiceTranscript.isEmpty {
+                        transcriptText
+                    }
+                    if experience.guiding {
+                        GuidanceStatusRow(snapshot: pipeline.guidanceStatus.current)
+                    }
+                    if let error = experience.error { Text(error).foregroundStyle(.red) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
+            }
+            .navigationTitle(primaryAction.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showMessageDetails = false }
+                        .buttonStyle(.glass)
+                }
+            }
+        }
     }
 
     /// Glass hugs the text; only the outer layout reserves space above the button.
@@ -835,7 +760,25 @@ struct LiveCameraView: View {
                 headerActionsSlot
             }
 
-            if compact && !minimal {
+            if experience.listening {
+                VStack(spacing: 8) {
+                    Text("Listening...")
+                        .font(.body.weight(.semibold))
+                        .glassForeground()
+                        .accessibilityFocused($statusFocused)
+
+                    ListeningWaveform(experience: experience)
+
+                    if !experience.voiceTranscript.isEmpty {
+                        transcriptText
+                            .glassForeground()
+                            .multilineTextAlignment(.center)
+                            .lineLimit(minimal ? 1 : compact ? 2 : 3)
+                            .truncationMode(.head)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            } else if compact && !minimal {
                 Text(experience.error ?? experience.displayStatus)
                     .font(.body)
                     .glassForeground()
@@ -862,18 +805,18 @@ struct LiveCameraView: View {
                 }
             }
 
-            // Camera failure must remain recoverable before the main button is revealed.
-            if !didLaunch, experience.error != nil || cameraLaunchUnavailable {
-                if cameraLaunchUnavailable {
-                    Text("Camera is not running. Try starting it again.")
-                        .font(.body)
-                        .glassForeground()
-                }
-                Button { experience.setActive(true) } label: {
-                    Text("Retry camera").glassForeground()
-                }
-                .buttonStyle(.glass(headerGlass))
-                .accessibilityHint("Tries to start the camera again before the launch animation.")
+            if !experience.listening && !minimal && !experience.voiceTranscript.isEmpty {
+                transcriptText
+                    .glassForeground()
+                    .lineLimit(compact ? 2 : 3)
+                    .truncationMode(.head)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if cameraLaunchUnavailable {
+                Text("Camera is not running. Try starting it again.")
+                    .font(.body)
+                    .glassForeground()
             }
         }
         .padding(.horizontal, 24)
@@ -907,7 +850,8 @@ struct LiveCameraView: View {
                 #endif
 
                 if experience.usesCamera {
-                    LaunchCameraBackground(camera: camera, revision: camera.status.revision)
+                    LaunchCameraBackground(camera: camera, revision: camera.status.revision,
+                                           pipeline: pipeline, isGuiding: experience.guiding)
                         .frame(width: background.size.width, height: background.size.height)
                 }
             }
@@ -921,6 +865,39 @@ struct LiveCameraView: View {
 
 }
 
+private struct ListeningWaveform: View {
+    private static let barSensitivity = [
+        0.24, 0.31, 0.43, 0.38, 0.56, 0.49, 0.72, 0.60, 0.81,
+        0.67, 0.99, 0.83, 1.16, 0.92, 1.08, 0.76, 0.88, 0.66,
+        0.79, 0.53, 0.64, 0.45, 0.53, 0.34, 0.41, 0.29, 0.23,
+    ]
+
+    let experience: CameraLaunchModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let level = experience.voiceLevel
+        GeometryReader { geometry in
+            let waveformWidth = geometry.size.width / 3
+            let barWidth = min(2.5, waveformWidth / CGFloat(Self.barSensitivity.count) * 0.7)
+
+            HStack(spacing: 0) {
+                ForEach(Self.barSensitivity.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(.white)
+                        .frame(width: barWidth, height: 3 + 25 * min(1, level * Self.barSensitivity[index]))
+                        .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(width: waveformWidth, height: geometry.size.height)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(height: 28)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.06), value: level)
+        .accessibilityHidden(true)
+    }
+}
+
 /// Read the effective enabled state, including the panel's inherited scan/reference
 /// restrictions. Keep the native glass style and disabled accessibility semantics.
 private struct SelectionButtonAvailability: ViewModifier {
@@ -932,6 +909,17 @@ private struct SelectionButtonAvailability: ViewModifier {
 }
 
 private extension View {
+    func headerGlassControl(_ material: Glass, id: String, in namespace: Namespace.ID,
+                            diameter: CGFloat, x: CGFloat) -> some View {
+        buttonStyle(.glass(material))
+            .buttonBorderShape(.circle)
+            .buttonSizing(.flexible)
+            .frame(width: diameter, height: diameter)
+            .glassEffectID(id, in: namespace)
+            .glassEffectTransition(.matchedGeometry)
+            .position(x: x, y: diameter / 2)
+    }
+
     /// Style each foreground label separately to preserve the existing glass layering.
     func glassForeground() -> some View {
         foregroundStyle(.white)
@@ -945,24 +933,106 @@ private extension View {
 private struct LaunchCameraBackground: View {
     let camera: CameraService
     let revision: Int
+    let pipeline: ContourPipeline
+    let isGuiding: Bool
     @State private var model = CameraFeedModel()
 
     var body: some View {
         GeometryReader { geometry in
             ZStack {
                 Color.black
-                if let image = model.image {
+                if let preview = model.preview {
+                    let image = preview.image
+                    let scale = max(geometry.size.width / CGFloat(image.width),
+                                    geometry.size.height / CGFloat(image.height))
+                    let width = CGFloat(image.width) * scale
+                    let height = CGFloat(image.height) * scale
+                    let imageRect = CGRect(x: (geometry.size.width - width) / 2,
+                                           y: (geometry.size.height - height) / 2,
+                                           width: width, height: height)
+
                     Image(decorative: image, scale: 1)
                         .resizable()
-                        .scaledToFill()
-                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .frame(width: width, height: height)
+                        .position(x: imageRect.midX, y: imageRect.midY)
+
+                    if isGuiding, let marker = preview.marker, marker.sessionID == pipeline.guidancePreviewID {
+                        GuidanceTargetOverlay(marker: marker, imageRect: imageRect)
+                    }
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
             .clipped()
         }
         .task(id: revision) {
-            await model.run(camera: camera, framesPerSecond: 15)
+            await model.run(camera: camera, framesPerSecond: 15) { pipeline.guidanceTargetFrame }
+        }
+    }
+}
+
+private struct GuidanceTargetOverlay: View {
+    let marker: GuidanceTargetFrame.Marker
+    let imageRect: CGRect
+
+    var body: some View {
+        Canvas { context, size in
+            let corners = marker.corners.map {
+                CGPoint(x: imageRect.minX + $0.x * imageRect.width,
+                        y: imageRect.minY + $0.y * imageRect.height)
+            }
+            let outline = roundedOutline(corners)
+            let bounds = outline.boundingRect
+            guard bounds.intersects(CGRect(origin: .zero, size: size)) else { return }
+
+            context.stroke(outline, with: .color(.black.opacity(0.8)),
+                           style: StrokeStyle(lineWidth: 6, lineJoin: .round))
+            context.stroke(outline, with: .color(.yellow),
+                           style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+
+            let caption = context.resolve(
+                Text(verbatim: marker.title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(.white)
+            )
+            let edgeInset: CGFloat = 8
+            let horizontalPadding: CGFloat = 7
+            let verticalPadding: CGFloat = 3
+            let maximumWidth = min(240, size.width - 2 * (edgeInset + horizontalPadding))
+            guard maximumWidth > 0 else { return }
+            let textSize = caption.measure(in: CGSize(width: maximumWidth, height: 44))
+            let width = min(maximumWidth, textSize.width) + 2 * horizontalPadding
+            let height = textSize.height + 2 * verticalPadding
+            let x = min(max(edgeInset, bounds.midX - width / 2), size.width - edgeInset - width)
+            let captionRect = CGRect(x: x, y: bounds.minY - height - 6, width: width, height: height)
+            context.fill(Path(roundedRect: captionRect, cornerRadius: 6), with: .color(.black.opacity(0.8)))
+            context.draw(caption, in: captionRect.insetBy(dx: horizontalPadding, dy: verticalPadding))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func roundedOutline(_ corners: [CGPoint]) -> Path {
+        // Round the projected corners on screen so the outline still follows perspective.
+        func cutback(_ corner: CGPoint, toward neighbor: CGPoint) -> CGPoint {
+            let dx = neighbor.x - corner.x
+            let dy = neighbor.y - corner.y
+            let length = hypot(dx, dy)
+            guard length > 0 else { return corner }
+            let fraction = min(0.25, 7 / length)
+            return CGPoint(x: corner.x + dx * fraction, y: corner.y + dy * fraction)
+        }
+
+        return Path { path in
+            for (index, corner) in corners.enumerated() {
+                let previous = corners[(index + corners.count - 1) % corners.count]
+                let next = corners[(index + 1) % corners.count]
+                let start = cutback(corner, toward: previous)
+                let end = cutback(corner, toward: next)
+                if index == 0 { path.move(to: start) }
+                else { path.addLine(to: start) }
+                path.addQuadCurve(to: end, control: corner)
+            }
+            path.closeSubpath()
         }
     }
 }
