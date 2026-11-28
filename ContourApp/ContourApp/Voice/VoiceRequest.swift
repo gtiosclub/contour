@@ -34,10 +34,19 @@ struct VoiceRequest {
         var button: SurfaceMap.Button?
     }
 
+    enum Progress {
+        case level(Double)
+        case transcript(String)
+    }
+
+    typealias ProgressHandler = @MainActor (Progress) -> Void
+    typealias Listener = @MainActor (SurfaceMap, @escaping ProgressHandler) async throws -> Heard
+
     /// Listens until something said names a button on `map`, or `timeout`
     /// passes. Checks as the words come in, so "start" returns as soon as it's
     /// heard rather than after a pause.
-    func listen(for map: SurfaceMap, timeout: Duration = .seconds(8)) async throws -> Heard {
+    func listen(for map: SurfaceMap, timeout: Duration = .seconds(8),
+                onProgress: ProgressHandler? = nil) async throws -> Heard {
         try Task.checkCancellation()
         let allowed: Bool
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
@@ -63,7 +72,22 @@ struct VoiceRequest {
         try Task.checkCancellation()
         let analyzer = SpeechAnalyzer(inputSequence: input.analyzerInputs, modules: [transcriber])
         input.captureSession.startRunning()
-        defer { input.captureSession.stopRunning() }
+        let meter = onProgress.map { report in
+            let output = input.captureAudioDataOutput
+            return Task { @MainActor in
+                while !Task.isCancelled {
+                    let power = output.connection(with: .audio)?.audioChannels.map(\.averagePowerLevel).max()
+                    let level = power.map { $0.isFinite ? min(1, max(0, Double($0 + 55) / 45)) : 0 } ?? 0
+                    report(.level(level))
+                    do { try await Task.sleep(for: .milliseconds(50)) }
+                    catch { return }
+                }
+            }
+        }
+        defer {
+            meter?.cancel()
+            input.captureSession.stopRunning()
+        }
 
         // Stop listening at the time limit, or as soon as this task is
         // cancelled; either ends the results below.
@@ -78,10 +102,14 @@ struct VoiceRequest {
         defer { deadline.cancel() }
 
         var heard = Heard(text: "", button: nil)
+        var finalizedTranscript = ""
         do {
             try await withTaskCancellationHandler {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    let transcript = [finalizedTranscript, text].filter { !$0.isEmpty }.joined(separator: " ")
+                    if result.isFinal { finalizedTranscript = transcript }
+                    onProgress?(.transcript(transcript))
                     guard !text.isEmpty else { continue }
                     heard.text = text
                     if let button = ButtonLookup.button(for: text, in: map) {

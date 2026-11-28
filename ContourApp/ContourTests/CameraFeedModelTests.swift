@@ -1,3 +1,4 @@
+import ContourCore
 import CoreVideo
 import Foundation
 import Testing
@@ -31,6 +32,45 @@ struct CameraFeedModelTests {
         secondRun.cancel()
         await secondRun.value
     }
+
+    @Test("The target outline draws on its matching image and is dropped when the camera gets ahead")
+    func showsFreshTrackingImage() async throws {
+        let camera = ScriptedFrameSource()
+        let model = CameraFeedModel()
+        let trackedFrame = try frame(width: 24, height: 32)
+        let sample = LiveTrackingSample(
+            cameraFrame: trackedFrame,
+            frame: TrackingFrame(timestamp: trackedFrame.timestamp, fingertip: nil,
+                                 panel: .unknown, trackingQuality: .degraded),
+            panelQuad: PanelQuad(topLeft: ImagePoint(x: 0.2, y: 0.2), topRight: ImagePoint(x: 0.8, y: 0.2),
+                                 bottomRight: ImagePoint(x: 0.8, y: 0.8), bottomLeft: ImagePoint(x: 0.2, y: 0.8))
+        )
+        let bounds = PanelRect(origin: PanelPoint(x: 0.25, y: 0.25), width: 0.5, height: 0.25)
+        let button = SurfaceMap.Button(label: " Start ", bounds: bounds, confidence: 1)
+        let target = try #require(GuidanceTargetFrame(sample: sample, target: button, sessionID: 42))
+        #expect(target.marker.title == "Start")
+        let unlabelled = SurfaceMap.Button(label: nil, bounds: bounds, confidence: 1)
+        #expect(GuidanceTargetFrame(sample: sample, target: unlabelled, sessionID: 42)?.marker.title == "Unlabelled button")
+        let corner = try #require(target.marker.corners.first)
+        #expect(abs(corner.x - 0.35) < 0.0001 && abs(corner.y - 0.35) < 0.0001)
+        let lost = LiveTrackingSample(cameraFrame: trackedFrame, frame: .lost(at: trackedFrame.timestamp))
+        #expect(GuidanceTargetFrame(sample: lost, target: button, sessionID: 42) == nil)
+
+        let run = Task { await model.run(camera: camera, framesPerSecond: 1000, targetFrame: { target }) }
+        let stream = await camera.nextStream()
+        defer { stream.finish() }
+
+        stream.yield(try frame(time: 0.05))
+        try await waitUntil { model.preview?.marker?.sessionID == 42 }
+        #expect(model.image?.width == 24)
+        #expect(model.preview?.marker?.title == "Start")
+
+        stream.yield(try frame(time: 0.5))
+        try await waitUntil { model.image?.width == 32 }
+        #expect(model.preview?.marker == nil)
+        stream.finish()
+        await run.value
+    }
 }
 
 /// Hands out a fresh stream per subscription, which the test drives by hand.
@@ -57,10 +97,10 @@ private actor ScriptedFrameSource: CameraFrameSource {
     }
 }
 
-private func frame() throws -> CameraFrame {
+private func frame(width: Int = 32, height: Int = 24, time: TimeInterval = 0) throws -> CameraFrame {
     var buffer: CVPixelBuffer?
-    CVPixelBufferCreate(kCFAllocatorDefault, 32, 24, kCVPixelFormatType_32BGRA, nil, &buffer)
-    return CameraFrame(pixelBuffer: try #require(buffer), timestamp: Date(timeIntervalSince1970: 0))
+    CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA, nil, &buffer)
+    return CameraFrame(pixelBuffer: try #require(buffer), timestamp: Date(timeIntervalSince1970: time))
 }
 
 /// Yields instead of sleeping, so the test stays deterministic and fast.
